@@ -26,43 +26,115 @@ source-repository head
 library
   exposed-modules:
       Kokage
+      Kokage.Animation
+      Kokage.Balloon
+      Kokage.Balloon.Surface
+      Kokage.Character
       Kokage.Collision
       Kokage.Event
+      Kokage.ImageCache
+      Kokage.InputRegion
+      Kokage.Install
+      Kokage.Menu
+      Kokage.Platform
+      Kokage.SakuraScript.Interpreter
+      Kokage.SakuraScript.Parser
+      Kokage.Shiori.WineBridge
       Kokage.Surface
-      Lib
+      Kokage.Transparency
       Types.Balloon
       Types.Ghost
+      Types.Install
+      Types.Plugin
+      Types.SakuraScript
+      Types.Shiori
   other-modules:
       Paths_kokage
   autogen-modules:
       Paths_kokage
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fwrite-ide-info -hiedir /home/pe200012/.stack/hiedir
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0
   build-depends:
-      base >=4.7 && <5
+      X11
+    , base >=4.7 && <5
     , base64-bytestring
     , bytestring
     , containers
     , directory
     , filepath
+    , gi-cairo
+    , gi-cairo-connector
     , gi-cairo-render
-    , gi-gdk
+    , gi-gdk4
     , gi-gdkpixbuf
+    , gi-gdkx114
     , gi-gio
     , gi-glib
-    , gi-gtk
+    , gi-gtk4
+    , gi-gtk4-layer-shell
+    , gi-pango
+    , gi-pangocairo
     , haskell-gi-base
     , iconv
     , megaparsec
     , mtl
     , process
+    , random
     , reactive-banana
     , reactive-banana-gi-gtk
     , text
+    , text-builder
     , time
     , transformers
     , vector
+    , zip-archive
+  default-language: Haskell2010
+
+executable animation-test
+  main-is: Main.hs
+  other-modules:
+      Paths_kokage
+  autogen-modules:
+      Paths_kokage
+  hs-source-dirs:
+      app-animation-test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      X11
+    , base >=4.7 && <5
+    , base64-bytestring
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , gi-cairo
+    , gi-cairo-connector
+    , gi-cairo-render
+    , gi-gdk4
+    , gi-gdkpixbuf
+    , gi-gdkx114
+    , gi-gio
+    , gi-glib
+    , gi-gtk4
+    , gi-gtk4-layer-shell
+    , gi-pango
+    , gi-pangocairo
+    , haskell-gi-base
+    , iconv
+    , kokage
+    , megaparsec
+    , mtl
+    , process
+    , random
+    , reactive-banana
+    , reactive-banana-gi-gtk
+    , text
+    , text-builder
+    , time
+    , transformers
+    , vector
+    , zip-archive
   default-language: Haskell2010
 
 executable kokage
@@ -73,20 +145,27 @@ executable kokage
       Paths_kokage
   hs-source-dirs:
       app
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fwrite-ide-info -hiedir /home/pe200012/.stack/hiedir -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      X11
+    , base >=4.7 && <5
     , base64-bytestring
     , bytestring
     , containers
     , directory
     , filepath
+    , gi-cairo
+    , gi-cairo-connector
     , gi-cairo-render
-    , gi-gdk
+    , gi-gdk4
     , gi-gdkpixbuf
+    , gi-gdkx114
     , gi-gio
     , gi-glib
-    , gi-gtk
+    , gi-gtk4
+    , gi-gtk4-layer-shell
+    , gi-pango
+    , gi-pangocairo
     , haskell-gi-base
     , iconv
     , kokage
@@ -94,39 +173,102 @@ executable kokage
     , mtl
     , optparse-applicative
     , process
+    , random
     , reactive-banana
     , reactive-banana-gi-gtk
     , text
+    , text-builder
     , time
     , transformers
     , vector
+    , zip-archive
+  default-language: Haskell2010
+
+executable shiori-test
+  main-is: Main.hs
+  other-modules:
+      Paths_kokage
+  autogen-modules:
+      Paths_kokage
+  hs-source-dirs:
+      app-shiori-test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      X11
+    , base >=4.7 && <5
+    , base64-bytestring
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , gi-cairo
+    , gi-cairo-connector
+    , gi-cairo-render
+    , gi-gdk4
+    , gi-gdkpixbuf
+    , gi-gdkx114
+    , gi-gio
+    , gi-glib
+    , gi-gtk4
+    , gi-gtk4-layer-shell
+    , gi-pango
+    , gi-pangocairo
+    , haskell-gi-base
+    , iconv
+    , kokage
+    , megaparsec
+    , mtl
+    , process
+    , random
+    , reactive-banana
+    , reactive-banana-gi-gtk
+    , text
+    , text-builder
+    , time
+    , transformers
+    , vector
+    , zip-archive
   default-language: Haskell2010
 
 test-suite kokage-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Kokage.GhostResolutionSpec
+      Kokage.InstallSpec
+      Kokage.SakuraScript.ParserSpec
+      Kokage.Shiori.WineBridgeSpec
+      Types.InstallSpec
+      Types.PluginSpec
+      Types.ShioriSpec
       Paths_kokage
   autogen-modules:
       Paths_kokage
   hs-source-dirs:
       test
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fwrite-ide-info -hiedir /home/pe200012/.stack/hiedir -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
   build-tool-depends:
       hspec-discover:hspec-discover
   build-depends:
-      base >=4.7 && <5
+      X11
+    , base >=4.7 && <5
     , base64-bytestring
     , bytestring
     , containers
     , directory
     , filepath
+    , gi-cairo
+    , gi-cairo-connector
     , gi-cairo-render
-    , gi-gdk
+    , gi-gdk4
     , gi-gdkpixbuf
+    , gi-gdkx114
     , gi-gio
     , gi-glib
-    , gi-gtk
+    , gi-gtk4
+    , gi-gtk4-layer-shell
+    , gi-pango
+    , gi-pangocairo
     , haskell-gi-base
     , hspec
     , hspec-megaparsec
@@ -135,10 +277,14 @@ test-suite kokage-test
     , megaparsec
     , mtl
     , process
+    , random
     , reactive-banana
     , reactive-banana-gi-gtk
+    , temporary
     , text
+    , text-builder
     , time
     , transformers
     , vector
+    , zip-archive
   default-language: Haskell2010

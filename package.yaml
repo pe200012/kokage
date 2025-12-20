@@ -20,13 +20,20 @@ dependencies:
   - iconv # Shift-JIS encoding support
   - vector
   - megaparsec # parsing
-  - gi-gtk # GTK4 bindings (4.0.8 from extra-deps)
-  - gi-gdk # GTK4 Gdk
+  - gi-gtk4 # GTK4 bindings (4.0.8 from extra-deps)
+  - gi-gdk4 # GTK4 Gdk
+  - gi-gtk4-layer-shell # Wayland layer-shell support (runtime detected)
+  - gi-pango # Pango text rendering (for balloon text wrapping)
+  - gi-pangocairo # PangoCairo for text rendering on Cairo surfaces
+  - gi-gdkx114 # GDK X11 bindings for always-on-top
+  - gi-cairo # Cairo GI bindings (for Region type)
   - gi-cairo-render # Cairo rendering
+  - gi-cairo-connector
   - gi-gdkpixbuf # image loading
   - gi-gio
   - gi-glib
   - haskell-gi-base # GI base types
+  - X11 # X11 bindings for window hints
   - filepath
   - directory
   - mtl
@@ -36,6 +43,9 @@ dependencies:
   - time # Time for debugging
   - reactive-banana # FRP
   - reactive-banana-gi-gtk # FRP with GTK
+  - zip-archive # NAR/ZIP archive handling
+  - text-builder # Efficient text building for SHIORI protocol
+  - random # Random number generation for animations
 
 ghc-options:
   - -Wall
@@ -47,8 +57,7 @@ ghc-options:
   - -Wmissing-home-modules
   - -Wpartial-fields
   - -Wredundant-constraints
-  - -fwrite-ide-info
-  - -hiedir /home/pe200012/.stack/hiedir
+  - -O0 # Disable optimizations for faster compile times during development
 
 library:
   source-dirs: src
@@ -65,6 +74,38 @@ executables:
       - kokage
       - optparse-applicative
 
+  shiori-test:
+    main: Main.hs
+    source-dirs: app-shiori-test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - kokage
+      - time
+
+  animation-test:
+    main: Main.hs
+    source-dirs: app-animation-test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - kokage
+      - text
+      - containers
+      - directory
+      - filepath
+      - gi-gtk4
+      - gi-gdk4
+      - gi-gdkpixbuf
+      - gi-gio
+      - gi-glib
+      - haskell-gi-base
+      - transformers
+
 tests:
   kokage-test:
     main: Spec.hs
@@ -79,3 +120,4 @@ tests:
       - kokage
       - hspec
       - hspec-megaparsec
+      - temporary

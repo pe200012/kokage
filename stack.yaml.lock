@@ -61,6 +61,27 @@ packages:
   original:
     hackage: gi-cairo-1.0.29
 - completed:
+    hackage: gi-gdkx114-4.0.9@sha256:ce89fe19379dcc07eae25ace620b1d4f4ea2f26852fb0f232f28915cd95551dc,3898
+    pantry-tree:
+      sha256: ae1fb75a2454f571f61ed65be64de64192885521489ac5c5d8bc7caf080b3056
+      size: 360
+  original:
+    hackage: gi-gdkx114-4.0.9
+- completed:
+    hackage: gi-xlib-2.0.13@sha256:11e89fe4f74118c58ec316e858e8a9e87decbac4f2abc353cba7c73c94d35c40,3500
+    pantry-tree:
+      sha256: 4889cd960cc876b1968bec315ae8d158811d23285c36d991d71da88696257650
+      size: 355
+  original:
+    hackage: gi-xlib-2.0.13
+- completed:
+    hackage: gi-gtk4-layer-shell-0.1.0@sha256:967752ca5c83ea9c2623befc134c410d425f62c910e52981dc24e94982838ac2,2691
+    pantry-tree:
+      sha256: 1f5d10e71a0d1b6aeb33870a369243427867168c19a3327ea364af8addcda3ce
+      size: 377
+  original:
+    hackage: gi-gtk4-layer-shell-0.1.0
+- completed:
     hackage: haskell-gi-0.26.17@sha256:0d502b6e74c4e40849a015280bce01df10d9dd313f1163c6bae92433c3f26b11,5213
     pantry-tree:
       sha256: 3afd1d178e0e9bcff6a013e7cb5857b513697954db3ebd6db9cc877c238b5246
@@ -88,6 +109,20 @@ packages:
       size: 287
   original:
     hackage: reactive-banana-gi-gtk-0.4.1.0
+- completed:
+    hackage: gi-pangocairo-1.0.31@sha256:dfeb7c73749a9d2b280dd9fb59aeb70def529ee310114c89cc57967af9c3df84,3226
+    pantry-tree:
+      sha256: 277eafb8cf510b9d653179dc5b059e66ddf051d39a1023343ba8cf38ca6dabc0
+      size: 370
+  original:
+    hackage: gi-pangocairo-1.0.31@sha256:dfeb7c73749a9d2b280dd9fb59aeb70def529ee310114c89cc57967af9c3df84,3226
+- completed:
+    hackage: gi-pango-1.0.30@sha256:53119e8b09591716ac9ca6b2a0899f560c7bc7ccd3752802a447d4b2a5174a1f,7473
+    pantry-tree:
+      sha256: e6b9b196aafada49a497519a9787c6046ab54197c85819a23f2b61f7ea09d9c7
+      size: 361
+  original:
+    hackage: gi-pango-1.0.30@sha256:53119e8b09591716ac9ca6b2a0899f560c7bc7ccd3752802a447d4b2a5174a1f,7473
 snapshots:
 - completed:
     sha256: dc2c118f708ee595ccad08b5be08ed276659b0c22ba7c8ba1ef25a49af318c50

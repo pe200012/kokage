@@ -1,6 +1,47 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
 
-module Types.Balloon ( module Types.Balloon ) where
+-- | Balloon type definitions and parsers
+module Types.Balloon
+  ( -- * Color types
+    RGB(..)
+  , MaybeRGB(..)
+    -- * Style types
+  , ShadowStyle(..)
+  , MarkerStyle(..)
+  , BlendMethod(..)
+    -- * Font and drawing settings
+  , FontSettings(..)
+  , emptyFontSettings
+  , PenSettings(..)
+  , emptyPenSettings
+  , BrushSettings(..)
+  , emptyBrushSettings
+    -- * Cursor and anchor settings
+  , CursorSettings(..)
+  , emptyCursorSettings
+  , AnchorSettings(..)
+  , emptyAnchorSettings
+    -- * Communicate box
+  , CommunicateBoxBackground(..)
+  , emptyCommunicateBoxBackground
+    -- * Balloon descript
+  , BalloonDescript(..)
+  , emptyBalloonDescript
+  , readBalloonDescript
+    -- * Surface options
+  , BalloonSurfaceOption(..)
+  , emptyBalloonSurfaceOption
+  , readBalloonSurfaceOption
+    -- * Balloon container
+  , Balloon(..)
+  , emptyBalloon
+    -- * Parsers
+  , parseShadowStyle
+  , parseMarkerStyle
+  , parseBlendMethod
+  , parseCoordinate
+  ) where
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Map.Strict      ( Map )
@@ -54,6 +95,7 @@ data BlendMethod
   | BlendNotMaskPen    -- ^ NOT (mask OR pen)
   | BlendMergePenNot   -- ^ pen OR (NOT mask)
 -- Additional Win32 ROP2 codes can be added as needed
+
 
 
   deriving ( Show, Eq )
@@ -471,6 +513,7 @@ readBalloonDescript path = do
       -- Basic info
 
 
+
         | key == "charset" = bd { bdCharset = val }
         | key == "name" = bd { bdName = val }
         | key == "type" = bd { bdType = val }
@@ -836,6 +879,7 @@ readBalloonSurfaceOption path = do
     parseKey :: BalloonSurfaceOption -> Text -> Text -> BalloonSurfaceOption
     parseKey bso key val
       -- Text positioning
+
 
 
         | key == "origin.x" = bso { bsoOriginX = parseCoordinate val }

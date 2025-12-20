@@ -1,6 +1,77 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
 
-module Types.Ghost ( module Types.Ghost ) where
+-- | Ghost, Shell, and Surface type definitions and parsers
+module Types.Ghost
+  ( -- * Charset utilities
+    isValidUtf8
+  , hasUtf8Bom
+  , guessCharset
+  , detectCharset
+  , detectCharsetFromBytes
+  , convertToUtf8
+    -- * Text utilities
+  , clean
+  , cleanStr
+  , readIntOr
+  , readMaybeInt
+  , readBoolOr
+  , readMaybeBool
+    -- * Ghost types
+  , GhostDescript(..)
+  , emptyGhostDescript
+  , readGhostDescript
+  , Ghost(..)
+  , loadGhost
+    -- * Shell types
+  , ShellDescript(..)
+  , emptyShellDescript
+  , readShellDescript
+  , Shell(..)
+  , loadShell
+  , getCharSettings
+  , updateCharSettings
+    -- * Character settings
+  , CharacterSettings(..)
+  , emptyCharacterSettings
+  , BindGroup(..)
+  , emptyBindGroup
+  , BindOptionType(..)
+  , BindOption(..)
+  , MenuItem(..)
+  , MenuItemEx(..)
+    -- * Surface types
+  , Surface(..)
+  , SurfaceDefinition(..)
+  , emptySurfaceDefinition
+  , Surfaces(..)
+  , emptySurfaces
+  , SurfacesDescript(..)
+  , emptySurfacesDescript
+  , readSurfaces
+    -- * Surface components
+  , Element(..)
+  , Animation(..)
+  , AnimationPattern(..)
+  , AnimationInterval(..)
+  , AnimationOption(..)
+  , DrawMethod(..)
+  , CollisionRegion(..)
+  , CollisionShape(..)
+  , SortOrder(..)
+    -- * Surface aliases and cursors
+  , SurfaceAlias(..)
+  , CursorDef(..)
+  , ScopeCursors(..)
+  , emptyScopeCursors
+  , TooltipDef(..)
+    -- * Parsing utilities
+  , BraceBlock(..)
+  , tokenizeBraces
+  , parseSurfaceIds
+  , parseDrawMethod
+  , parseAnimationInterval
+  ) where
 
 import           Codec.Text.IConv           ( EncodingName, convert )
 
@@ -33,6 +104,7 @@ isValidUtf8 bs = go (BL.unpack bs)
     go []         = True
     go (b : rest)
       -- ASCII (0x00-0x7F)
+
 
 
         | b <= 0x7F = go rest
@@ -83,6 +155,7 @@ hasUtf8Bom bs = BL.take 3 bs == BL.pack [ 0xEF, 0xBB, 0xBF ]
 guessCharset :: BL.ByteString -> EncodingName
 guessCharset bytes
   -- UTF-8 BOM present
+
 
 
     | hasUtf8Bom bytes = "UTF-8"
@@ -474,8 +547,8 @@ readGhostDescript path = do
               "mousecursor.grip" -> desc { descriptMouseCursorGrip = Just val }
               "mousecursor.arrow" -> desc { descriptMouseCursorArrow = Just val }
 
-              "shiori" -> desc { descriptShiori = rawVal }
-              "makoto" -> desc { descriptMakoto = rawVal }
+              "shiori" -> desc { descriptShiori = val }
+              "makoto" -> desc { descriptMakoto = val }
               "menu.font.name" -> desc { descriptMenuFontName = Just val }
               "menu.font.height" -> desc { descriptMenuFontHeight = readMaybeInt val }
               "shiori.logo.file" -> desc { descriptShioriLogoFile = Just val }
@@ -908,26 +981,26 @@ readShellDescript path = do
         | Just ( bgAnimId, subKey ) <- parseIndexedKey "bindgroup" restKey -> case subKey of
           "name"    ->
             -- Parse "category,partname,thumbnail" or "category,partname"
-            let
-                parts     = T.splitOn "," rawVal
-                category
-                  = if not (null parts)
-                    then clean (head parts)
-                    else ""
-                partName
-                  = if length parts > 1
-                    then clean (parts !! 1)
-                    else ""
-                thumbnail
-                  = if length parts > 2
-                    then Just (clean (parts !! 2))
-                    else Nothing
-              in 
+            case T.splitOn "," rawVal of
+              (cat : pname : thumb : _) ->
                 updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
-                                                                  { bgCategory  = category
-                                                                  , bgPartName  = partName
-                                                                  , bgThumbnail = thumbnail
-                                                                  })) desc
+                  { bgCategory  = clean cat
+                  , bgPartName  = clean pname
+                  , bgThumbnail = Just (clean thumb)
+                  })) desc
+              (cat : pname : _) ->
+                updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
+                  { bgCategory  = clean cat
+                  , bgPartName  = clean pname
+                  , bgThumbnail = Nothing
+                  })) desc
+              (cat : _) ->
+                updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
+                  { bgCategory  = clean cat
+                  , bgPartName  = ""
+                  , bgThumbnail = Nothing
+                  })) desc
+              [] -> desc
           "default" -> let
               isDefault = val == "1" || T.toLower val == "true"
             in 
@@ -1545,6 +1618,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
       -- Elements
 
 
+
         | "element" `T.isPrefixOf` key = case parseElement key val of
           Just el -> sd { sdElements = sdElements sd ++ [ el ] }
           Nothing -> sd
@@ -1739,6 +1813,7 @@ readSurfaces path = do
     processBrace :: Surfaces -> BraceBlock -> Surfaces
     processBrace surf (BraceBlock name lns)
       -- descript brace
+
 
 
         | name == "descript" = surf { surfacesDescript = parseDescriptBrace lns }
