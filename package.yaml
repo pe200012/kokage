@@ -1,0 +1,81 @@
+name: kokage
+version: 0.1.0.0
+github: "pe200012/kokage"
+license: BSD-3-Clause
+author: "pe200012"
+maintainer: "1326263755@qq.com"
+copyright: "2025 pe200012"
+
+extra-source-files:
+  - README.md
+  - CHANGELOG.md
+
+description: ukagaka baseware for Linux
+
+dependencies:
+  - base >= 4.7 && < 5
+  - text
+  - containers
+  - bytestring
+  - iconv # Shift-JIS encoding support
+  - vector
+  - megaparsec # parsing
+  - gi-gtk # GTK4 bindings (4.0.8 from extra-deps)
+  - gi-gdk # GTK4 Gdk
+  - gi-cairo-render # Cairo rendering
+  - gi-gdkpixbuf # image loading
+  - gi-gio
+  - gi-glib
+  - haskell-gi-base # GI base types
+  - filepath
+  - directory
+  - mtl
+  - transformers
+  - process # Wine subprocess management
+  - base64-bytestring # Base64 encoding for IPC
+  - time # Time for debugging
+  - reactive-banana # FRP
+  - reactive-banana-gi-gtk # FRP with GTK
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Widentities
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wmissing-export-lists
+  - -Wmissing-home-modules
+  - -Wpartial-fields
+  - -Wredundant-constraints
+  - -fwrite-ide-info
+  - -hiedir /home/pe200012/.stack/hiedir
+
+library:
+  source-dirs: src
+
+executables:
+  kokage:
+    main: Main.hs
+    source-dirs: app
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - kokage
+      - optparse-applicative
+
+tests:
+  kokage-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    build-tools:
+      - hspec-discover
+    dependencies:
+      - kokage
+      - hspec
+      - hspec-megaparsec
