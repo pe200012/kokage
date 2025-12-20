@@ -15,22 +15,21 @@ module Kokage.Transparency
   , loadWithTransparency
   ) where
 
-import Control.Exception ( SomeException, catch, bracket )
-import Control.Monad ( forM_ )
+import           Control.Exception     ( SomeException, bracket, catch )
+import           Control.Monad         ( forM_ )
 
-import qualified Data.ByteString as BS
-import Data.Int ( Int32 )
-import Data.Word ( Word8 )
+import qualified Data.ByteString       as BS
+import           Data.Int              ( Int32 )
+import           Data.Word             ( Word8 )
 
-import Foreign.Marshal.Alloc ( mallocBytes, free )
-import Foreign.Ptr ( Ptr, plusPtr )
-import Foreign.Storable ( poke )
+import           Foreign.Marshal.Alloc ( free, mallocBytes )
+import           Foreign.Ptr           ( Ptr, plusPtr )
+import           Foreign.Storable      ( poke )
 
-import qualified GI.GdkPixbuf as Pixbuf
+import qualified GI.GdkPixbuf          as Pixbuf
 
-import System.Directory ( doesFileExist )
-import System.FilePath ( replaceExtension )
-
+import           System.Directory      ( doesFileExist )
+import           System.FilePath       ( replaceExtension )
 
 -- | Apply chroma-key transparency using top-left pixel color.
 -- The color at pixel (0,0) becomes fully transparent throughout the image.
@@ -51,15 +50,22 @@ applyChromaKey pixbuf = do
 
   -- Create new RGBA buffer
   let newRowstride = fromIntegral width * 4
-      bufferSize = fromIntegral height * newRowstride
+      bufferSize   = fromIntegral height * newRowstride
 
   -- Use bracket to ensure cleanup on error
   bracket (mallocBytes bufferSize) free $ \buffer -> do
     -- Process pixels
-    processChromaKey buffer pixelData
-      (fromIntegral width) (fromIntegral height)
-      (fromIntegral rowstride) (fromIntegral nChannels)
-      newRowstride keyR keyG keyB
+    processChromaKey
+      buffer
+      pixelData
+      (fromIntegral width)
+      (fromIntegral height)
+      (fromIntegral rowstride)
+      (fromIntegral nChannels)
+      newRowstride
+      keyR
+      keyG
+      keyB
 
     -- Create new pixbuf - copy the data so we can free buffer
     createRgbaPixbuf buffer width height newRowstride
@@ -68,34 +74,36 @@ applyChromaKey pixbuf = do
 processChromaKey
   :: Ptr Word8    -- ^ Destination buffer
   -> BS.ByteString -- ^ Source pixel data
-  -> Int -> Int    -- ^ Width, height
-  -> Int -> Int    -- ^ Source rowstride, channels
+  -> Int
+  -> Int    -- ^ Width, height
+  -> Int
+  -> Int    -- ^ Source rowstride, channels
   -> Int           -- ^ Dest rowstride
-  -> Word8 -> Word8 -> Word8  -- ^ Chroma key RGB
+  -> Word8
+  -> Word8
+  -> Word8  -- ^ Chroma key RGB
   -> IO ()
-processChromaKey destBuf srcBS width height srcRowstride srcChannels
-                 destRowstride keyR keyG keyB =
-  forM_ [ 0 .. height - 1 ] $ \y ->
-    forM_ [ 0 .. width - 1 ] $ \x -> do
-      let srcOffset = y * srcRowstride + x * srcChannels
-          destOffset = y * destRowstride + x * 4
-          destPtr = destBuf `plusPtr` destOffset
+processChromaKey destBuf srcBS width height srcRowstride srcChannels destRowstride keyR keyG keyB
+  = forM_ [ 0 .. height - 1 ] $ \y -> forM_ [ 0 .. width - 1 ] $ \x -> do
+    let srcOffset  = y * srcRowstride + x * srcChannels
+        destOffset = y * destRowstride + x * 4
+        destPtr    = destBuf `plusPtr` destOffset
 
-          -- O(1) ByteString indexing
-          r = BS.index srcBS srcOffset
-          g = BS.index srcBS (srcOffset + 1)
-          b = BS.index srcBS (srcOffset + 2)
+        -- O(1) ByteString indexing
+        r          = BS.index srcBS srcOffset
+        g          = BS.index srcBS (srcOffset + 1)
+        b          = BS.index srcBS (srcOffset + 2)
 
-          -- Alpha: 0 if matches chroma key, 255 otherwise
-          alpha = if r == keyR && g == keyG && b == keyB
-                  then 0 :: Word8
-                  else 255
+        -- Alpha: 0 if matches chroma key, 255 otherwise
+        alpha
+          = if r == keyR && g == keyG && b == keyB
+            then 0 :: Word8
+            else 255
 
-      poke destPtr r
-      poke (destPtr `plusPtr` 1) g
-      poke (destPtr `plusPtr` 2) b
-      poke (destPtr `plusPtr` 3) alpha
-
+    poke destPtr r
+    poke (destPtr `plusPtr` 1) g
+    poke (destPtr `plusPtr` 2) b
+    poke (destPtr `plusPtr` 3) alpha
 
 -- | Apply PNA grayscale alpha mask to a pixbuf.
 -- The R channel of the PNA image becomes the alpha channel.
@@ -114,21 +122,21 @@ applyPnaAlpha pnaPixbuf pngPixbuf = do
 
   -- Create new RGBA buffer
   let newRowstride = fromIntegral pngWidth * 4
-      bufferSize = fromIntegral pngHeight * newRowstride
+      bufferSize   = fromIntegral pngHeight * newRowstride
 
   bracket (mallocBytes bufferSize) free $ \buffer -> do
     -- Copy RGB from PNG, alpha from PNA
-    forM_ [ 0 .. fromIntegral pngHeight - 1 ] $ \y ->
-      forM_ [ 0 .. fromIntegral pngWidth - 1 ] $ \x -> do
-        let pngOffset = y * fromIntegral pngRowstride + x * fromIntegral pngNChannels
-            pnaOffset = y * fromIntegral pnaRowstride + x * fromIntegral pnaNChannels
+    forM_ [ 0 .. fromIntegral pngHeight - 1 ]
+      $ \y -> forM_ [ 0 .. fromIntegral pngWidth - 1 ] $ \x -> do
+        let pngOffset  = y * fromIntegral pngRowstride + x * fromIntegral pngNChannels
+            pnaOffset  = y * fromIntegral pnaRowstride + x * fromIntegral pnaNChannels
             destOffset = y * newRowstride + x * 4
-            destPtr = buffer `plusPtr` destOffset
+            destPtr    = buffer `plusPtr` destOffset
 
-            r = BS.index pngData pngOffset
-            g = BS.index pngData (pngOffset + 1)
-            b = BS.index pngData (pngOffset + 2)
-            alpha = BS.index pnaData pnaOffset  -- PNA R channel = alpha
+            r          = BS.index pngData pngOffset
+            g          = BS.index pngData (pngOffset + 1)
+            b          = BS.index pngData (pngOffset + 2)
+            alpha      = BS.index pnaData pnaOffset  -- PNA R channel = alpha
 
         poke destPtr r
         poke (destPtr `plusPtr` 1) g
@@ -137,30 +145,27 @@ applyPnaAlpha pnaPixbuf pngPixbuf = do
 
     createRgbaPixbuf buffer pngWidth pngHeight newRowstride
 
-
 -- | Load a surface image with appropriate transparency applied.
 -- Priority: PNA file > chroma-key (unless useSelfAlpha is True).
-loadWithTransparency
-  :: FilePath  -- ^ Full path to PNG file
-  -> Bool      -- ^ Use PNG's native alpha (skip chroma-key/PNA)
-  -> IO (Maybe Pixbuf.Pixbuf)
+loadWithTransparency :: FilePath  -- ^ Full path to PNG file
+                     -> Bool      -- ^ Use PNG's native alpha (skip chroma-key/PNA)
+                     -> IO (Maybe Pixbuf.Pixbuf)
 loadWithTransparency pngPath useSelfAlpha = do
   mPixbuf <- loadPixbufSafe pngPath
   case mPixbuf of
-    Nothing -> pure Nothing
+    Nothing     -> pure Nothing
     Just pixbuf
       | useSelfAlpha -> ensureAlpha pixbuf
       | otherwise -> do
-          let pnaPath = replaceExtension pngPath ".pna"
-          hasPna <- doesFileExist pnaPath
-          if hasPna
-            then do
-              mPna <- loadPixbufSafe pnaPath
-              case mPna of
-                Just pna -> Just <$> applyPnaAlpha pna pixbuf
-                Nothing  -> Just <$> applyChromaKey pixbuf
-            else Just <$> applyChromaKey pixbuf
-
+        let pnaPath = replaceExtension pngPath ".pna"
+        hasPna <- doesFileExist pnaPath
+        if hasPna
+          then do
+            mPna <- loadPixbufSafe pnaPath
+            case mPna of
+              Just pna -> Just <$> applyPnaAlpha pna pixbuf
+              Nothing  -> Just <$> applyChromaKey pixbuf
+          else Just <$> applyChromaKey pixbuf
 
 -- | Ensure pixbuf has an alpha channel.
 ensureAlpha :: Pixbuf.Pixbuf -> IO (Maybe Pixbuf.Pixbuf)
@@ -170,13 +175,9 @@ ensureAlpha pixbuf = do
     then pure (Just pixbuf)
     else Pixbuf.pixbufAddAlpha pixbuf False 0 0 0
 
-
 -- | Safely load a pixbuf, returning Nothing on error.
 loadPixbufSafe :: FilePath -> IO (Maybe Pixbuf.Pixbuf)
-loadPixbufSafe path =
-  Pixbuf.pixbufNewFromFile path
-    `catch` \(_ :: SomeException) -> pure Nothing
-
+loadPixbufSafe path = Pixbuf.pixbufNewFromFile path `catch` \(_ :: SomeException) -> pure Nothing
 
 -- | Create an RGBA pixbuf by copying data from a buffer.
 -- This copies the data so the source buffer can be freed.
@@ -196,5 +197,5 @@ createRgbaPixbuf srcBuffer width height rowstride = do
   -- Copy to a new pixbuf so the original buffer can be freed
   mCopied <- Pixbuf.pixbufCopy tmpPixbuf
   case mCopied of
-    Nothing -> error "Failed to copy pixbuf"
+    Nothing     -> error "Failed to copy pixbuf"
     Just copied -> pure copied

@@ -56,6 +56,7 @@ data BlendMethod
 -- Additional Win32 ROP2 codes can be added as needed
 
 
+
   deriving ( Show, Eq )
 
 -- | Font settings used for various text elements
@@ -471,6 +472,7 @@ readBalloonDescript path = do
       -- Basic info
 
 
+
         | key == "charset" = bd { bdCharset = val }
         | key == "name" = bd { bdName = val }
         | key == "type" = bd { bdType = val }
@@ -836,6 +838,7 @@ readBalloonSurfaceOption path = do
     parseKey :: BalloonSurfaceOption -> Text -> Text -> BalloonSurfaceOption
     parseKey bso key val
       -- Text positioning
+
 
 
         | key == "origin.x" = bso { bsoOriginX = parseCoordinate val }

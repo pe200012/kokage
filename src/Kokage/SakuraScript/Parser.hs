@@ -26,15 +26,17 @@ module Kokage.SakuraScript.Parser
   , pEnvVar
   ) where
 
-import Control.Monad (void)
-import Data.Text (Text)
-import qualified Data.Text as T
-import Data.Void (Void)
-import Text.Megaparsec
-import Text.Megaparsec.Char
+import           Control.Monad              ( void )
+
+import           Data.Text                  ( Text )
+import qualified Data.Text                  as T
+import           Data.Void                  ( Void )
+
+import           Text.Megaparsec
+import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
-import Types.SakuraScript
+import           Types.SakuraScript
 
 --------------------------------------------------------------------------------
 -- Parser type
@@ -68,12 +70,7 @@ pScript = many pSakuraScript
 
 -- | Parse a single script element
 pSakuraScript :: Parser SakuraScript
-pSakuraScript = choice
-  [ pEscaped
-  , pEnvVarElement
-  , pCommand
-  , pText
-  ]
+pSakuraScript = choice [ pEscaped, pEnvVarElement, pCommand, pText ]
 
 -- | Parse plain text (until we hit a command or env var)
 pText :: Parser SakuraScript
@@ -91,18 +88,20 @@ pEnvVarElement = SSEnvVar <$> pEnvVar
 
 -- | Parse any command (starts with \)
 pCommand :: Parser SakuraScript
-pCommand = char '\\' *> choice
-  [ SSSurface <$> try pSurfaceCmd
-  , SSScope <$> try pScopeCmd
-  , SSBalloon <$> try pBalloonCmd
-  , SSWait <$> try pWaitCmd
-  , SSChoice <$> try pChoiceCmd
-  , SSFont <$> try pFontCmd
-  , SSEvent <$> try pEventCmd
-  , SSSound <$> try pSoundCmd
-  , SSOpen <$> try pOpenCmd
-  , SSMeta <$> try pMetaCmd
-  ]
+pCommand
+  = char '\\'
+  *> choice
+    [ SSSurface <$> try pSurfaceCmd
+    , SSScope <$> try pScopeCmd
+    , SSBalloon <$> try pBalloonCmd
+    , SSWait <$> try pWaitCmd
+    , SSChoice <$> try pChoiceCmd
+    , SSFont <$> try pFontCmd
+    , SSEvent <$> try pEventCmd
+    , SSSound <$> try pSoundCmd
+    , SSOpen <$> try pOpenCmd
+    , SSMeta <$> try pMetaCmd
+    ]
 
 --------------------------------------------------------------------------------
 -- Scope commands
@@ -110,11 +109,12 @@ pCommand = char '\\' *> choice
 
 -- | Parse scope commands: \0, \1, \h, \u, \p[n]
 pScopeCmd :: Parser ScopeCmd
-pScopeCmd = choice
-  [ ScopeMain <$ (char '0' <|> char 'h')
-  , ScopeKero <$ (char '1' <|> char 'u')
-  , ScopeIndex <$> (char 'p' *> pBracketedInt)
-  ]
+pScopeCmd
+  = choice
+    [ ScopeMain <$ (char '0' <|> char 'h')
+    , ScopeKero <$ (char '1' <|> char 'u')
+    , ScopeIndex <$> (char 'p' *> pBracketedInt)
+    ]
 
 --------------------------------------------------------------------------------
 -- Surface commands
@@ -122,18 +122,12 @@ pScopeCmd = choice
 
 -- | Parse surface commands
 pSurfaceCmd :: Parser SurfaceCmd
-pSurfaceCmd = choice
-  [ pSurfaceChange
-  , pSurfaceAnim
-  , pSurfaceBang
-  ]
+pSurfaceCmd = choice [ pSurfaceChange, pSurfaceAnim, pSurfaceBang ]
 
 -- | Parse surface change: \s[n] or \s[alias]
 pSurfaceChange :: Parser SurfaceCmd
-pSurfaceChange = char 's' *> pBracketed
-  (   try (SurfaceChange <$> pInt)
-  <|> (SurfaceChangeAlias <$> pIdentifier)
-  )
+pSurfaceChange
+  = char 's' *> pBracketed (try (SurfaceChange <$> pInt) <|> (SurfaceChangeAlias <$> pIdentifier))
 
 -- | Parse animation command: \i[n] or \i[n,action]
 pSurfaceAnim :: Parser SurfaceCmd
@@ -146,21 +140,27 @@ pSurfaceAnim = char 'i' *> pBracketed pAnimCmd
 
 -- | Parse animation action
 pAnimAction :: Parser AnimAction
-pAnimAction = choice
-  [ AnimStart <$ string "start"
-  , AnimStop <$ string "stop"
-  , AnimPause <$ string "pause"
-  , AnimResume <$ string "resume"
-  ]
+pAnimAction
+  = choice
+    [ AnimStart <$ string "start"
+    , AnimStop <$ string "stop"
+    , AnimPause <$ string "pause"
+    , AnimResume <$ string "resume"
+    ]
 
 -- | Parse surface bang commands: \![surface,...]
 pSurfaceBang :: Parser SurfaceCmd
-pSurfaceBang = string "![" *> string "surface" *> pComma *> choice
-  [ SurfaceLockRepaint True <$ string "lock,repaint"
-  , SurfaceLockRepaint False <$ string "unlock,repaint"
-  , pSurfaceAlignment
-  , pSurfaceAlpha
-  ] <* char ']'
+pSurfaceBang
+  = string "!["
+  *> string "surface"
+  *> pComma
+  *> choice
+    [ SurfaceLockRepaint True <$ string "lock,repaint"
+    , SurfaceLockRepaint False <$ string "unlock,repaint"
+    , pSurfaceAlignment
+    , pSurfaceAlpha
+    ]
+  <* char ']'
 
 -- | Parse surface alignment
 pSurfaceAlignment :: Parser SurfaceCmd
@@ -171,20 +171,18 @@ pSurfaceAlignment = string "set,align" *> pComma *> do
   pure $ SurfaceAlignment target align
 
 pAlignTarget :: Parser AlignTarget
-pAlignTarget = choice
-  [ AlignDesktop <$ string "desktop"
-  , AlignOwner <$ string "owner"
-  ]
+pAlignTarget = choice [ AlignDesktop <$ string "desktop", AlignOwner <$ string "owner" ]
 
 pDesktopAlign :: Parser DesktopAlign
-pDesktopAlign = choice
-  [ AlignLeft <$ string "left"
-  , AlignRight <$ string "right"
-  , AlignTop <$ string "top"
-  , AlignBottom <$ string "bottom"
-  , AlignCenter <$ string "center"
-  , AlignFree <$ string "free"
-  ]
+pDesktopAlign
+  = choice
+    [ AlignLeft <$ string "left"
+    , AlignRight <$ string "right"
+    , AlignTop <$ string "top"
+    , AlignBottom <$ string "bottom"
+    , AlignCenter <$ string "center"
+    , AlignFree <$ string "free"
+    ]
 
 -- | Parse surface alpha
 pSurfaceAlpha :: Parser SurfaceCmd
@@ -196,15 +194,16 @@ pSurfaceAlpha = string "set,alpha" *> pComma *> (SurfaceAlpha <$> pInt)
 
 -- | Parse balloon commands
 pBalloonCmd :: Parser BalloonCmd
-pBalloonCmd = choice
-  [ pBalloonChange
-  , pNewline
-  , Clear <$ char 'c'
-  , pClearChars
-  , pCursorMove
-  , pBalloonHideOrImage
-  , pBalloonBang
-  ]
+pBalloonCmd
+  = choice
+    [ pBalloonChange
+    , pNewline
+    , Clear <$ char 'c'
+    , pClearChars
+    , pCursorMove
+    , pBalloonHideOrImage
+    , pBalloonBang
+    ]
 
 -- | Parse balloon change: \b[n]
 pBalloonChange :: Parser BalloonCmd
@@ -212,11 +211,13 @@ pBalloonChange = char 'b' *> pBracketed (BalloonChange <$> pInt)
 
 -- | Parse newline variants: \n, \n[half], \n[percent,n]
 pNewline :: Parser BalloonCmd
-pNewline = char 'n' *> option Newline
-  (pBracketed $ choice
-    [ NewlineHalf <$ string "half"
-    , NewlinePercent <$> (string "percent" *> pComma *> pInt)
-    ])
+pNewline
+  = char 'n'
+  *> option
+    Newline
+    (pBracketed
+     $ choice
+       [ NewlineHalf <$ string "half", NewlinePercent <$> (string "percent" *> pComma *> pInt) ])
 
 -- | Parse clear chars: \_c[n]
 pClearChars :: Parser BalloonCmd
@@ -234,42 +235,44 @@ pCursorMove = string "_l" *> pBracketed pCursorMoveArgs
 
 -- | Parse balloon hide or image: \_b or \_b[...]
 pBalloonHideOrImage :: Parser BalloonCmd
-pBalloonHideOrImage = string "_b" *> option BalloonHide
-  (pBracketed (BalloonImage <$> pBalloonImageSpec))
+pBalloonHideOrImage
+  = string "_b" *> option BalloonHide (pBracketed (BalloonImage <$> pBalloonImageSpec))
 
 -- | Parse balloon image spec
 pBalloonImageSpec :: Parser BalloonImageSpec
 pBalloonImageSpec = do
   file <- pQuotedString <|> pIdentifier
   opts <- many (pComma *> pImageOpt)
-  pure $ foldr applyOpt defaultSpec{ biFile = file } opts
+  pure $ foldr applyOpt defaultSpec { biFile = file } opts
   where
     defaultSpec = BalloonImageSpec "" Nothing Nothing False False False Nothing
 
-    pImageOpt = choice
-      [ ("x",) <$> (string "x=" *> pInt)
-      , ("y",) <$> (string "y=" *> pInt)
-      , ("inline", 1) <$ string "inline"
-      , ("opaque", 1) <$ string "opaque"
-      , ("useSelfAlpha", 1) <$ string "useSelfAlpha"
-      ]
+    pImageOpt
+      = choice
+        [ ( "x",  ) <$> (string "x=" *> pInt)
+        , ( "y",  ) <$> (string "y=" *> pInt)
+        , ( "inline", 1 ) <$ string "inline"
+        , ( "opaque", 1 ) <$ string "opaque"
+        , ( "useSelfAlpha", 1 ) <$ string "useSelfAlpha"
+        ]
 
-    applyOpt :: (String, Int) -> BalloonImageSpec -> BalloonImageSpec
-    applyOpt ("x", v) s = s { biX = Just v }
-    applyOpt ("y", v) s = s { biY = Just v }
-    applyOpt ("inline", _) s = s { biInline = True }
-    applyOpt ("opaque", _) s = s { biOpaque = True }
-    applyOpt ("useSelfAlpha", _) s = s { biUseSelfAlpha = True }
+    applyOpt :: ( String, Int ) -> BalloonImageSpec -> BalloonImageSpec
+    applyOpt ( "x", v ) s = s { biX = Just v }
+    applyOpt ( "y", v ) s = s { biY = Just v }
+    applyOpt ( "inline", _ ) s = s { biInline = True }
+    applyOpt ( "opaque", _ ) s = s { biOpaque = True }
+    applyOpt ( "useSelfAlpha", _ ) s = s { biUseSelfAlpha = True }
     applyOpt _ s = s
 
 -- | Parse balloon bang commands
 pBalloonBang :: Parser BalloonCmd
-pBalloonBang = string "![" *> string "balloon" *> pComma *> choice
-  [ BalloonShow <$ string "show"
-  , BalloonHide <$ string "hide"
-  , pBalloonOffset
-  , pBalloonTimeout
-  ] <* char ']'
+pBalloonBang
+  = string "!["
+  *> string "balloon"
+  *> pComma
+  *> choice
+    [ BalloonShow <$ string "show", BalloonHide <$ string "hide", pBalloonOffset, pBalloonTimeout ]
+  <* char ']'
 
 pBalloonOffset :: Parser BalloonCmd
 pBalloonOffset = string "set,offset" *> pComma *> do
@@ -279,8 +282,7 @@ pBalloonOffset = string "set,offset" *> pComma *> do
   pure $ BalloonOffset x y
 
 pBalloonTimeout :: Parser BalloonCmd
-pBalloonTimeout = string "set,timeout" *> pComma *>
-  (BalloonTimeout . Just <$> pInt)
+pBalloonTimeout = string "set,timeout" *> pComma *> (BalloonTimeout . Just <$> pInt)
 
 --------------------------------------------------------------------------------
 -- Wait commands
@@ -288,15 +290,16 @@ pBalloonTimeout = string "set,timeout" *> pComma *>
 
 -- | Parse wait commands
 pWaitCmd :: Parser WaitCmd
-pWaitCmd = choice
-  [ pWaitSimple
-  , pWaitMs
-  , pWaitUntil
-  , ClickWait <$ char 'x'
-  , ClickWaitNoClear <$ string "_q"
-  , TimeCriticalStart <$ char 't'
-  , pWaitBang
-  ]
+pWaitCmd
+  = choice
+    [ pWaitSimple
+    , pWaitMs
+    , pWaitUntil
+    , ClickWait <$ char 'x'
+    , ClickWaitNoClear <$ string "_q"
+    , TimeCriticalStart <$ char 't'
+    , pWaitBang
+    ]
 
 -- | Parse simple wait: \w[n]
 pWaitSimple :: Parser WaitCmd
@@ -312,9 +315,12 @@ pWaitUntil = string "__w" *> pBracketed (WaitUntil <$> pInt)
 
 -- | Parse wait bang commands
 pWaitBang :: Parser WaitCmd
-pWaitBang = string "![" *> string "wait" *> pComma *> choice
-  [ WaitAnimComplete <$> (string "animation" *> pComma *> pInt)
-  ] <* char ']'
+pWaitBang
+  = string "!["
+  *> string "wait"
+  *> pComma
+  *> choice [ WaitAnimComplete <$> (string "animation" *> pComma *> pInt) ]
+  <* char ']'
 
 --------------------------------------------------------------------------------
 -- Choice commands
@@ -322,12 +328,7 @@ pWaitBang = string "![" *> string "wait" *> pComma *> choice
 
 -- | Parse choice commands
 pChoiceCmd :: Parser ChoiceCmd
-pChoiceCmd = choice
-  [ pChoiceBasic
-  , pChoiceScript
-  , pChoiceNoTimeout
-  , pAnchor
-  ]
+pChoiceCmd = choice [ pChoiceBasic, pChoiceScript, pChoiceNoTimeout, pAnchor ]
 
 -- | Parse basic choice: \q[text,action]
 pChoiceBasic :: Parser ChoiceCmd
@@ -375,10 +376,11 @@ pChoiceText = T.pack <$> many (satisfy (\c -> c /= ',' && c /= ']'))
 
 -- | Parse choice action
 pChoiceAction :: Parser ChoiceAction
-pChoiceAction = choice
-  [ try $ ChoiceURL <$> (string "http" *> (T.pack . ("http" ++) <$> many (satisfy (/= ']'))))
-  , ChoiceEvent <$> pIdentifier
-  ]
+pChoiceAction
+  = choice
+    [ try $ ChoiceURL <$> (string "http" *> (T.pack . ("http" ++) <$> many (satisfy (/= ']'))))
+    , ChoiceEvent <$> pIdentifier
+    ]
 
 --------------------------------------------------------------------------------
 -- Font commands
@@ -390,25 +392,29 @@ pFontCmd = char 'f' *> pBracketed pFontArg
 
 -- | Parse font argument
 pFontArg :: Parser FontCmd
-pFontArg = choice
-  [ pFontAlign
-  , pFontName
-  , pFontHeight
-  , pFontColor
-  , pFontBold
-  , pFontItalic
-  , pFontStrike
-  , pFontUnderline
-  , pFontDefault
-  ]
+pFontArg
+  = choice
+    [ pFontAlign
+    , pFontName
+    , pFontHeight
+    , pFontColor
+    , pFontBold
+    , pFontItalic
+    , pFontStrike
+    , pFontUnderline
+    , pFontDefault
+    ]
 
 pFontAlign :: Parser FontCmd
-pFontAlign = string "align" *> pComma *> choice
-  [ FontAlign HAlignLeft <$ string "left"
-  , FontAlign HAlignCenter <$ string "center"
-  , FontAlign HAlignRight <$ string "right"
-  , FontAlign HAlignDefault <$ string "default"
-  ]
+pFontAlign
+  = string "align"
+  *> pComma
+  *> choice
+    [ FontAlign HAlignLeft <$ string "left"
+    , FontAlign HAlignCenter <$ string "center"
+    , FontAlign HAlignRight <$ string "right"
+    , FontAlign HAlignDefault <$ string "default"
+    ]
 
 pFontName :: Parser FontCmd
 pFontName = string "name" *> pComma *> (FontName <$> pQuotedStringOrId)
@@ -417,19 +423,20 @@ pFontHeight :: Parser FontCmd
 pFontHeight = string "height" *> pComma *> (FontHeight <$> pFontSize)
 
 pFontSize :: Parser FontSize
-pFontSize = choice
-  [ FontSizeDefault <$ string "default"
-  , try pFontSizeRelative
-  , try pFontSizePercent
-  , FontSizeAbsolute <$> pInt
-  ]
+pFontSize
+  = choice
+    [ FontSizeDefault <$ string "default"
+    , try pFontSizeRelative
+    , try pFontSizePercent
+    , FontSizeAbsolute <$> pInt
+    ]
   where
     pFontSizeRelative = do
       sign <- (id <$ char '+') <|> (negate <$ char '-')
       n <- pInt
       pure $ FontSizeRelative (sign n)
 
-    pFontSizePercent = do
+    pFontSizePercent  = do
       n <- pInt
       _ <- char '%'
       pure $ FontSizePercent n
@@ -453,11 +460,12 @@ pFontDefault :: Parser FontCmd
 pFontDefault = FontDefault <$ string "default"
 
 pFontToggle :: Parser FontToggle
-pFontToggle = choice
-  [ ToggleOn <$ (string "true" <|> string "on")
-  , ToggleOff <$ (string "false" <|> string "off")
-  , ToggleDefault <$ string "default"
-  ]
+pFontToggle
+  = choice
+    [ ToggleOn <$ (string "true" <|> string "on")
+    , ToggleOff <$ (string "false" <|> string "off")
+    , ToggleDefault <$ string "default"
+    ]
 
 --------------------------------------------------------------------------------
 -- Event commands
@@ -465,11 +473,7 @@ pFontToggle = choice
 
 -- | Parse event commands
 pEventCmd :: Parser EventCmd
-pEventCmd = choice
-  [ EventExit <$ char 'e'
-  , pEventChain
-  , pEventBang
-  ]
+pEventCmd = choice [ EventExit <$ char 'e', pEventChain, pEventBang ]
 
 -- | Parse event chain: \-
 pEventChain :: Parser EventCmd
@@ -477,14 +481,8 @@ pEventChain = char '-' *> pure (EventScript "" "")
 
 -- | Parse event bang commands
 pEventBang :: Parser EventCmd
-pEventBang = string "![" *> choice
-  [ pRaise
-  , pEmbed
-  , pNotify
-  , pTimerRaise
-  , pVanish
-  , pUpdate
-  ] <* char ']'
+pEventBang
+  = string "![" *> choice [ pRaise, pEmbed, pNotify, pTimerRaise, pVanish, pUpdate ] <* char ']'
 
 pRaise :: Parser EventCmd
 pRaise = string "raise" *> pComma *> do
@@ -512,13 +510,16 @@ pVanish :: Parser EventCmd
 pVanish = EventVanish <$ string "vanish"
 
 pUpdate :: Parser EventCmd
-pUpdate = string "update" *> pComma *> choice
-  [ EventUpdate UpdateCheck <$ string "check"
-  , EventUpdate UpdateCheckAll <$ string "checkall"
-  , EventUpdate UpdateGhost <$ string "ghost"
-  , EventUpdate UpdateShell <$ string "shell"
-  , EventUpdate UpdateBalloon <$ string "balloon"
-  ]
+pUpdate
+  = string "update"
+  *> pComma
+  *> choice
+    [ EventUpdate UpdateCheck <$ string "check"
+    , EventUpdate UpdateCheckAll <$ string "checkall"
+    , EventUpdate UpdateGhost <$ string "ghost"
+    , EventUpdate UpdateShell <$ string "shell"
+    , EventUpdate UpdateBalloon <$ string "balloon"
+    ]
 
 --------------------------------------------------------------------------------
 -- Sound commands
@@ -526,11 +527,7 @@ pUpdate = string "update" *> pComma *> choice
 
 -- | Parse sound commands
 pSoundCmd :: Parser SoundCmd
-pSoundCmd = choice
-  [ pSoundPlay
-  , SoundStop <$ string "_V"
-  , pSoundBang
-  ]
+pSoundCmd = choice [ pSoundPlay, SoundStop <$ string "_V", pSoundBang ]
 
 -- | Parse sound play: \_v[file]
 pSoundPlay :: Parser SoundCmd
@@ -561,10 +558,7 @@ pSoundAction' = do
 
 -- | Parse open commands
 pOpenCmd :: Parser OpenCmd
-pOpenCmd = choice
-  [ pOpenURL
-  , pOpenBang
-  ]
+pOpenCmd = choice [ pOpenURL, pOpenBang ]
 
 -- | Parse URL open: \j[url]
 pOpenURL :: Parser OpenCmd
@@ -572,16 +566,21 @@ pOpenURL = char 'j' *> pBracketed (OpenURL <$> pURLText)
 
 -- | Parse open bang commands
 pOpenBang :: Parser OpenCmd
-pOpenBang = string "![" *> string "open" *> pComma *> choice
-  [ pOpenBrowser
-  , pOpenMailer
-  , pOpenFile
-  , pOpenEditor
-  , pOpenInputBox
-  , pOpenDialog
-  , pOpenTeachBox
-  , pOpenConfigMenu
-  ] <* char ']'
+pOpenBang
+  = string "!["
+  *> string "open"
+  *> pComma
+  *> choice
+    [ pOpenBrowser
+    , pOpenMailer
+    , pOpenFile
+    , pOpenEditor
+    , pOpenInputBox
+    , pOpenDialog
+    , pOpenTeachBox
+    , pOpenConfigMenu
+    ]
+  <* char ']'
 
 pOpenBrowser :: Parser OpenCmd
 pOpenBrowser = string "browser" *> pComma *> (OpenBrowser <$> pURLText)
@@ -601,12 +600,13 @@ pOpenInputBox = string "inputbox" *> pComma *> do
   opts <- many (pComma *> pInputOpt)
   pure $ OpenInputBox eventId opts
   where
-    pInputOpt = choice
-      [ InputDefault <$> (string "default=" *> pQuotedStringOrId)
-      , InputMaxLength <$> (string "maxlength=" *> pInt)
-      , InputPassword <$ string "password"
-      , InputMultiline <$ string "multiline"
-      ]
+    pInputOpt
+      = choice
+        [ InputDefault <$> (string "default=" *> pQuotedStringOrId)
+        , InputMaxLength <$> (string "maxlength=" *> pInt)
+        , InputPassword <$ string "password"
+        , InputMultiline <$ string "multiline"
+        ]
 
 pOpenDialog :: Parser OpenCmd
 pOpenDialog = string "dialog" *> pComma *> do
@@ -615,12 +615,13 @@ pOpenDialog = string "dialog" *> pComma *> do
   opt <- pDialogOpt
   pure $ OpenDialog eventId opt
   where
-    pDialogOpt = choice
-      [ DialogOK <$ string "ok"
-      , DialogOKCancel <$ string "okcancel"
-      , DialogYesNo <$ string "yesno"
-      , DialogYesNoCancel <$ string "yesnocancel"
-      ]
+    pDialogOpt
+      = choice
+        [ DialogOK <$ string "ok"
+        , DialogOKCancel <$ string "okcancel"
+        , DialogYesNo <$ string "yesno"
+        , DialogYesNoCancel <$ string "yesnocancel"
+        ]
 
 pOpenTeachBox :: Parser OpenCmd
 pOpenTeachBox = OpenTeachBox <$ string "teachbox"
@@ -634,29 +635,25 @@ pOpenConfigMenu = OpenConfigMenu <$ string "configmenu"
 
 -- | Parse meta commands
 pMetaCmd :: Parser MetaCmd
-pMetaCmd = string "![" *> choice
-  [ pMetaSet
-  , pMetaGet
-  , pMetaReload
-  , pMetaExecute
-  , pPassiveMode
-  , pLock
-  , pUnlock
-  ] <* char ']'
+pMetaCmd
+  = string "!["
+  *> choice [ pMetaSet, pMetaGet, pMetaReload, pMetaExecute, pPassiveMode, pLock, pUnlock ]
+  <* char ']'
 
 pMetaSet :: Parser MetaCmd
 pMetaSet = string "set" *> pComma *> (MetaSet <$> pSetProperty)
 
 pSetProperty :: Parser SetProperty
-pSetProperty = choice
-  [ SetAutoscroll <$> (string "autoscroll" *> pComma *> pBool)
-  , SetVerbatim <$> (string "verbatim" *> pComma *> pBool)
-  , SetBalloonTimeout <$> (string "balloontimeout" *> pComma *> pInt)
-  , SetChoiceTimeout <$> (string "choicetimeout" *> pComma *> pInt)
-  , SetWalkSpeed <$> (string "walkspeed" *> pComma *> pInt)
-  , SetTalkInterval <$> (string "talkinterval" *> pComma *> pInt)
-  , pGenericSet
-  ]
+pSetProperty
+  = choice
+    [ SetAutoscroll <$> (string "autoscroll" *> pComma *> pBool)
+    , SetVerbatim <$> (string "verbatim" *> pComma *> pBool)
+    , SetBalloonTimeout <$> (string "balloontimeout" *> pComma *> pInt)
+    , SetChoiceTimeout <$> (string "choicetimeout" *> pComma *> pInt)
+    , SetWalkSpeed <$> (string "walkspeed" *> pComma *> pInt)
+    , SetTalkInterval <$> (string "talkinterval" *> pComma *> pInt)
+    , pGenericSet
+    ]
   where
     pGenericSet = do
       name <- pIdentifier
@@ -668,46 +665,46 @@ pMetaGet :: Parser MetaCmd
 pMetaGet = string "get" *> pComma *> (MetaGet <$> pGetProperty)
 
 pGetProperty :: Parser GetProperty
-pGetProperty = choice
-  [ GetYear <$ string "year"
-  , GetMonth <$ string "month"
-  , GetDay <$ string "day"
-  , GetHour <$ string "hour"
-  , GetMinute <$ string "minute"
-  , GetSecond <$ string "second"
-  , GetProperty' <$> pIdentifier
-  ]
+pGetProperty
+  = choice
+    [ GetYear <$ string "year"
+    , GetMonth <$ string "month"
+    , GetDay <$ string "day"
+    , GetHour <$ string "hour"
+    , GetMinute <$ string "minute"
+    , GetSecond <$ string "second"
+    , GetProperty' <$> pIdentifier
+    ]
 
 pMetaReload :: Parser MetaCmd
 pMetaReload = string "reload" *> pComma *> (MetaReload <$> pReloadTarget)
 
 pReloadTarget :: Parser ReloadTarget
-pReloadTarget = choice
-  [ ReloadGhost <$ string "ghost"
-  , ReloadShell <$ string "shell"
-  , ReloadBalloon <$ string "balloon"
-  , ReloadPlugin <$ string "plugin"
-  , ReloadHeadline <$ string "headline"
-  , ReloadAll <$ string "all"
-  ]
+pReloadTarget
+  = choice
+    [ ReloadGhost <$ string "ghost"
+    , ReloadShell <$ string "shell"
+    , ReloadBalloon <$ string "balloon"
+    , ReloadPlugin <$ string "plugin"
+    , ReloadHeadline <$ string "headline"
+    , ReloadAll <$ string "all"
+    ]
 
 pMetaExecute :: Parser MetaCmd
 pMetaExecute = string "execute" *> pComma *> (MetaExecute <$> pExecuteCmd)
 
 pExecuteCmd :: Parser ExecuteCmd
-pExecuteCmd = choice
-  [ pExecuteHttpGet
-  , pExecuteHttpPost
-  , pExecuteFile
-  ]
+pExecuteCmd = choice [ pExecuteHttpGet, pExecuteHttpPost, pExecuteFile ]
   where
-    pExecuteHttpGet = string "http-get" *> pComma *> (ExecuteHTTPGet <$> pURLText)
+    pExecuteHttpGet  = string "http-get" *> pComma *> (ExecuteHTTPGet <$> pURLText)
+
     pExecuteHttpPost = string "http-post" *> pComma *> do
       url <- pURLText
       _ <- pComma
       body <- pQuotedStringOrId
       pure $ ExecuteHTTPPost url body
-    pExecuteFile = string "file" *> pComma *> (ExecuteFile <$> pQuotedStringOrId)
+
+    pExecuteFile     = string "file" *> pComma *> (ExecuteFile <$> pQuotedStringOrId)
 
 pPassiveMode :: Parser MetaCmd
 pPassiveMode = string "passivemode" *> pComma *> (MetaPassiveMode <$> pBool)
@@ -724,34 +721,36 @@ pUnlock = string "unlock" *> pComma *> (MetaUnlock <$> pIdentifier)
 
 -- | Parse environment variable: %varname
 pEnvVar :: Parser EnvVar
-pEnvVar = char '%' *> choice
-  -- Time
-  [ EnvYear <$ string "year"
-  , EnvMonth <$ string "month"
-  , EnvDay <$ string "day"
-  , EnvHour <$ string "hour"
-  , EnvMinute <$ string "minute"
-  , EnvSecond <$ string "second"
-  , EnvWeekday <$ string "weekday"
-  -- Ghost info
-  , EnvSelfname <$ string "selfname"
-  , EnvSelfname2 <$ string "selfname2"
-  , EnvKeroname <$ string "keroname"
-  , EnvGhostname <$ string "ghostname"
-  , EnvShellname <$ string "shellname"
-  -- User info
-  , EnvUsername <$ string "username"
-  , EnvOS <$ string "os"
-  -- Screen
-  , EnvScreenWidth <$ string "screenwidth"
-  , EnvScreenHeight <$ string "screenheight"
-  -- Surface
-  , EnvSurface <$ string "surface"
-  , EnvSurface0 <$ string "surface0"
-  , EnvSurface1 <$ string "surface1"
-  -- Custom fallback
-  , EnvCustom <$> pIdentifier
-  ]
+pEnvVar
+  = char '%'
+  *> choice
+    -- Time
+    [ EnvYear <$ string "year"
+    , EnvMonth <$ string "month"
+    , EnvDay <$ string "day"
+    , EnvHour <$ string "hour"
+    , EnvMinute <$ string "minute"
+    , EnvSecond <$ string "second"
+    , EnvWeekday <$ string "weekday"
+      -- Ghost info
+    , EnvSelfname <$ string "selfname"
+    , EnvSelfname2 <$ string "selfname2"
+    , EnvKeroname <$ string "keroname"
+    , EnvGhostname <$ string "ghostname"
+    , EnvShellname <$ string "shellname"
+      -- User info
+    , EnvUsername <$ string "username"
+    , EnvOS <$ string "os"
+      -- Screen
+    , EnvScreenWidth <$ string "screenwidth"
+    , EnvScreenHeight <$ string "screenheight"
+      -- Surface
+    , EnvSurface <$ string "surface"
+    , EnvSurface0 <$ string "surface0"
+    , EnvSurface1 <$ string "surface1"
+      -- Custom fallback
+    , EnvCustom <$> pIdentifier
+    ]
 
 --------------------------------------------------------------------------------
 -- Utility parsers
@@ -778,10 +777,7 @@ pComma = void $ char ','
 
 -- | Parse boolean
 pBool :: Parser Bool
-pBool = choice
-  [ True <$ (string "true" <|> string "1")
-  , False <$ (string "false" <|> string "0")
-  ]
+pBool = choice [ True <$ (string "true" <|> string "1"), False <$ (string "false" <|> string "0") ]
 
 -- | Parse identifier (alphanumeric + underscore)
 pIdentifier :: Parser Text
@@ -803,12 +799,9 @@ pURLText = T.pack <$> many (satisfy (\c -> c /= ',' && c /= ']'))
 
 -- | Parse color specification
 pColor :: Parser Color
-pColor = choice
-  [ ColorDefault <$ string "default"
-  , try pColorHex
-  , try pColorRGB
-  , ColorName <$> pIdentifier
-  ]
+pColor
+  = choice
+    [ ColorDefault <$ string "default", try pColorHex, try pColorRGB, ColorName <$> pIdentifier ]
 
 -- | Parse hex color: #RGB or #RRGGBB
 pColorHex :: Parser Color
@@ -831,25 +824,26 @@ pColorRGB = do
 
 -- | Parse cursor position
 pCursorPos :: Parser CursorPos
-pCursorPos = choice
-  [ PosUnchanged <$ string "@"
-  , try pPosRelative
-  , try pPosEm
-  , try pPosPercent
-  , PosAbsolute <$> pInt
-  ]
+pCursorPos
+  = choice
+    [ PosUnchanged <$ string "@"
+    , try pPosRelative
+    , try pPosEm
+    , try pPosPercent
+    , PosAbsolute <$> pInt
+    ]
   where
     pPosRelative = do
       sign <- (id <$ char '+') <|> (negate <$ char '-')
       n <- pInt
       pure $ PosRelative (sign n)
 
-    pPosEm = do
+    pPosEm       = do
       n <- pDouble
       _ <- string "em"
       pure $ PosEm n
 
-    pPosPercent = do
+    pPosPercent  = do
       n <- pDouble
       _ <- char '%'
       pure $ PosPercent n

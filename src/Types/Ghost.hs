@@ -35,6 +35,7 @@ isValidUtf8 bs = go (BL.unpack bs)
       -- ASCII (0x00-0x7F)
 
 
+
         | b <= 0x7F = go rest
         -- 2-byte sequence (0xC0-0xDF followed by 0x80-0xBF)
         | b >= 0xC2 && b <= 0xDF = check1Continuation rest
@@ -83,6 +84,7 @@ hasUtf8Bom bs = BL.take 3 bs == BL.pack [ 0xEF, 0xBB, 0xBF ]
 guessCharset :: BL.ByteString -> EncodingName
 guessCharset bytes
   -- UTF-8 BOM present
+
 
 
     | hasUtf8Bom bytes = "UTF-8"
@@ -1545,6 +1547,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
       -- Elements
 
 
+
         | "element" `T.isPrefixOf` key = case parseElement key val of
           Just el -> sd { sdElements = sdElements sd ++ [ el ] }
           Nothing -> sd
@@ -1739,6 +1742,7 @@ readSurfaces path = do
     processBrace :: Surfaces -> BraceBlock -> Surfaces
     processBrace surf (BraceBlock name lns)
       -- descript brace
+
 
 
         | name == "descript" = surf { surfacesDescript = parseDescriptBrace lns }

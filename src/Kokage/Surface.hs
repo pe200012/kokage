@@ -9,29 +9,29 @@ module Kokage.Surface
   , findSurfaceById
   ) where
 
-import Control.Monad ( forM, forM_, when )
-import Data.Foldable ( find )
-import Data.List ( sortBy )
-import Data.Maybe ( catMaybes )
-import Data.Ord ( comparing )
-import Data.Text ( Text )
-import qualified Data.Text as T
+import           Control.Monad       ( forM, forM_, when )
 
-import qualified GI.GdkPixbuf as Pixbuf
+import           Data.Foldable       ( find )
+import           Data.List           ( sortBy )
+import           Data.Maybe          ( catMaybes )
+import           Data.Ord            ( comparing )
+import           Data.Text           ( Text )
+import qualified Data.Text           as T
 
-import System.Directory ( doesFileExist )
-import System.FilePath ( (</>) )
-import Text.Printf ( printf )
+import qualified GI.GdkPixbuf        as Pixbuf
 
-import Types.Ghost
-  ( Element(..)
-  , DrawMethod(..)
-  , SurfaceDefinition(..)
-  , Surfaces(..)
-  )
+import           Kokage.Transparency ( loadWithTransparency )
 
-import Kokage.Transparency ( loadWithTransparency )
+import           System.Directory    ( doesFileExist )
+import           System.FilePath     ( (</>) )
 
+import           Text.Printf         ( printf )
+
+import           Types.Ghost         ( DrawMethod(..)
+                                     , Element(..)
+                                     , SurfaceDefinition(..)
+                                     , Surfaces(..)
+                                     )
 
 -- | Supported image extensions in order of preference.
 imageExtensions :: [ String ]
@@ -42,14 +42,14 @@ imageExtensions = [ ".png", ".PNG", ".bmp", ".BMP" ]
 -- try each supported extension until one exists.
 findElementImage :: FilePath -> Text -> IO (Maybe FilePath)
 findElementImage shellDir fileName = do
-  let baseName = T.unpack fileName
+  let baseName   = T.unpack fileName
       -- First try the exact filename (may already have extension)
-      candidates = (shellDir </> baseName)
-                 : [ shellDir </> baseName <> ext | ext <- imageExtensions ]
+      candidates
+        = (shellDir </> baseName) : [ shellDir </> baseName <> ext | ext <- imageExtensions ]
   findExisting candidates
   where
     findExisting :: [ FilePath ] -> IO (Maybe FilePath)
-    findExisting [] = return Nothing
+    findExisting []       = return Nothing
     findExisting (p : ps) = do
       exists <- doesFileExist p
       if exists
@@ -61,7 +61,7 @@ loadElementPixbuf :: FilePath -> Element -> IO (Maybe ( Pixbuf.Pixbuf, Int, Int 
 loadElementPixbuf shellDir el = do
   mPath <- findElementImage shellDir (elemFile el)
   case mPath of
-    Nothing -> do
+    Nothing   -> do
       putStrLn $ "Warning: Could not find image: " <> T.unpack (elemFile el)
       return Nothing
     Just path -> do
@@ -70,7 +70,7 @@ loadElementPixbuf shellDir el = do
       let useSelfAlpha = elemMethod el == DrawAsis
       mPixbuf <- loadWithTransparency path useSelfAlpha
       case mPixbuf of
-        Nothing -> do
+        Nothing     -> do
           putStrLn $ "Warning: Failed to load image: " <> path
           return Nothing
         Just pixbuf -> return $ Just ( pixbuf, elemX el, elemY el )
@@ -108,7 +108,7 @@ loadDefaultSurface shellDir surfId = do
   let defaultName = T.pack $ printf "surface%04d" surfId
   mPath <- findElementImage shellDir defaultName
   case mPath of
-    Nothing -> do
+    Nothing   -> do
       putStrLn $ "Warning: No default surface image found for surface " <> show surfId
       return Nothing
     Just path -> do
@@ -131,7 +131,7 @@ compositePixbufs first pixbufs = do
     height
 
   case mDest of
-    Nothing -> do
+    Nothing   -> do
       putStrLn "Error: Failed to create destination pixbuf"
       return Nothing
     Just dest -> do
@@ -150,22 +150,21 @@ compositePixbufs first pixbufs = do
         -- Only composite if within bounds
         when (destX < width && destY < height)
           $ Pixbuf.pixbufComposite
-              pixbuf              -- src
-              dest                -- dest
-              destX               -- dest_x
-              destY               -- dest_y
-              (min srcWidth (width - destX))   -- dest_width
-              (min srcHeight (height - destY)) -- dest_height
-              (fromIntegral x)    -- offset_x
-              (fromIntegral y)    -- offset_y
-              1.0                 -- scale_x
-              1.0                 -- scale_y
-              Pixbuf.InterpTypeBilinear  -- interp_type
-              255                 -- overall_alpha
+            pixbuf              -- src
+            dest                -- dest
+            destX               -- dest_x
+            destY               -- dest_y
+            (min srcWidth (width - destX))   -- dest_width
+            (min srcHeight (height - destY)) -- dest_height
+            (fromIntegral x)    -- offset_x
+            (fromIntegral y)    -- offset_y
+            1.0                 -- scale_x
+            1.0                 -- scale_y
+            Pixbuf.InterpTypeBilinear  -- interp_type
+            255                 -- overall_alpha
 
       return $ Just dest
 
 -- | Find a surface by ID from a surfaces definition.
 findSurfaceById :: Int -> Surfaces -> Maybe SurfaceDefinition
-findSurfaceById surfId surfaces =
-  find (\sd -> sdId sd == surfId) (surfaceDefinitions surfaces)
+findSurfaceById surfId surfaces = find (\sd -> sdId sd == surfId) (surfaceDefinitions surfaces)
