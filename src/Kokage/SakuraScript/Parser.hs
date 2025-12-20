@@ -70,17 +70,13 @@ pScript = many pSakuraScript
 
 -- | Parse a single script element
 pSakuraScript :: Parser SakuraScript
-pSakuraScript = choice [ pEscaped, pEnvVarElement, pCommand, pText ]
+pSakuraScript = choice [ pEnvVarElement, pCommand, pText ]
 
 -- | Parse plain text (until we hit a command or env var)
 pText :: Parser SakuraScript
 pText = SSText . T.pack <$> some (satisfy isPlainChar)
   where
     isPlainChar c = c /= '\\' && c /= '%'
-
--- | Parse escaped character
-pEscaped :: Parser SakuraScript
-pEscaped = SSEscape <$> (char '\\' *> oneOf ("\\%nt" :: String))
 
 -- | Parse environment variable element
 pEnvVarElement :: Parser SakuraScript
@@ -101,6 +97,8 @@ pCommand
     , SSSound <$> try pSoundCmd
     , SSOpen <$> try pOpenCmd
     , SSMeta <$> try pMetaCmd
+      -- Escape sequences must come last (fallback for \\, \%)
+    , SSEscape <$> oneOf ("\\%" :: String)
     ]
 
 --------------------------------------------------------------------------------
@@ -301,9 +299,9 @@ pWaitCmd
     , pWaitBang
     ]
 
--- | Parse simple wait: \w[n]
+-- | Parse simple wait: \wN (single digit)
 pWaitSimple :: Parser WaitCmd
-pWaitSimple = char 'w' *> pBracketed (WaitSimple <$> pInt)
+pWaitSimple = char 'w' *> (WaitSimple . read . pure <$> digitChar)
 
 -- | Parse ms wait: \_w[n]
 pWaitMs :: Parser WaitCmd

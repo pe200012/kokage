@@ -108,6 +108,7 @@ test-suite kokage-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Kokage.SakuraScript.ParserSpec
       Paths_kokage
   autogen-modules:
       Paths_kokage

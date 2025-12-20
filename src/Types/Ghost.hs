@@ -1,6 +1,77 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
 
-module Types.Ghost ( module Types.Ghost ) where
+-- | Ghost, Shell, and Surface type definitions and parsers
+module Types.Ghost
+  ( -- * Charset utilities
+    isValidUtf8
+  , hasUtf8Bom
+  , guessCharset
+  , detectCharset
+  , detectCharsetFromBytes
+  , convertToUtf8
+    -- * Text utilities
+  , clean
+  , cleanStr
+  , readIntOr
+  , readMaybeInt
+  , readBoolOr
+  , readMaybeBool
+    -- * Ghost types
+  , GhostDescript(..)
+  , emptyGhostDescript
+  , readGhostDescript
+  , Ghost(..)
+  , loadGhost
+    -- * Shell types
+  , ShellDescript(..)
+  , emptyShellDescript
+  , readShellDescript
+  , Shell(..)
+  , loadShell
+  , getCharSettings
+  , updateCharSettings
+    -- * Character settings
+  , CharacterSettings(..)
+  , emptyCharacterSettings
+  , BindGroup(..)
+  , emptyBindGroup
+  , BindOptionType(..)
+  , BindOption(..)
+  , MenuItem(..)
+  , MenuItemEx(..)
+    -- * Surface types
+  , Surface(..)
+  , SurfaceDefinition(..)
+  , emptySurfaceDefinition
+  , Surfaces(..)
+  , emptySurfaces
+  , SurfacesDescript(..)
+  , emptySurfacesDescript
+  , readSurfaces
+    -- * Surface components
+  , Element(..)
+  , Animation(..)
+  , AnimationPattern(..)
+  , AnimationInterval(..)
+  , AnimationOption(..)
+  , DrawMethod(..)
+  , CollisionRegion(..)
+  , CollisionShape(..)
+  , SortOrder(..)
+    -- * Surface aliases and cursors
+  , SurfaceAlias(..)
+  , CursorDef(..)
+  , ScopeCursors(..)
+  , emptyScopeCursors
+  , TooltipDef(..)
+    -- * Parsing utilities
+  , BraceBlock(..)
+  , tokenizeBraces
+  , parseSurfaceIds
+  , parseDrawMethod
+  , parseAnimationInterval
+  ) where
 
 import           Codec.Text.IConv           ( EncodingName, convert )
 
@@ -910,26 +981,26 @@ readShellDescript path = do
         | Just ( bgAnimId, subKey ) <- parseIndexedKey "bindgroup" restKey -> case subKey of
           "name"    ->
             -- Parse "category,partname,thumbnail" or "category,partname"
-            let
-                parts     = T.splitOn "," rawVal
-                category
-                  = if not (null parts)
-                    then clean (head parts)
-                    else ""
-                partName
-                  = if length parts > 1
-                    then clean (parts !! 1)
-                    else ""
-                thumbnail
-                  = if length parts > 2
-                    then Just (clean (parts !! 2))
-                    else Nothing
-              in 
+            case T.splitOn "," rawVal of
+              (cat : pname : thumb : _) ->
                 updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
-                                                                  { bgCategory  = category
-                                                                  , bgPartName  = partName
-                                                                  , bgThumbnail = thumbnail
-                                                                  })) desc
+                  { bgCategory  = clean cat
+                  , bgPartName  = clean pname
+                  , bgThumbnail = Just (clean thumb)
+                  })) desc
+              (cat : pname : _) ->
+                updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
+                  { bgCategory  = clean cat
+                  , bgPartName  = clean pname
+                  , bgThumbnail = Nothing
+                  })) desc
+              (cat : _) ->
+                updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
+                  { bgCategory  = clean cat
+                  , bgPartName  = ""
+                  , bgThumbnail = Nothing
+                  })) desc
+              [] -> desc
           "default" -> let
               isDefault = val == "1" || T.toLower val == "true"
             in 

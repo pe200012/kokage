@@ -1,6 +1,47 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE StrictData #-}
 
-module Types.Balloon ( module Types.Balloon ) where
+-- | Balloon type definitions and parsers
+module Types.Balloon
+  ( -- * Color types
+    RGB(..)
+  , MaybeRGB(..)
+    -- * Style types
+  , ShadowStyle(..)
+  , MarkerStyle(..)
+  , BlendMethod(..)
+    -- * Font and drawing settings
+  , FontSettings(..)
+  , emptyFontSettings
+  , PenSettings(..)
+  , emptyPenSettings
+  , BrushSettings(..)
+  , emptyBrushSettings
+    -- * Cursor and anchor settings
+  , CursorSettings(..)
+  , emptyCursorSettings
+  , AnchorSettings(..)
+  , emptyAnchorSettings
+    -- * Communicate box
+  , CommunicateBoxBackground(..)
+  , emptyCommunicateBoxBackground
+    -- * Balloon descript
+  , BalloonDescript(..)
+  , emptyBalloonDescript
+  , readBalloonDescript
+    -- * Surface options
+  , BalloonSurfaceOption(..)
+  , emptyBalloonSurfaceOption
+  , readBalloonSurfaceOption
+    -- * Balloon container
+  , Balloon(..)
+  , emptyBalloon
+    -- * Parsers
+  , parseShadowStyle
+  , parseMarkerStyle
+  , parseBlendMethod
+  , parseCoordinate
+  ) where
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Map.Strict      ( Map )
