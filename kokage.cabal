@@ -28,10 +28,12 @@ library
       Kokage
       Kokage.Collision
       Kokage.Event
+      Kokage.SakuraScript.Parser
       Kokage.Surface
-      Lib
+      Kokage.Transparency
       Types.Balloon
       Types.Ghost
+      Types.SakuraScript
   other-modules:
       Paths_kokage
   autogen-modules:

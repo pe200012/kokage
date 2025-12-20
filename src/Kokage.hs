@@ -15,7 +15,7 @@ module Kokage
   , module Kokage.Event
   ) where
 
-import Control.Monad ( forM_ )
+import Control.Monad ( forM_, void )
 import Data.GI.Base ( AttrOp((:=)), new, on )
 import Data.Int ( Int32 )
 import Data.Maybe ( listToMaybe )
@@ -28,6 +28,8 @@ import qualified GI.Gtk as Gtk
 
 import Reactive.Banana ( compile )
 import Reactive.Banana.Frameworks ( actuate, newAddHandler )
+
+import Control.Monad.Trans.Maybe ( MaybeT(runMaybeT, MaybeT) )
 
 import Types.Ghost
   ( Ghost(..)
@@ -127,7 +129,18 @@ runGtkApp pixbuf width height collisions = do
       , #defaultWidth := width
       , #defaultHeight := height
       , #resizable := False
+      , #decorated := False  -- Hide title bar
       ]
+
+    -- Make window transparent using CSS
+    cssProvider <- new Gtk.CssProvider []
+    Gtk.cssProviderLoadFromString cssProvider
+      "window.transparent { background-color: transparent; }"
+    display <- Gdk.displayGetDefault
+    case display of
+      Nothing -> putStrLn "Warning: Could not get default display"
+      Just d -> Gtk.styleContextAddProviderForDisplay d cssProvider 800
+    Gtk.widgetAddCssClass window "transparent"
 
     -- Create texture from pixbuf for GTK4
     texture <- Gdk.textureNewForPixbuf pixbuf
@@ -138,21 +151,48 @@ runGtkApp pixbuf width height collisions = do
       , #canShrink := False
       ]
 
-    -- Create click gesture and connect signal BEFORE adding to widget
-    -- This avoids the "disowned pointer" warning since widgetAddController
-    -- transfers ownership of the controller to the widget
-    clickGesture <- new Gtk.GestureClick []
-    (clickHandler, fireClick) <- newAddHandler
-    _ <- on clickGesture #pressed $ \_ x y -> fireClick (x, y)
+    -- Create all event handlers BEFORE creating gestures
+    (dragBeginHandler, fireDragBegin) <- newAddHandler
+    (dragUpdateHandler, fireDragUpdate) <- newAddHandler
+    (dragEndHandler, fireDragEnd) <- newAddHandler
 
-    -- Now add controller to widget (transfers ownership)
-    Gtk.widgetAddController picture clickGesture
+    -- Create drag gesture and connect signals BEFORE adding to widget
+    -- We use only GestureDrag for both click and drag detection
+    -- Click is detected as a drag that ends without moving beyond threshold
+    dragGesture <- new Gtk.GestureDrag []
+    _ <- on dragGesture #dragBegin  $ \x y   -> fireDragBegin (x, y)
+    _ <- on dragGesture #dragUpdate $ \ox oy -> fireDragUpdate (ox, oy)
+    _ <- on dragGesture #dragEnd    $ \ox oy -> fireDragEnd (ox, oy)
+    Gtk.widgetAddController picture dragGesture
 
     -- Set picture as window content
     Gtk.windowSetChild window (Just picture)
 
-    -- Set up FRP network with collision detection
-    network <- compile (setupNetwork window clickHandler collisions)
+    -- Create action to begin window move (passed to FRP network)
+    let beginMove :: Double -> Double -> IO ()
+        beginMove x y = void $ runMaybeT $ do
+          surface <- MaybeT $ Gtk.nativeGetSurface window
+          toplevel <- MaybeT $ Gdk.castTo Gdk.Toplevel surface
+          disp <-  MaybeT Gdk.displayGetDefault
+          seat <- MaybeT $ Gdk.displayGetDefaultSeat disp
+          device <- MaybeT $ Gdk.seatGetPointer seat
+          MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
+
+    -- Build network config
+    let inputHandlers = InputHandlers
+          { ihDragBegin  = dragBeginHandler
+          , ihDragUpdate = dragUpdateHandler
+          , ihDragEnd    = dragEndHandler
+          }
+        networkConfig = NetworkConfig
+          { ncWindow     = window
+          , ncInputs     = inputHandlers
+          , ncCollisions = collisions
+          , ncBeginMove  = beginMove
+          }
+
+    -- Set up and activate FRP network
+    network <- compile (setupNetwork networkConfig)
     actuate network
 
     -- Show window

@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Surface image loading and compositing.
--- Handles loading surface images and compositing elements.
+-- Handles loading surface images and compositing elements with transparency.
 module Kokage.Surface
   ( compositeSurface
   , loadDefaultSurface
@@ -30,6 +30,8 @@ import Types.Ghost
   , Surfaces(..)
   )
 
+import Kokage.Transparency ( loadWithTransparency )
+
 
 -- | Supported image extensions in order of preference.
 imageExtensions :: [ String ]
@@ -54,7 +56,7 @@ findElementImage shellDir fileName = do
         then return (Just p)
         else findExisting ps
 
--- | Load a single element as a pixbuf.
+-- | Load a single element as a pixbuf with transparency applied.
 loadElementPixbuf :: FilePath -> Element -> IO (Maybe ( Pixbuf.Pixbuf, Int, Int ))
 loadElementPixbuf shellDir el = do
   mPath <- findElementImage shellDir (elemFile el)
@@ -63,7 +65,10 @@ loadElementPixbuf shellDir el = do
       putStrLn $ "Warning: Could not find image: " <> T.unpack (elemFile el)
       return Nothing
     Just path -> do
-      mPixbuf <- Pixbuf.pixbufNewFromFile path
+      -- Load with transparency (chroma-key or PNA)
+      -- DrawAsis means "as-is" - use PNG's native alpha, not chroma-key
+      let useSelfAlpha = elemMethod el == DrawAsis
+      mPixbuf <- loadWithTransparency path useSelfAlpha
       case mPixbuf of
         Nothing -> do
           putStrLn $ "Warning: Failed to load image: " <> path
@@ -108,7 +113,7 @@ loadDefaultSurface shellDir surfId = do
       return Nothing
     Just path -> do
       putStrLn $ "Loading default surface: " <> path
-      Pixbuf.pixbufNewFromFile path
+      loadWithTransparency path False
 
 -- | Composite multiple pixbufs onto a destination.
 compositePixbufs :: Pixbuf.Pixbuf -> [ ( Pixbuf.Pixbuf, Int, Int ) ] -> IO (Maybe Pixbuf.Pixbuf)
