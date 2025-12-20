@@ -28,11 +28,14 @@ library
       Kokage
       Kokage.Collision
       Kokage.Event
+      Kokage.Install
       Kokage.SakuraScript.Parser
       Kokage.Surface
       Kokage.Transparency
       Types.Balloon
       Types.Ghost
+      Types.Install
+      Types.Plugin
       Types.SakuraScript
   other-modules:
       Paths_kokage
@@ -65,6 +68,7 @@ library
     , time
     , transformers
     , vector
+    , zip-archive
   default-language: Haskell2010
 
 executable kokage
@@ -102,13 +106,17 @@ executable kokage
     , time
     , transformers
     , vector
+    , zip-archive
   default-language: Haskell2010
 
 test-suite kokage-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Kokage.InstallSpec
       Kokage.SakuraScript.ParserSpec
+      Types.InstallSpec
+      Types.PluginSpec
       Paths_kokage
   autogen-modules:
       Paths_kokage
@@ -140,8 +148,10 @@ test-suite kokage-test
     , process
     , reactive-banana
     , reactive-banana-gi-gtk
+    , temporary
     , text
     , time
     , transformers
     , vector
+    , zip-archive
   default-language: Haskell2010
