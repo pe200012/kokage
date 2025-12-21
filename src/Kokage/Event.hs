@@ -10,9 +10,12 @@ module Kokage.Event
   , CollisionHit(..)
   , DragEvent(..)
   , DragPhase(..)
+  , TimerEvent(..)
     -- * Network Configuration
   , NetworkConfig(..)
   , InputHandlers(..)
+  , TimerHandlers(..)
+  , MoveMode(..)
     -- * Network Setup
   , setupNetwork
     -- * Event Handlers
@@ -21,6 +24,7 @@ module Kokage.Event
   , dragThreshold
   ) where
 
+import           Data.Time.LocalTime        ( LocalTime(..), TimeOfDay(..) )
 import qualified Data.Text                  as T
 
 import qualified GI.Gtk                     as Gtk
@@ -65,6 +69,12 @@ data DragEvent
               }
   deriving ( Show, Eq )
 
+-- | A timer event with the current local time.
+data TimerEvent
+  = TimerEvent { teTime :: !LocalTime  -- ^ Current local time when timer fired
+               }
+  deriving ( Show, Eq )
+
 -- | Input event handlers from GTK gestures.
 -- We use only GestureDrag for both click and drag detection.
 -- A click is detected as a drag that ends without exceeding the threshold.
@@ -75,13 +85,34 @@ data InputHandlers
   , ihDragEnd    :: AddHandler ( Double, Double )  -- ^ Drag ended with offset (dx, dy)
   }
 
+-- | Timer event handlers.
+-- These are fired by GLib timeout sources.
+data TimerHandlers
+  = TimerHandlers
+  { thSecondTick :: AddHandler LocalTime  -- ^ Fires every second with current time
+  , thMinuteTick :: AddHandler LocalTime  -- ^ Fires every minute with current time
+  }
+
+-- | Window move mode.
+-- Different platforms require different approaches to window movement.
+data MoveMode
+  = MoveToplevel (Double -> Double -> IO ())
+    -- ^ Standard toplevel move: call once when drag starts, compositor handles the rest.
+    -- Used on X11 and regular Wayland windows.
+    -- The function is called with the pointer position (x, y) when drag starts.
+  | MoveLayerShell (Double -> Double -> IO ())
+    -- ^ Layer-shell margin-based move: update position on every drag update.
+    -- Used for Wayland layer-shell surfaces which don't support toplevel moves.
+    -- The function is called with the offset (dx, dy) on each drag update.
+
 -- | Configuration for the FRP network.
 -- Extensible record for all network inputs.
 data NetworkConfig
   = NetworkConfig { ncWindow     :: !Gtk.Window           -- ^ The main window
                   , ncInputs     :: !InputHandlers        -- ^ Input event handlers
+                  , ncTimers     :: !TimerHandlers        -- ^ Timer event handlers
                   , ncCollisions :: ![ CollisionRegion ]  -- ^ Collision regions for hit testing
-                  , ncBeginMove  :: Double -> Double -> IO ()  -- ^ Action to begin window move
+                  , ncMoveMode   :: !MoveMode             -- ^ How to handle window movement
                   }
 
 -- | Check if a drag offset exceeds the threshold.
@@ -137,15 +168,39 @@ logDragEvent evt
   <> show (round (dragOffsetY evt) :: Int)
   <> ")"
 
+-- | Format a TimeOfDay as HH:MM:SS.
+formatTime :: TimeOfDay -> String
+formatTime tod
+  = let
+      h = todHour tod
+      m = todMin tod
+      s = floor (todSec tod) :: Int
+    in
+      pad h <> ":" <> pad m <> ":" <> pad s
+  where
+    pad n = if n < 10 then "0" <> show n else show n
+
+-- | Log a second timer event.
+logSecondTick :: LocalTime -> IO ()
+logSecondTick lt
+  = putStrLn $ "[Timer] Second tick: " <> formatTime (localTimeOfDay lt)
+
+-- | Log a minute timer event.
+logMinuteTick :: LocalTime -> IO ()
+logMinuteTick lt
+  = putStrLn $ "[Timer] Minute tick: " <> formatTime (localTimeOfDay lt)
+
 -- | Set up the FRP network for the window.
--- Handles window close, click events (via drag), drag events, and window movement.
+-- Handles window close, click events (via drag), drag events, window movement,
+-- and timer events.
 -- Click is detected as a drag that ends without exceeding the threshold.
 setupNetwork :: NetworkConfig -> MomentIO ()
 setupNetwork config = do
   let window     = ncWindow config
       inputs     = ncInputs config
+      timers     = ncTimers config
       collisions = ncCollisions config
-      beginMove  = ncBeginMove config
+      moveMode   = ncMoveMode config
 
   -- Create close event - closeRequest returns Bool, we return False to allow close
   closeE <- signalE0R window #closeRequest False
@@ -155,6 +210,14 @@ setupNetwork config = do
   dragBeginE <- fromAddHandler (ihDragBegin inputs)
   dragUpdateE <- fromAddHandler (ihDragUpdate inputs)
   dragEndE <- fromAddHandler (ihDragEnd inputs)
+
+  -- Get timer events
+  secondTickE <- fromAddHandler (thSecondTick timers)
+  minuteTickE <- fromAddHandler (thMinuteTick timers)
+
+  -- Log timer events
+  reactimate $ logSecondTick <$> secondTickE
+  reactimate $ logMinuteTick <$> minuteTickE
 
   -- Track drag start position using Behavior
   -- Updated on each dragBegin, used to compute click position
@@ -196,8 +259,16 @@ setupNetwork config = do
   reactimate $ logDragEvent <$> dragMoveE
   reactimate $ logDragEvent <$> dragEndE'
 
-  -- Initiate window move only when drag first exceeds threshold
-  -- We pass the start position (from behavior) to beginMove
-  let firstExceedE = filterE exceedsThreshold dragUpdateE
-      moveE        = dragStartB <@ firstExceedE
-  reactimate $ uncurry beginMove <$> moveE
+  -- Handle window movement based on mode
+  case moveMode of
+    MoveToplevel beginMove -> do
+      -- Initiate window move only when drag first exceeds threshold
+      -- We pass the start position (from behavior) to beginMove
+      let firstExceedE = filterE exceedsThreshold dragUpdateE
+          moveE        = dragStartB <@ firstExceedE
+      reactimate $ uncurry beginMove <$> moveE
+
+    MoveLayerShell updatePosition -> do
+      -- For layer-shell, update position on every drag update that exceeds threshold
+      let significantUpdateE = filterE exceedsThreshold dragUpdateE
+      reactimate $ uncurry updatePosition <$> significantUpdateE

@@ -12,6 +12,13 @@ extra-source-files:
 
 description: ukagaka baseware for Linux
 
+# Cabal flags for optional features
+flags:
+  layer-shell:
+    description: Enable Wayland layer-shell support (requires gtk4-layer-shell C library)
+    manual: true
+    default: false
+
 dependencies:
   - base >= 4.7 && < 5
   - text
@@ -20,13 +27,15 @@ dependencies:
   - iconv # Shift-JIS encoding support
   - vector
   - megaparsec # parsing
-  - gi-gtk # GTK4 bindings (4.0.8 from extra-deps)
-  - gi-gdk # GTK4 Gdk
+  - gi-gtk4 # GTK4 bindings (4.0.8 from extra-deps)
+  - gi-gdk4 # GTK4 Gdk
+  - gi-gdkx114 # GDK X11 bindings for always-on-top
   - gi-cairo-render # Cairo rendering
   - gi-gdkpixbuf # image loading
   - gi-gio
   - gi-glib
   - haskell-gi-base # GI base types
+  - X11 # X11 bindings for window hints
   - filepath
   - directory
   - mtl
@@ -37,6 +46,7 @@ dependencies:
   - reactive-banana # FRP
   - reactive-banana-gi-gtk # FRP with GTK
   - zip-archive # NAR/ZIP archive handling
+  - text-builder # Efficient text building for SHIORI protocol
 
 ghc-options:
   - -Wall
@@ -53,6 +63,11 @@ ghc-options:
 
 library:
   source-dirs: src
+  when:
+    - condition: flag(layer-shell)
+      dependencies:
+        - gi-gtk4-layer-shell
+      cpp-options: -DLAYER_SHELL
 
 executables:
   kokage:

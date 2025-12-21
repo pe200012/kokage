@@ -23,20 +23,29 @@ source-repository head
   type: git
   location: https://github.com/pe200012/kokage
 
+flag layer-shell
+  description: Enable Wayland layer-shell support (requires gtk4-layer-shell C library)
+  manual: True
+  default: False
+
 library
   exposed-modules:
       Kokage
       Kokage.Collision
       Kokage.Event
       Kokage.Install
+      Kokage.LayerShell
       Kokage.SakuraScript.Parser
+      Kokage.Shiori.WineBridge
       Kokage.Surface
       Kokage.Transparency
+      Kokage.X11
       Types.Balloon
       Types.Ghost
       Types.Install
       Types.Plugin
       Types.SakuraScript
+      Types.Shiori
   other-modules:
       Paths_kokage
   autogen-modules:
@@ -45,18 +54,20 @@ library
       src
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fwrite-ide-info -hiedir /home/pe200012/.stack/hiedir
   build-depends:
-      base >=4.7 && <5
+      X11
+    , base >=4.7 && <5
     , base64-bytestring
     , bytestring
     , containers
     , directory
     , filepath
     , gi-cairo-render
-    , gi-gdk
+    , gi-gdk4
     , gi-gdkpixbuf
+    , gi-gdkx114
     , gi-gio
     , gi-glib
-    , gi-gtk
+    , gi-gtk4
     , haskell-gi-base
     , iconv
     , megaparsec
@@ -65,11 +76,16 @@ library
     , reactive-banana
     , reactive-banana-gi-gtk
     , text
+    , text-builder
     , time
     , transformers
     , vector
     , zip-archive
   default-language: Haskell2010
+  if flag(layer-shell)
+    cpp-options: -DLAYER_SHELL
+    build-depends:
+        gi-gtk4-layer-shell
 
 executable kokage
   main-is: Main.hs
@@ -81,18 +97,20 @@ executable kokage
       app
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fwrite-ide-info -hiedir /home/pe200012/.stack/hiedir -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
+      X11
+    , base >=4.7 && <5
     , base64-bytestring
     , bytestring
     , containers
     , directory
     , filepath
     , gi-cairo-render
-    , gi-gdk
+    , gi-gdk4
     , gi-gdkpixbuf
+    , gi-gdkx114
     , gi-gio
     , gi-glib
-    , gi-gtk
+    , gi-gtk4
     , haskell-gi-base
     , iconv
     , kokage
@@ -103,6 +121,7 @@ executable kokage
     , reactive-banana
     , reactive-banana-gi-gtk
     , text
+    , text-builder
     , time
     , transformers
     , vector
@@ -113,10 +132,13 @@ test-suite kokage-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Kokage.GhostResolutionSpec
       Kokage.InstallSpec
       Kokage.SakuraScript.ParserSpec
+      Kokage.Shiori.WineBridgeSpec
       Types.InstallSpec
       Types.PluginSpec
+      Types.ShioriSpec
       Paths_kokage
   autogen-modules:
       Paths_kokage
@@ -126,18 +148,20 @@ test-suite kokage-test
   build-tool-depends:
       hspec-discover:hspec-discover
   build-depends:
-      base >=4.7 && <5
+      X11
+    , base >=4.7 && <5
     , base64-bytestring
     , bytestring
     , containers
     , directory
     , filepath
     , gi-cairo-render
-    , gi-gdk
+    , gi-gdk4
     , gi-gdkpixbuf
+    , gi-gdkx114
     , gi-gio
     , gi-glib
-    , gi-gtk
+    , gi-gtk4
     , haskell-gi-base
     , hspec
     , hspec-megaparsec
@@ -150,6 +174,7 @@ test-suite kokage-test
     , reactive-banana-gi-gtk
     , temporary
     , text
+    , text-builder
     , time
     , transformers
     , vector
