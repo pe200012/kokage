@@ -13,6 +13,7 @@ module Kokage.Event
   , TimerEvent(..)
     -- * Network Configuration
   , NetworkConfig(..)
+  , ShioriConfig(..)
   , InputHandlers(..)
   , TimerHandlers(..)
   , MoveMode(..)
@@ -20,22 +21,28 @@ module Kokage.Event
   , setupNetwork
     -- * Event Handlers
   , handleClick
+    -- * SHIORI Helpers
+  , sendShioriAndLog
     -- * Configuration
   , dragThreshold
   ) where
 
+import           Data.Time.Clock             ( UTCTime, diffUTCTime, getCurrentTime )
 import           Data.Time.LocalTime        ( LocalTime(..), TimeOfDay(..) )
+import qualified Data.Map.Strict            as Map
 import qualified Data.Text                  as T
 
 import qualified GI.Gtk                     as Gtk
 
 import           Kokage.Collision           ( findCollisionAt )
+import           Kokage.Shiori.WineBridge   ( WineShiori, sendEvent )
 
 import           Reactive.Banana            ( (<@), (<@>), Behavior, filterE, stepper )
 import           Reactive.Banana.Frameworks ( AddHandler, MomentIO, fromAddHandler, reactimate )
 import           Reactive.Banana.GI.Gtk     ( signalE0R )
 
 import           Types.Ghost                ( CollisionRegion(..) )
+import           Types.Shiori               ( ShioriEvent(..), ShioriResponse(..), srsValue )
 
 -- | Minimum distance (in pixels) to consider a drag vs a click.
 -- Movements below this threshold are treated as clicks.
@@ -83,6 +90,7 @@ data InputHandlers
   { ihDragBegin  :: AddHandler ( Double, Double )  -- ^ Drag started at (x, y)
   , ihDragUpdate :: AddHandler ( Double, Double )  -- ^ Drag offset (dx, dy)
   , ihDragEnd    :: AddHandler ( Double, Double )  -- ^ Drag ended with offset (dx, dy)
+  , ihMotion     :: AddHandler ( Double, Double )  -- ^ Mouse motion at (x, y)
   }
 
 -- | Timer event handlers.
@@ -105,14 +113,25 @@ data MoveMode
     -- Used for Wayland layer-shell surfaces which don't support toplevel moves.
     -- The function is called with the offset (dx, dy) on each drag update.
 
+-- | SHIORI configuration for the FRP network.
+-- This is optional - ghosts can run without SHIORI.
+data ShioriConfig
+  = ShioriConfig
+  { scShiori    :: !WineShiori      -- ^ Wine bridge handle
+  , scSurfaceId :: !Int             -- ^ Current surface ID (for mouse events)
+  , scStartTime :: !UTCTime         -- ^ When the ghost was started (for uptime)
+  , scGhostPath :: !FilePath        -- ^ Path to ghost directory (for HISTORY)
+  }
+
 -- | Configuration for the FRP network.
 -- Extensible record for all network inputs.
 data NetworkConfig
-  = NetworkConfig { ncWindow     :: !Gtk.Window           -- ^ The main window
-                  , ncInputs     :: !InputHandlers        -- ^ Input event handlers
-                  , ncTimers     :: !TimerHandlers        -- ^ Timer event handlers
-                  , ncCollisions :: ![ CollisionRegion ]  -- ^ Collision regions for hit testing
-                  , ncMoveMode   :: !MoveMode             -- ^ How to handle window movement
+  = NetworkConfig { ncWindow     :: !Gtk.Window                -- ^ The main window
+                  , ncInputs     :: !InputHandlers             -- ^ Input event handlers
+                  , ncTimers     :: !TimerHandlers             -- ^ Timer event handlers
+                  , ncCollisions :: ![ CollisionRegion ]       -- ^ Collision regions for hit testing
+                  , ncMoveMode   :: !MoveMode                  -- ^ How to handle window movement
+                  , ncShiori     :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config
                   }
 
 -- | Check if a drag offset exceeds the threshold.
@@ -180,6 +199,13 @@ formatTime tod
   where
     pad n = if n < 10 then "0" <> show n else show n
 
+-- | Calculate uptime in hours from start time to now.
+getUptimeHours :: UTCTime -> UTCTime -> Int
+getUptimeHours startTime now = 
+  let diffSeconds = diffUTCTime now startTime
+      hours = floor (realToFrac diffSeconds / 3600 :: Double) :: Int
+  in max 0 hours  -- Ensure non-negative
+
 -- | Log a second timer event.
 logSecondTick :: LocalTime -> IO ()
 logSecondTick lt
@@ -190,9 +216,29 @@ logMinuteTick :: LocalTime -> IO ()
 logMinuteTick lt
   = putStrLn $ "[Timer] Minute tick: " <> formatTime (localTimeOfDay lt)
 
+-- | Log a SHIORI response for debugging.
+logShioriResponse :: ShioriEvent -> Either String ShioriResponse -> IO ()
+logShioriResponse event result = case result of
+  Left err -> putStrLn $ "[SHIORI] " <> show event <> " error: " <> err
+  Right resp -> case srsValue resp of
+    Nothing -> putStrLn $ "[SHIORI] " <> show event <> " -> (no content)"
+    Just val -> do
+      putStrLn $ "[SHIORI] " <> show event <> " -> script:"
+      -- Print first 200 chars of script for debugging
+      let preview = T.take 200 val
+      putStrLn $ "  " <> T.unpack preview <> if T.length val > 200 then "..." else ""
+
+-- | Send a SHIORI event and log the response.
+-- Does nothing if SHIORI is not configured.
+sendShioriAndLog :: Maybe ShioriConfig -> ShioriEvent -> Map.Map Int T.Text -> IO ()
+sendShioriAndLog Nothing _ _ = return ()  -- No SHIORI, skip
+sendShioriAndLog (Just sc) event refs = do
+  result <- sendEvent (scShiori sc) event refs
+  logShioriResponse event result
+
 -- | Set up the FRP network for the window.
 -- Handles window close, click events (via drag), drag events, window movement,
--- and timer events.
+-- timer events, and SHIORI event dispatch.
 -- Click is detected as a drag that ends without exceeding the threshold.
 setupNetwork :: NetworkConfig -> MomentIO ()
 setupNetwork config = do
@@ -201,23 +247,79 @@ setupNetwork config = do
       timers     = ncTimers config
       collisions = ncCollisions config
       moveMode   = ncMoveMode config
+      mShiori    = ncShiori config
 
   -- Create close event - closeRequest returns Bool, we return False to allow close
   closeE <- signalE0R window #closeRequest False
-  reactimate $ (return () :: IO ()) <$ closeE
+  -- Send OnClose event when window closes
+  reactimate $ sendShioriAndLog mShiori OnClose Map.empty <$ closeE
 
   -- Get input events from drag gesture
   dragBeginE <- fromAddHandler (ihDragBegin inputs)
   dragUpdateE <- fromAddHandler (ihDragUpdate inputs)
   dragEndE <- fromAddHandler (ihDragEnd inputs)
+  motionE <- fromAddHandler (ihMotion inputs)
 
   -- Get timer events
   secondTickE <- fromAddHandler (thSecondTick timers)
   minuteTickE <- fromAddHandler (thMinuteTick timers)
 
-  -- Log timer events
-  reactimate $ logSecondTick <$> secondTickE
-  reactimate $ logMinuteTick <$> minuteTickE
+  -- Handle timer events - send to SHIORI with uptime
+  -- OnSecondChange: Reference0=uptime(hours), Reference1=mikire, Reference2=kasanari, Reference3=cantalk
+  -- OnMinuteChange: Reference0=uptime(hours), Reference1=mikire, Reference2=kasanari, Reference3=cantalk
+  let handleSecondTick lt = do
+        logSecondTick lt
+        now <- getCurrentTime
+        let uptime = case mShiori of
+              Just sc -> getUptimeHours (scStartTime sc) now
+              Nothing -> 0
+            -- TODO: Reference1-3 need actual overlap/cantalk tracking
+            refs = Map.fromList
+              [ (0, T.pack $ show uptime)  -- Reference0: uptime in hours
+              , (1, "0")                   -- Reference1: mikire (overlap count) - TODO
+              , (2, "0")                   -- Reference2: kasanari (overlap) - TODO  
+              , (3, "1")                   -- Reference3: cantalk (1=can talk)
+              ]
+        sendShioriAndLog mShiori OnSecondChange refs
+
+  let handleMinuteTick lt = do
+        logMinuteTick lt
+        now <- getCurrentTime
+        let uptime = case mShiori of
+              Just sc -> getUptimeHours (scStartTime sc) now
+              Nothing -> 0
+            refs = Map.fromList
+              [ (0, T.pack $ show uptime)  -- Reference0: uptime in hours
+              , (1, "0")                   -- Reference1: mikire - TODO
+              , (2, "0")                   -- Reference2: kasanari - TODO
+              , (3, "1")                   -- Reference3: cantalk
+              ]
+        sendShioriAndLog mShiori OnMinuteChange refs
+
+  reactimate $ handleSecondTick <$> secondTickE
+  reactimate $ handleMinuteTick <$> minuteTickE
+
+  -- Handle mouse motion events - send OnMouseMove to SHIORI
+  -- OnMouseMove: Reference0=x, Reference1=y, Reference2="", Reference3=side(0=sakura), Reference4=part
+  -- We throttle this to avoid spamming SHIORI - only send when over a collision region
+  let handleMotion ( x, y ) = do
+        let ix = floor x :: Int
+            iy = floor y :: Int
+            surfId = maybe 0 scSurfaceId mShiori
+        case findCollisionAt ix iy collisions of
+          Just cr -> do
+            let refs = Map.fromList
+                  [ (0, T.pack $ show ix)      -- Reference0: x
+                  , (1, T.pack $ show iy)      -- Reference1: y
+                  , (2, "")                    -- Reference2: wheel (empty for move)
+                  , (3, "0")                   -- Reference3: side (0=sakura)
+                  , (4, crName cr)             -- Reference4: part name
+                  , (5, T.pack $ show surfId)  -- Reference5: surface id (SSP extension)
+                  ]
+            sendShioriAndLog mShiori OnMouseMove refs
+          Nothing -> return ()  -- Don't send if not over a collision region
+
+  reactimate $ handleMotion <$> motionE
 
   -- Track drag start position using Behavior
   -- Updated on each dragBegin, used to compute click position
@@ -240,7 +342,43 @@ setupNetwork config = do
 
   -- Process clicks against collision regions
   let hitE = handleClick collisions <$> clickE
-  reactimate $ logCollisionHit <$> hitE
+  
+  -- Handle click with collision info and send to SHIORI
+  let handleCollisionHit hit = do
+        logCollisionHit hit
+        case hit of
+          HitRegion evt cr -> do
+            -- Send OnMouseClick with collision info
+            -- Reference0: x coordinate
+            -- Reference1: y coordinate  
+            -- Reference2: 0 (left button)
+            -- Reference3: collision region name
+            -- Reference4: character id (0 for sakura)
+            -- Reference5: surface id
+            let surfId = maybe 0 scSurfaceId mShiori
+                refs = Map.fromList
+                  [ (0, T.pack $ show $ clickX evt)
+                  , (1, T.pack $ show $ clickY evt)
+                  , (2, "0")  -- Left button
+                  , (3, crName cr)
+                  , (4, "0")  -- Character 0 (sakura)
+                  , (5, T.pack $ show surfId)
+                  ]
+            sendShioriAndLog mShiori OnMouseClick refs
+          HitNothing evt -> do
+            -- Click on transparent area - still send event but with empty region
+            let surfId = maybe 0 scSurfaceId mShiori
+                refs = Map.fromList
+                  [ (0, T.pack $ show $ clickX evt)
+                  , (1, T.pack $ show $ clickY evt)
+                  , (2, "0")  -- Left button
+                  , (3, "")   -- No collision region
+                  , (4, "0")  -- Character 0
+                  , (5, T.pack $ show surfId)
+                  ]
+            sendShioriAndLog mShiori OnMouseClick refs
+  
+  reactimate $ handleCollisionHit <$> hitE
 
   -- Log suppressed clicks
   reactimate $ (putStrLn "[Click] Suppressed (drag exceeded threshold)") <$ suppressedE

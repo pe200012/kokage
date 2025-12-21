@@ -547,8 +547,8 @@ readGhostDescript path = do
               "mousecursor.grip" -> desc { descriptMouseCursorGrip = Just val }
               "mousecursor.arrow" -> desc { descriptMouseCursorArrow = Just val }
 
-              "shiori" -> desc { descriptShiori = rawVal }
-              "makoto" -> desc { descriptMakoto = rawVal }
+              "shiori" -> desc { descriptShiori = val }
+              "makoto" -> desc { descriptMakoto = val }
               "menu.font.name" -> desc { descriptMenuFontName = Just val }
               "menu.font.height" -> desc { descriptMenuFontHeight = readMaybeInt val }
               "shiori.logo.file" -> desc { descriptShioriLogoFile = Just val }

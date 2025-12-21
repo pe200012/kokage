@@ -128,6 +128,46 @@ executable kokage
     , zip-archive
   default-language: Haskell2010
 
+executable shiori-test
+  main-is: Main.hs
+  other-modules:
+      Paths_kokage
+  autogen-modules:
+      Paths_kokage
+  hs-source-dirs:
+      app-shiori-test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fwrite-ide-info -hiedir /home/pe200012/.stack/hiedir -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      X11
+    , base >=4.7 && <5
+    , base64-bytestring
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , gi-cairo-render
+    , gi-gdk4
+    , gi-gdkpixbuf
+    , gi-gdkx114
+    , gi-gio
+    , gi-glib
+    , gi-gtk4
+    , haskell-gi-base
+    , iconv
+    , kokage
+    , megaparsec
+    , mtl
+    , process
+    , reactive-banana
+    , reactive-banana-gi-gtk
+    , text
+    , text-builder
+    , time
+    , transformers
+    , vector
+    , zip-archive
+  default-language: Haskell2010
+
 test-suite kokage-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs

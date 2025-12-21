@@ -45,8 +45,8 @@ module Kokage
   , Edge(..)
   ) where
 
-import           Control.Exception          ( try, SomeException )
-import           Control.Monad              ( forM_, void, filterM )
+import           Control.Exception          ( try, SomeException, finally )
+import           Control.Monad              ( forM_, void, filterM, when )
 import           Control.Monad.Trans.Maybe  ( MaybeT(runMaybeT, MaybeT) )
 
 import           Data.GI.Base               ( AttrOp((:=)), new, on, glibType
@@ -56,6 +56,7 @@ import           Data.Int                   ( Int32 )
 import           Data.IORef                 ( newIORef, readIORef, writeIORef )
 import           Foreign.Ptr                ( Ptr, nullPtr )
 import           Data.List                  ( sort )
+import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 ( listToMaybe )
 import qualified Data.Text                  as T
 import qualified Data.Text.IO               as TIO
@@ -70,7 +71,8 @@ import qualified GI.Gtk                     as Gtk
 import           Kokage.Collision
 import           Kokage.Event               ( NetworkConfig(..), InputHandlers(..)
                                             , TimerHandlers(..), MoveMode(..)
-                                            , setupNetwork )
+                                            , ShioriConfig(..)
+                                            , setupNetwork, sendShioriAndLog )
 import           Kokage.Install             ( BaseDir(..), InstallResult(..), installNar )
 import           Kokage.Shiori.WineBridge   ( WineShiori(..)
                                             , WineBridgeConfig(..)
@@ -106,10 +108,12 @@ import           System.FilePath            ( takeExtension, (</>) )
 
 import           Types.Ghost                ( CollisionRegion(..)
                                             , Ghost(..)
+                                            , GhostDescript(..)
                                             , Shell(..)
                                             , SurfaceDefinition(..)
                                             , loadGhost
                                             )
+import           Types.Shiori               ( ShioriEvent(..) )
 
 -- | Configuration for the Kokage application.
 data KokageConfig
@@ -235,6 +239,85 @@ loadLastGhost config = do
             then return Nothing
             else return $ Just path
 
+--------------------------------------------------------------------------------
+-- Ghost History (HISTORY file)
+--------------------------------------------------------------------------------
+
+-- | Ghost history data stored in HISTORY file.
+-- This tracks cumulative time spent with the ghost.
+data GhostHistory
+  = GhostHistory
+  { ghTime          :: !Int   -- ^ Total runtime in hours (cumulative)
+  , ghVanishedCount :: !Int   -- ^ Number of times the ghost was "vanished"
+  }
+  deriving ( Show, Eq )
+
+-- | Default history for a new ghost.
+defaultGhostHistory :: GhostHistory
+defaultGhostHistory = GhostHistory { ghTime = 0, ghVanishedCount = 0 }
+
+-- | Path to the HISTORY file for a ghost.
+historyFilePath :: FilePath -> FilePath
+historyFilePath ghostPath = ghostPath </> "ghost" </> "master" </> "HISTORY"
+
+-- | Load ghost history from HISTORY file.
+-- Returns 'Nothing' if this is the first boot (file doesn't exist).
+-- Returns default history if file exists but can't be parsed.
+loadGhostHistory :: FilePath -> IO (Maybe GhostHistory)
+loadGhostHistory ghostPath = do
+  let historyFile = historyFilePath ghostPath
+  exists <- doesFileExist historyFile
+  if not exists
+    then return Nothing  -- First boot
+    else do
+      result <- try $ TIO.readFile historyFile
+      case result of
+        Left (_ :: SomeException) -> return $ Just defaultGhostHistory
+        Right content -> return $ Just $ parseHistory content
+
+-- | Parse HISTORY file content.
+parseHistory :: T.Text -> GhostHistory
+parseHistory content =
+  let ls = T.lines content
+      pairs = [ (key, val)
+              | l <- ls
+              , let stripped = T.strip l
+              , not (T.null stripped)
+              , (key, rest) <- [T.breakOn "," stripped]
+              , let val = T.strip $ T.drop 1 rest
+              ]
+      lookupInt k def = case lookup (T.toLower $ T.strip k) pairs of
+        Nothing -> def
+        Just v  -> case reads (T.unpack v) of
+          [(n, "")] -> n
+          _         -> def
+  in GhostHistory
+    { ghTime          = lookupInt "time" 0
+    , ghVanishedCount = lookupInt "vanished_count" 0
+    }
+
+-- | Save ghost history to HISTORY file.
+saveGhostHistory :: FilePath -> GhostHistory -> IO ()
+saveGhostHistory ghostPath history = do
+  let historyFile = historyFilePath ghostPath
+      content = T.unlines
+        [ "time, " <> T.pack (show (ghTime history))
+        , "vanished_count, " <> T.pack (show (ghVanishedCount history))
+        ]
+  result <- try $ TIO.writeFile historyFile content
+  case result of
+    Left (e :: SomeException) -> 
+      putStrLn $ "[HISTORY] Warning: Could not save history: " <> show e
+    Right () -> return ()
+
+-- | Check if this is the first boot for a ghost.
+isFirstBoot :: FilePath -> IO Bool
+isFirstBoot ghostPath = do
+  mHistory <- loadGhostHistory ghostPath
+  return $ case mHistory of
+    Nothing -> True   -- No HISTORY file = first boot
+    Just _  -> False
+
 -- | Main entry point for Kokage.
 -- Resolves which ghost to load (explicit path, last used, or first available)
 -- and runs the GTK event loop.
@@ -297,12 +380,91 @@ kokageMain config = do
                       height <- Pixbuf.pixbufGetHeight pixbuf
                       putStrLn $ "Composited surface: " <> show width <> "x" <> show height
 
-                      -- Run the GTK application
-                      runGtkApp pixbuf width height (sdCollisions surfDef)
+                      -- Try to initialize SHIORI (optional - ghost can run without it)
+                      -- Use the shiori path from ghost's descript.txt
+                      let ghostMasterPath = gPath </> "ghost" </> "master"
+                          shioriName = descriptShiori (ghostDescript ghost)
+                      mShiori <- initializeShiori ghostMasterPath shioriName
+
+                      -- Check if this is first boot (no HISTORY file)
+                      firstBoot <- isFirstBoot gPath
+                      mHistory <- loadGhostHistory gPath
+                      let vanishedCount = maybe 0 ghVanishedCount mHistory
+                      
+                      when firstBoot $ putStrLn "[HISTORY] First boot detected"
+
+                      -- Run the GTK application with SHIORI if available
+                      runGtkApp pixbuf width height (sdCollisions surfDef) surfId mShiori gPath firstBoot vanishedCount
+                        `finally` cleanupShiori mShiori
+
+-- | Initialize SHIORI bridge and load the DLL.
+-- Returns Nothing if no DLL found or initialization fails.
+-- The shioriName comes from the ghost's descript.txt (descriptShiori field).
+initializeShiori :: FilePath -> T.Text -> IO (Maybe WineShiori)
+initializeShiori ghostMasterPath shioriName = do
+  -- Build path from descript's shiori field
+  let dllPath = ghostMasterPath </> T.unpack shioriName
+  
+  -- Check if the DLL exists
+  exists <- doesFileExist dllPath
+  if not exists
+    then do
+      putStrLn $ "[SHIORI] DLL not found: " <> dllPath
+      return Nothing
+    else do
+      putStrLn $ "[SHIORI] Found DLL: " <> dllPath
+      
+      -- Determine which bridge to use based on DLL architecture
+      -- For now, assume 32-bit DLLs (most ghosts use 32-bit)
+      let bridgeConfig = defaultWineBridgeConfig
+            { wbcBridgePath = "wine-helper" </> "shiori_bridge32.exe"
+            }
+      
+      -- Start the Wine bridge
+      putStrLn "[SHIORI] Starting Wine bridge..."
+      bridgeResult <- startWineBridge bridgeConfig
+      case bridgeResult of
+        Left err -> do
+          putStrLn $ "[SHIORI] Failed to start bridge: " <> err
+          return Nothing
+        Right shiori -> do
+          putStrLn "[SHIORI] Bridge started, loading DLL..."
+          loadResult <- loadShiori shiori dllPath ghostMasterPath
+          case loadResult of
+            Left err -> do
+              putStrLn $ "[SHIORI] Failed to load DLL: " <> err
+              stopWineBridge shiori
+              return Nothing
+            Right loadedShiori -> do
+              putStrLn "[SHIORI] DLL loaded successfully"
+              return $ Just loadedShiori
+
+-- | Clean up SHIORI bridge on exit.
+cleanupShiori :: Maybe WineShiori -> IO ()
+cleanupShiori Nothing = return ()
+cleanupShiori (Just shiori) = do
+  putStrLn "[SHIORI] Unloading DLL..."
+  _ <- unloadShiori shiori
+  putStrLn "[SHIORI] Stopping bridge..."
+  stopWineBridge shiori
+  putStrLn "[SHIORI] Cleanup complete"
 
 -- | Run the GTK application with the given pixbuf.
-runGtkApp :: Pixbuf.Pixbuf -> Int32 -> Int32 -> [ CollisionRegion ] -> IO ()
-runGtkApp pixbuf width height collisions = do
+runGtkApp :: Pixbuf.Pixbuf -> Int32 -> Int32 -> [ CollisionRegion ] -> Int -> Maybe WineShiori -> FilePath -> Bool -> Int -> IO ()
+runGtkApp pixbuf width height collisions surfaceId mShiori ghostPath firstBoot vanishedCount = do
+  -- Get start time for uptime tracking
+  startTime <- getCurrentTime
+  
+  -- Create SHIORI config if we have a bridge
+  let mShioriConfig = case mShiori of
+        Nothing -> Nothing
+        Just ws -> Just $ ShioriConfig 
+          { scShiori    = ws
+          , scSurfaceId = surfaceId
+          , scStartTime = startTime
+          , scGhostPath = ghostPath
+          }
+        
   -- Initialize GTK application
   app <- new
     Gtk.Application
@@ -342,6 +504,7 @@ runGtkApp pixbuf width height collisions = do
     ( dragBeginHandler, fireDragBegin ) <- newAddHandler
     ( dragUpdateHandler, fireDragUpdate ) <- newAddHandler
     ( dragEndHandler, fireDragEnd ) <- newAddHandler
+    ( motionHandler, fireMotion ) <- newAddHandler
 
     -- Create drag gesture and connect signals BEFORE adding to widget
     -- We use only GestureDrag for both click and drag detection
@@ -351,6 +514,11 @@ runGtkApp pixbuf width height collisions = do
     _ <- on dragGesture #dragUpdate $ \ox oy -> fireDragUpdate ( ox, oy )
     _ <- on dragGesture #dragEnd $ \ox oy -> fireDragEnd ( ox, oy )
     Gtk.widgetAddController picture dragGesture
+
+    -- Create motion controller for OnMouseMove events
+    motionController <- new Gtk.EventControllerMotion []
+    _ <- on motionController #motion $ \x y -> fireMotion ( x, y )
+    Gtk.widgetAddController picture motionController
 
     -- Create DropTarget for NAR file drops
     -- GFile type is used to accept file drops
@@ -455,6 +623,7 @@ runGtkApp pixbuf width height collisions = do
           = InputHandlers { ihDragBegin  = dragBeginHandler
                           , ihDragUpdate = dragUpdateHandler
                           , ihDragEnd    = dragEndHandler
+                          , ihMotion     = motionHandler
                           }
         timerHandlers
           = TimerHandlers { thSecondTick = secondTickHandler
@@ -466,11 +635,22 @@ runGtkApp pixbuf width height collisions = do
                           , ncTimers     = timerHandlers
                           , ncCollisions = collisions
                           , ncMoveMode   = moveMode
+                          , ncShiori     = mShioriConfig
                           }
 
     -- Set up and activate FRP network
     network <- compile (setupNetwork networkConfig)
     actuate network
+
+    -- Send OnBoot or OnFirstBoot event after network is activated
+    -- OnFirstBoot: Reference0 = vanished count
+    if firstBoot
+      then do
+        let refs = Map.fromList [(0, T.pack $ show vanishedCount)]
+        sendShioriAndLog mShioriConfig OnFirstBoot refs
+        -- Create HISTORY file for next time
+        saveGhostHistory ghostPath defaultGhostHistory
+      else sendShioriAndLog mShioriConfig OnBoot Map.empty
 
     -- Finalize window setup based on platform
     if layerShellSuccess

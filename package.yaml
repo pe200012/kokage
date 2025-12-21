@@ -81,6 +81,17 @@ executables:
       - kokage
       - optparse-applicative
 
+  shiori-test:
+    main: Main.hs
+    source-dirs: app-shiori-test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - kokage
+      - time
+
 tests:
   kokage-test:
     main: Spec.hs

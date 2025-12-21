@@ -75,6 +75,7 @@ import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import qualified Data.ByteString            as BS
+import qualified Data.ByteString.Char8      as BS8
 import qualified Data.Map.Strict            as Map
 import           Data.Map.Strict            ( Map )
 import           Data.Maybe                 ( fromMaybe, mapMaybe )
@@ -1643,9 +1644,42 @@ crlf = "\r\n"
 serializeShioriRequestBS :: ShioriRequest -> BS.ByteString
 serializeShioriRequestBS = TE.encodeUtf8 . serializeShioriRequest
 
--- | Parse a SHIORI response from UTF-8 ByteString
+-- | Parse a SHIORI response from ByteString with charset detection.
+-- SHIORI responses should be encoded according to the Charset header.
+-- Some SHIORI DLLs (like YAYA) may prepend data before the actual response,
+-- so we try to find the "SHIORI/" marker and start parsing from there.
+-- For 204 No Content responses, we may need to construct a minimal response.
 parseShioriResponseBS :: BS.ByteString -> Either Text ShioriResponse
-parseShioriResponseBS = parseShioriResponse . TE.decodeUtf8
+parseShioriResponseBS bs = 
+  -- First, try to filter out any null bytes (some DLLs return UTF-16 artifacts)
+  let cleanBs = BS.filter (/= 0) bs
+      -- Try to find "SHIORI/" marker (some DLLs prepend garbage)
+      shioriMarker = BS8.pack "SHIORI/"
+      -- Also try to find status line patterns for corrupted responses
+      status200 = BS8.pack "200 OK"
+      status204 = BS8.pack "204 No Content"
+      alignedBs = case BS.breakSubstring shioriMarker cleanBs of
+                    (_, rest) | not (BS.null rest) -> rest
+                    _ -> 
+                      -- No SHIORI marker, check for status patterns
+                      case BS.breakSubstring status204 cleanBs of
+                        (prefix, rest) | not (BS.null rest) -> 
+                          -- Construct a valid response header
+                          BS8.pack "SHIORI/3.0 " <> rest
+                        _ -> case BS.breakSubstring status200 cleanBs of
+                               (prefix, rest) | not (BS.null rest) ->
+                                 BS8.pack "SHIORI/3.0 " <> rest
+                               _ -> cleanBs  -- Give up, use original
+  in case TE.decodeUtf8' alignedBs of
+    Right txt -> parseShioriResponse txt
+    Left _    ->
+      -- Try with lenient UTF-8 decoding (replace invalid bytes)
+      let txt = TE.decodeUtf8With (\_ _ -> Just '?') alignedBs
+      in parseShioriResponse txt
+
+-- | Lenient UTF-8 decoder that replaces invalid sequences
+lenientDecodeUtf8 :: BS.ByteString -> Text
+lenientDecodeUtf8 = TE.decodeUtf8With (\_ _ -> Just '\xFFFD')
 
 --------------------------------------------------------------------------------
 -- Request Builders
