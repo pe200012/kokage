@@ -51,7 +51,7 @@ import qualified Data.Map.Strict            as Map
 import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 
-import           System.Directory           ( doesFileExist )
+import           System.Environment         ( getEnvironment )
 import           System.FilePath            ( (</>) )
 import           System.IO                  ( BufferMode(..)
                                             , Handle
@@ -128,18 +128,19 @@ data WineShiori = WineShiori
 startWineBridge :: WineBridgeConfig -> IO (Either String WineShiori)
 startWineBridge config = do
   result <- try $ do
-    -- Check if .exe.so exists (faster startup)
-    soExists <- doesFileExist (wbcBridgeSoPath config)
-    
-    let (cmd, args) = if soExists
-          then (wbcBridgeSoPath config, [])  -- Direct Winelib execution
-          else (wbcWineCommand config, [wbcBridgePath config])  -- Via Wine
+    -- Get current environment and add WINEDEBUG=-all
+    currentEnv <- getEnvironment
+    let modifiedEnv = ("WINEDEBUG", "-all") : filter ((/= "WINEDEBUG") . fst) currentEnv
+
+    -- Use the .exe wrapper script which handles Wine loading
+    -- The wrapper script respects WINELOADER env var and handles paths correctly
+    let (cmd, args) = (wbcBridgePath config, [])
 
     let cp = (proc cmd args)
           { std_in  = CreatePipe
           , std_out = CreatePipe
-          , std_err = NoStream  -- Suppress Wine debug output
-          , env     = Just [("WINEDEBUG", "-all")]  -- Disable Wine debug
+          , std_err = Inherit  -- Let Wine debug go to terminal stderr
+          , env     = Just modifiedEnv  -- Inherit env with WINEDEBUG added
           }
 
     (Just hIn, Just hOut, _, ph) <- createProcess cp
@@ -149,28 +150,37 @@ startWineBridge config = do
     hSetBuffering hOut LineBuffering
 
     -- Wait for READY signal from bridge with timeout
+    -- Skip Wine debug output lines that may appear before READY
     -- Use a longer timeout for startup (Wine initialization can be slow)
     let startupTimeoutUs = wbcTimeoutMs config * 1000 * 2  -- Double the normal timeout
-    mReadyLine <- timeout startupTimeoutUs $ hGetLine hOut
     
-    case mReadyLine of
-      Nothing -> do
-        terminateProcess ph
-        return $ Left "Startup timeout: bridge did not respond in time"
-      Just readyLine -> do
-        let readyClean = stripWhitespace readyLine
-        if readyClean == "READY"
-          then return $ Right WineShiori
-            { wsProcess   = ph
-            , wsStdin     = hIn
-            , wsStdout    = hOut
-            , wsConfig    = config
-            , wsDllPath   = Nothing
-            , wsGhostPath = Nothing
-            }
-          else do
-            terminateProcess ph
-            return $ Left $ "Unexpected bridge output: " ++ show readyLine
+    -- Read lines until we get READY or timeout
+    let waitForReady :: IO (Either String WineShiori)
+        waitForReady = do
+          mLine <- timeout startupTimeoutUs $ hGetLine hOut
+          case mLine of
+            Nothing -> do
+              terminateProcess ph
+              return $ Left "Startup timeout: bridge did not respond in time"
+            Just line -> do
+              let cleanLine = stripWhitespace line
+              -- Skip Wine debug output (starts with "wine:" or "wineserver:")
+              if "wine:" `isPrefixOf` cleanLine || "wineserver:" `isPrefixOf` cleanLine
+                then waitForReady  -- Skip and try next line
+                else if cleanLine == "READY"
+                  then return $ Right WineShiori
+                    { wsProcess   = ph
+                    , wsStdin     = hIn
+                    , wsStdout    = hOut
+                    , wsConfig    = config
+                    , wsDllPath   = Nothing
+                    , wsGhostPath = Nothing
+                    }
+                  else do
+                    terminateProcess ph
+                    return $ Left $ "Unexpected bridge output: " ++ show line
+    
+    waitForReady
 
   case result of
     Left (e :: SomeException) -> return $ Left $ "Failed to start bridge: " ++ show e

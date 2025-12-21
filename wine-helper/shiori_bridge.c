@@ -215,17 +215,27 @@ void cmd_request(const char* base64_request) {
     GlobalFree(req_mem);
 
     if (response && resp_len > 0) {
+        /* Lock the memory to get the actual pointer */
+        char* resp_ptr = (char*)GlobalLock(response);
+        if (!resp_ptr) {
+            /* If GlobalLock fails, try using HGLOBAL directly (for GMEM_FIXED) */
+            resp_ptr = (char*)response;
+        }
+
         /* Log the response */
         if (logf) {
             fprintf(logf, "=== RESPONSE (%ld bytes) ===\n", resp_len);
-            fwrite((char*)response, 1, resp_len, logf);
+            fwrite(resp_ptr, 1, resp_len, logf);
             fprintf(logf, "\n===\n\n");
             fflush(logf);
         }
 
         /* Encode response as base64 */
         size_t b64_len;
-        char* b64_response = base64_encode((unsigned char*)response, resp_len, &b64_len);
+        char* b64_response = base64_encode((unsigned char*)resp_ptr, resp_len, &b64_len);
+        
+        /* Unlock and free the response memory */
+        GlobalUnlock(response);
         GlobalFree(response);
 
         if (b64_response) {
