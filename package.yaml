@@ -29,8 +29,12 @@ dependencies:
   - megaparsec # parsing
   - gi-gtk4 # GTK4 bindings (4.0.8 from extra-deps)
   - gi-gdk4 # GTK4 Gdk
+  - gi-pango # Pango text rendering (for balloon text wrapping)
+  - gi-pangocairo # PangoCairo for text rendering on Cairo surfaces
   - gi-gdkx114 # GDK X11 bindings for always-on-top
+  - gi-cairo # Cairo GI bindings (for Region type)
   - gi-cairo-render # Cairo rendering
+  - gi-cairo-connector
   - gi-gdkpixbuf # image loading
   - gi-gio
   - gi-glib
@@ -58,8 +62,6 @@ ghc-options:
   - -Wmissing-home-modules
   - -Wpartial-fields
   - -Wredundant-constraints
-  - -fwrite-ide-info
-  - -hiedir /home/pe200012/.stack/hiedir
 
 library:
   source-dirs: src

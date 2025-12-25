@@ -51,6 +51,7 @@ import qualified Data.Map.Strict            as Map
 import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 
+import           System.Directory           ( makeAbsolute )
 import           System.Environment         ( getEnvironment )
 import           System.FilePath            ( (</>) )
 import           System.IO                  ( BufferMode(..)
@@ -238,8 +239,11 @@ loadShiori :: WineShiori
            -> IO (Either String WineShiori)
 loadShiori ws dllPath ghostPath = do
   -- Convert Unix paths to Wine Z: drive paths
-  let wineDllPath   = toWinePath dllPath
-      wineGhostPath = toWinePath ghostPath
+  -- Ensure paths are absolute first so Z: mapping works correctly regardless of CWD
+  absDllPath   <- makeAbsolute dllPath
+  absGhostPath <- makeAbsolute ghostPath
+  let wineDllPath   = toWinePath absDllPath
+      wineGhostPath = toWinePath absGhostPath
       cmd           = "LOAD " ++ wineDllPath ++ " " ++ wineGhostPath
 
   response <- sendCommand ws cmd

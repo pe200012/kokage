@@ -22,7 +22,11 @@ extra-deps:
   - haskell-gi-base-0.26.9
   - haskell-gi-overloading-1.0
   - reactive-banana-gi-gtk-0.4.1.0
+  - gi-pangocairo-1.0.31@sha256:dfeb7c73749a9d2b280dd9fb59aeb70def529ee310114c89cc57967af9c3df84,3226
+  - gi-pango-1.0.30@sha256:53119e8b09591716ac9ca6b2a0899f560c7bc7ccd3752802a447d4b2a5174a1f,7473
 
 allow-newer: true
 allow-newer-deps:
   - reactive-banana-gi-gtk
+  - gi-cairo-rendor
+  - gi-cairo-connector

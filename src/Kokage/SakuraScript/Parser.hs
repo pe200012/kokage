@@ -111,8 +111,11 @@ pScopeCmd
   = choice
     [ ScopeMain <$ (char '0' <|> char 'h')
     , ScopeKero <$ (char '1' <|> char 'u')
-    , ScopeIndex <$> (char 'p' *> pBracketedInt)
+    , ScopeIndex <$> (char 'p' *> pScopeIndex)
     ]
+  where
+    -- \p[n] or \pN (single digit shorthand)
+    pScopeIndex = pBracketedInt <|> (read . (:[]) <$> digitChar)
 
 --------------------------------------------------------------------------------
 -- Surface commands
@@ -125,7 +128,11 @@ pSurfaceCmd = choice [ pSurfaceChange, pSurfaceAnim, pSurfaceBang ]
 -- | Parse surface change: \s[n] or \s[alias]
 pSurfaceChange :: Parser SurfaceCmd
 pSurfaceChange
-  = char 's' *> pBracketed (try (SurfaceChange <$> pInt) <|> (SurfaceChangeAlias <$> pIdentifier))
+  = char 's' *> pSurfaceIndex
+  where
+    -- \s[N] or \sN (single digit shorthand) or \s[alias]
+    pSurfaceIndex = pBracketed (try (SurfaceChange <$> pInt) <|> (SurfaceChangeAlias <$> pIdentifier))
+                <|> (SurfaceChange . read . (:[]) <$> digitChar)
 
 -- | Parse animation command: \i[n] or \i[n,action]
 pSurfaceAnim :: Parser SurfaceCmd
@@ -205,7 +212,12 @@ pBalloonCmd
 
 -- | Parse balloon change: \b[n]
 pBalloonChange :: Parser BalloonCmd
-pBalloonChange = char 'b' *> pBracketed (BalloonChange <$> pInt)
+pBalloonChange
+  = char 'b' *> pBalloonIndex
+  where
+    -- \b[N] or \bN (single digit shorthand)
+    pBalloonIndex = pBracketed (BalloonChange <$> pInt)
+                <|> (BalloonChange . read . (:[]) <$> digitChar)
 
 -- | Parse newline variants: \n, \n[half], \n[percent,n]
 pNewline :: Parser BalloonCmd
@@ -799,7 +811,12 @@ pURLText = T.pack <$> many (satisfy (\c -> c /= ',' && c /= ']'))
 pColor :: Parser Color
 pColor
   = choice
-    [ ColorDefault <$ string "default", try pColorHex, try pColorRGB, ColorName <$> pIdentifier ]
+    [ ColorDefault <$ string "default"
+    , try pColorHex
+    , try pColorRGB
+    , try pColorRGBBare  -- RGB as bare numbers: 255,0,0
+    , ColorName <$> pIdentifier
+    ]
 
 -- | Parse hex color: #RGB or #RRGGBB
 pColorHex :: Parser Color
@@ -818,6 +835,17 @@ pColorRGB = do
   _ <- pComma
   b <- pInt
   _ <- char ')'
+  pure $ ColorRGB r g b
+
+-- | Parse bare RGB color: r,g,b (without rgb() wrapper)
+-- Used in \f[color,255,0,0] style
+pColorRGBBare :: Parser Color
+pColorRGBBare = do
+  r <- pInt
+  _ <- pComma
+  g <- pInt
+  _ <- pComma
+  b <- pInt
   pure $ ColorRGB r g b
 
 -- | Parse cursor position

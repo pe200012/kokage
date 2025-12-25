@@ -23,6 +23,7 @@ module Kokage.Event
   , handleClick
     -- * SHIORI Helpers
   , sendShioriAndLog
+  , sendShioriWithCallback
     -- * Configuration
   , dragThreshold
   ) where
@@ -235,6 +236,22 @@ sendShioriAndLog Nothing _ _ = return ()  -- No SHIORI, skip
 sendShioriAndLog (Just sc) event refs = do
   result <- sendEvent (scShiori sc) event refs
   logShioriResponse event result
+
+-- | Send a SHIORI event with a callback for the response.
+-- The callback receives Just the script text on success, Nothing on failure.
+-- Does nothing if SHIORI is not configured.
+sendShioriWithCallback :: Maybe ShioriConfig 
+                       -> ShioriEvent 
+                       -> Map.Map Int T.Text 
+                       -> (Maybe T.Text -> IO ())  -- ^ Callback with response script
+                       -> IO ()
+sendShioriWithCallback Nothing _ _ _ = return ()  -- No SHIORI, skip
+sendShioriWithCallback (Just sc) event refs callback = do
+  result <- sendEvent (scShiori sc) event refs
+  logShioriResponse event result
+  case result of
+    Left _ -> callback Nothing
+    Right resp -> callback (srsValue resp)
 
 -- | Set up the FRP network for the window.
 -- Handles window close, click events (via drag), drag events, window movement,
