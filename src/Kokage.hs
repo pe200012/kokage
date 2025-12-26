@@ -33,14 +33,14 @@ module Kokage
   , sendEvent
   , toWinePath
     -- * X11 Support (always-on-top)
-  , setWindowAboveFromGtk
+  , setWindowAlwaysOnTop
     -- * Wayland Layer Shell Support (always-on-top)
   , isLayerShellSupported
-  , initLayerShell
-  , isLayerShellWindow
+  , initPlatformWindow
+  , isPlatformInitialized
   , setWindowLayer
-  , setLayerShellPosition
-  , getLayerShellPosition
+  , setWindowPosition
+  , getWindowPosition
   , Layer(..)
   , Edge(..)
   ) where
@@ -105,11 +105,11 @@ import           Kokage.Shiori.WineBridge   ( WineShiori(..)
                                             , toWinePath
                                             )
 import           Kokage.Surface
-import           Kokage.LayerShell          ( isLayerShellSupported, initLayerShell
-                                            , isLayerShellWindow, setWindowLayer
-                                            , setLayerShellPosition, getLayerShellPosition
+import           Kokage.Platform            ( isLayerShellSupported, initPlatformWindow
+                                            , isPlatformInitialized, setWindowLayer
+                                            , setWindowPosition, getWindowPosition
+                                            , setWindowAlwaysOnTop
                                             , Layer(..), Edge(..) )
-import           Kokage.X11                 ( setWindowAboveFromGtk )
 
 import           Reactive.Banana            ( compile )
 import           Reactive.Banana.Frameworks ( actuate, newAddHandler )
@@ -801,7 +801,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 let newX = currentX + round dx
                     newY = currentY + round dy
                 writeIORef (csPosition cs) (newX, newY)
-                setLayerShellPosition window newX newY
+                _ <- setWindowPosition window newX newY
                 -- Update balloon position after character moves
                 updateBalloonPosition cs dx dy
           return $ MoveLayerShell updatePosition
@@ -868,7 +868,8 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 let newX = currentX + round dx
                     newY = currentY + round dy
                 writeIORef (bsPosition bs) (newX, newY)
-                setLayerShellPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
+                _ <- setWindowPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
+                return ()
           return $ BalloonMoveLayerShell updatePosition
         else do
           let beginBalloonMove :: Double -> Double -> IO ()

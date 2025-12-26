@@ -55,8 +55,9 @@ import qualified GI.Pango                   as Pango
 import qualified GI.PangoCairo              as PangoCairo
 
 import           Kokage.Balloon.Surface     ( loadBalloonSurface )
-import           Kokage.LayerShell          ( initLayerShell, setWindowLayer, setLayerShellPosition, Layer(..) )
-import           Kokage.X11                 ( setWindowAboveFromGtk, moveWindowFromGtk )
+import           Kokage.Platform            ( initPlatformWindow, setWindowAlwaysOnTop
+                                            , setWindowPosition, setWindowLayer, Layer(..)
+                                            , isPlatformInitialized )
 import           Types.SakuraScript         ( Script, SakuraScript(..), BalloonCmd(..) )
 
 -- | A choice presented in the balloon that the user can click.
@@ -483,26 +484,27 @@ drawChoices config choices startY _scrollLine = do
       -- Continue with next choice
       drawChoiceLoop fontDesc cfg rest (y + lh) lh (rect : acc)
 
--- | Initialize layer-shell for the balloon window to make it always-on-top.
+-- | Initialize platform-specific features for the balloon window to make it always-on-top.
 -- This must be called BEFORE the balloon is shown for the first time.
--- Returns True if layer-shell was successfully initialized.
+-- Returns True if initialization was successful.
 initBalloonAlwaysOnTop :: BalloonState -> IO Bool
 initBalloonAlwaysOnTop bs = do
   let window = bsWindow bs
-  -- Try layer-shell first (Wayland)
-  layerShellSuccess <- initLayerShell window
-  if layerShellSuccess
+  -- Initialize platform (layer-shell on Wayland, nothing on X11)
+  platformSuccess <- initPlatformWindow window
+  if platformSuccess
     then do
+      -- On Wayland, set layer to top
       setWindowLayer window LayerTop
       writeIORef (bsLayerShell bs) True
-      putStrLn "[Balloon] Window set to always-on-top (Wayland layer-shell)"
+      putStrLn "[Balloon] Platform window initialized (Wayland layer-shell)"
       return True
     else do
       writeIORef (bsLayerShell bs) False
       return False
 
 -- | Show the balloon window.
--- If layer-shell was not initialized, this will attempt to use X11 always-on-top.
+-- If platform init was not done, this will attempt to use X11 always-on-top.
 -- This function is safe to call from any thread.
 showBalloon :: BalloonState -> IO ()
 showBalloon bs = do
@@ -512,11 +514,11 @@ showBalloon bs = do
     _ <- GLib.idleAdd GLib.PRIORITY_HIGH $ do
       Gtk.windowPresent (bsWindow bs)
       writeIORef (bsVisible bs) True
-      -- Apply X11 always-on-top if not using layer-shell
+      -- Apply always-on-top if not using layer-shell
       -- This needs to be done after the window is realized/shown
       isLayerShell <- readIORef (bsLayerShell bs)
       when (not isLayerShell) $ do
-        x11Success <- setWindowAboveFromGtk (bsWindow bs) True
+        x11Success <- setWindowAlwaysOnTop (bsWindow bs) True
         when x11Success $
           putStrLn "[Balloon] Window set to always-on-top (X11)"
       return False  -- Don't repeat
@@ -670,8 +672,7 @@ pixbufToCairoSurface pixbuf = do
 
 -- | Set the balloon position.
 -- Note: In GTK4, window positioning depends on the display server.
--- On Wayland with layer-shell, use setLayerShellPosition.
--- On X11, we'd need to use X11-specific APIs.
+-- Use updateBalloonPosition for delta-based positioning via Platform module.
 setBalloonPosition :: BalloonState -> Int32 -> Int32 -> IO ()
 setBalloonPosition _bs surfaceX surfaceY = do
   -- For now, this is a placeholder
@@ -702,18 +703,10 @@ updateBalloonPosition bs dx dy = do
           finalY = baseY + round dy
       writeIORef (bsPosition bs) (finalX, finalY)
 
-      -- Move the window
-      isLayerShell <- readIORef (bsLayerShell bs)
-      if isLayerShell
-        then do
-          -- On Wayland with layer-shell, use layer-shell positioning
-          setLayerShellPosition (bsWindow bs) (fromIntegral finalX) (fromIntegral finalY)
-          putStrLn $ "[Balloon] Wayland position: " <> show finalX <> ", " <> show finalY
-        else do
-          -- On X11, use XMoveWindow
-          success <- moveWindowFromGtk (bsWindow bs) (fromIntegral finalX) (fromIntegral finalY)
-          when success $
-            putStrLn $ "[Balloon] Moved to: " <> show finalX <> ", " <> show finalY
+      -- Move the window using unified Platform API
+      success <- setWindowPosition (bsWindow bs) (fromIntegral finalX) (fromIntegral finalY)
+      when success $
+        putStrLn $ "[Balloon] Moved to: " <> show finalX <> ", " <> show finalY
 
 -- | Get the current balloon window size.
 -- Returns (width, height) in pixels.

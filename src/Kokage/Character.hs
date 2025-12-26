@@ -48,10 +48,9 @@ import           Kokage.Balloon             ( BalloonState, BalloonDirection(..)
                                             , initBalloonAlwaysOnTop )
 import qualified Kokage.Balloon             as Balloon
 import           Kokage.InputRegion         ( setInputRegionFromPixbuf )
-import           Kokage.LayerShell          ( initLayerShell, setWindowLayer
-                                            , setLayerShellPosition, Layer(..) )
+import           Kokage.Platform            ( initPlatformWindow, setWindowAlwaysOnTop
+                                            , setWindowPosition, setWindowLayer, Layer(..) )
 import           Kokage.Surface             ( compositeSurface, findSurfaceById )
-import           Kokage.X11                 ( setWindowAboveFromGtk )
 
 import           Types.Ghost                ( Shell(..)
                                             , SurfaceDefinition(..)
@@ -163,8 +162,8 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
               newBalloonState app
           _ <- initBalloonAlwaysOnTop balloon
 
-          -- Try to initialize layer-shell
-          layerShellSuccess <- initLayerShell window
+          -- Try to initialize platform (layer-shell on Wayland)
+          layerShellSuccess <- initPlatformWindow window
           writeIORef layerShellRef layerShellSuccess
 
           let charState = CharacterState
@@ -193,7 +192,7 @@ destroyCharacter cs = do
   -- Note: Balloon destruction is handled by GTK when application closes
 
 -- | Show a character's surface window.
--- Uses layer-shell or X11 always-on-top depending on platform.
+-- Uses platform-specific always-on-top depending on backend.
 showCharacter :: CharacterState -> IO ()
 showCharacter cs = do
   visible <- readIORef (csVisible cs)
@@ -205,7 +204,7 @@ showCharacter cs = do
         Gtk.windowPresent (csWindow cs)
       else do
         Gtk.windowPresent (csWindow cs)
-        _ <- setWindowAboveFromGtk (csWindow cs) True
+        _ <- setWindowAlwaysOnTop (csWindow cs) True
         return ()
     writeIORef (csVisible cs) True
     putStrLn $ "[Character " <> show (csScopeId cs) <> "] Shown"
@@ -292,9 +291,9 @@ flipBalloonDirection cs = do
 setCharacterPosition :: CharacterState -> Int32 -> Int32 -> IO ()
 setCharacterPosition cs x y = do
   writeIORef (csPosition cs) (x, y)
-  isLayerShell <- readIORef (csLayerShell cs)
-  when isLayerShell $
-    setLayerShellPosition (csWindow cs) x y
+  -- Use unified platform positioning
+  _ <- setWindowPosition (csWindow cs) x y
+  return ()
 
 -- | Get a character's current window position.
 getCharacterPosition :: CharacterState -> IO (Int32, Int32)
