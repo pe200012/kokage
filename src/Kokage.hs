@@ -46,7 +46,7 @@ module Kokage
   ) where
 
 import           Control.Exception          ( try, SomeException, finally )
-import           Control.Monad              ( forM_, void, filterM, when )
+import           Control.Monad              ( forM_, void, filterM, when, unless )
 import           Control.Monad.Trans.Class  ( lift )
 import           Control.Monad.Trans.Maybe  ( MaybeT(runMaybeT, MaybeT) )
 
@@ -71,6 +71,7 @@ import qualified GI.Gtk                     as Gtk
 
 import           Kokage.Balloon             ( clearBalloon, appendText, appendChar, appendNewline
                                             , BalloonChoice(..), addChoice, clearChoices, setChoiceCallback
+                                            , hasChoices, hideBalloon
                                             , BalloonState(..) )
 import           Kokage.Character           ( CharacterState(..)
                                             , createCharacter, showCharacter
@@ -132,6 +133,7 @@ import           Types.Ghost                ( CollisionRegion(..)
                                             , loadGhost
                                             )
 import           Types.Shiori               ( ShioriEvent(..) )
+import Control.Concurrent (threadDelay)
 
 -- | Configuration for the Kokage application.
 data KokageConfig
@@ -627,6 +629,20 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
             Nothing -> putStrLn $ "[Surface] Scope " <> show scope <> " not found"
             Just cs -> setCharacterSurface cs shell newSurfaceId
 
+    -- Helper to hide all balloons if none have choices
+    let hideBalloonIfNoChoices :: IO ()
+        hideBalloonIfNoChoices = do
+          -- Check if any balloon has choices
+          anyHasChoices <- or <$> mapM (\cs -> hasChoices (getCharacterBalloon cs)) (Map.elems characters)
+          unless anyHasChoices $ do
+            -- wait for a short moment to ensure user sees the completed text
+            _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 2000 $ do
+             putStrLn "[Script] No pending choices, hiding balloons"
+             forM_ (Map.elems characters) $ \cs ->
+               hideBalloon (getCharacterBalloon cs)
+             return False
+            pure ()
+
     -- Create interpreter callbacks that interact with the balloon and surface
     let interpreterCallbacks = defaultCallbacks
           { cbAppendChar    = \c -> getCurrentBalloon >>= \b -> appendChar b c
@@ -641,8 +657,14 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
               b <- getCurrentBalloon
               addChoice b (BalloonChoice text choiceId action)
           , cbClearChoices  = getCurrentBalloon >>= clearChoices
-          , cbOnComplete    = putStrLn "[Script] Execution complete"
-          , cbOnInterrupt   = putStrLn "[Script] Execution interrupted"
+          , cbOnComplete    = do
+              putStrLn "[Script] Execution complete"
+              -- Hide balloons if no choices are pending
+              hideBalloonIfNoChoices
+          , cbOnInterrupt   = do
+              putStrLn "[Script] Execution interrupted"
+              -- Hide balloons if no choices are pending
+              hideBalloonIfNoChoices
           }
 
     -- Helper to display script in balloon with character-by-character animation

@@ -33,6 +33,7 @@ module Kokage.Balloon
   , BalloonChoice(..)
   , addChoice
   , clearChoices
+  , hasChoices
   , setChoiceCallback
     -- * SakuraScript Text Extraction
   , extractPlainText
@@ -63,7 +64,8 @@ import           Kokage.Balloon.Surface     ( loadBalloonSurface )
 import           Kokage.Platform            ( initPlatformWindow, setWindowAlwaysOnTop
                                             , setWindowPosition, setWindowLayer, Layer(..)
                                             , isPlatformInitialized )
-import           Types.Balloon              ( BalloonDescript(..), readBalloonDescript, FontSettings(..) )
+import           Types.Balloon              ( BalloonDescript(..), readBalloonDescript, FontSettings(..)
+                                            , ShadowStyle(..) )
 import           Types.SakuraScript         ( Script, SakuraScript(..), BalloonCmd(..) )
 
 -- | A choice presented in the balloon that the user can click.
@@ -98,8 +100,16 @@ data BalloonConfig
   , bcBgColorR      :: !Double     -- ^ Background color R (default: 1.0)
   , bcBgColorG      :: !Double     -- ^ Background color G (default: 1.0)
   , bcBgColorB      :: !Double     -- ^ Background color B (default: 0.94)
-  , bcBgAlpha       :: !Double     -- ^ Background alpha (default: 0.95)
-  , bcLineSpacing   :: !Int        -- ^ Line spacing in pixels (default: 2)
+  , bcBgAlpha     :: !Double     -- ^ Background alpha (default: 0.95)
+  , bcLineSpacing :: !Int        -- ^ Line spacing in pixels (default: 2)
+  , bcFontBold    :: !Bool       -- ^ Bold text
+  , bcFontItalic  :: !Bool       -- ^ Italic text
+  , bcFontUnderline :: !Bool     -- ^ Underline text
+  , bcFontStrike  :: !Bool       -- ^ Strikethrough text
+  , bcShadowStyle :: !ShadowStyle -- ^ Shadow style
+  , bcShadowColorR :: !Double    -- ^ Shadow color R
+  , bcShadowColorG :: !Double    -- ^ Shadow color G
+  , bcShadowColorB :: !Double    -- ^ Shadow color B
   }
   deriving ( Show, Eq )
 
@@ -120,6 +130,14 @@ defaultBalloonConfig = BalloonConfig
   , bcBgColorB    = 0.94
   , bcBgAlpha     = 0.95
   , bcLineSpacing = 2
+  , bcFontBold    = False
+  , bcFontItalic  = False
+  , bcFontUnderline = False
+  , bcFontStrike  = False
+  , bcShadowStyle = ShadowNone
+  , bcShadowColorR = 0.8  -- Default shadow color often light gray if not specified
+  , bcShadowColorG = 0.8
+  , bcShadowColorB = 0.8
   }
 
 -- | Create BalloonConfig from BalloonDescript and image dimensions
@@ -146,6 +164,14 @@ configFromDescript bd imgWidth imgHeight = BalloonConfig
   , bcBgColorB    = 0.94
   , bcBgAlpha     = 0.95
   , bcLineSpacing = 2
+  , bcFontBold    = fromMaybe False (fsBold (bdFont bd))
+  , bcFontItalic  = fromMaybe False (fsItalic (bdFont bd))
+  , bcFontUnderline = fromMaybe False (fsUnderline (bdFont bd))
+  , bcFontStrike  = fromMaybe False (fsStrike (bdFont bd))
+  , bcShadowStyle = fromMaybe ShadowNone (fsShadowStyle (bdFont bd))
+  , bcShadowColorR = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorR (bdFont bd))
+  , bcShadowColorG = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorG (bdFont bd))
+  , bcShadowColorB = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorB (bdFont bd))
   }
   where
     -- Origin point (where text starts)
@@ -453,7 +479,24 @@ drawText config text scrollLine = do
   fontDesc <- Cairo.liftIO Pango.fontDescriptionNew
   Cairo.liftIO $ Pango.fontDescriptionSetFamily fontDesc (bcFontName config)
   Cairo.liftIO $ Pango.fontDescriptionSetSize fontDesc (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
+  
+  -- Set style (Bold/Italic)
+  when (bcFontBold config) $
+    Cairo.liftIO $ Pango.fontDescriptionSetWeight fontDesc Pango.WeightBold
+  when (bcFontItalic config) $
+    Cairo.liftIO $ Pango.fontDescriptionSetStyle fontDesc Pango.StyleItalic
+
   Cairo.liftIO $ Pango.layoutSetFontDescription layout (Just fontDesc)
+
+  -- Set attributes (Underline/Strike)
+  attrs <- Cairo.liftIO Pango.attrListNew
+  when (bcFontUnderline config) $ do
+    attr <- Cairo.liftIO $ Pango.attrUnderlineNew Pango.UnderlineSingle
+    Cairo.liftIO $ Pango.attrListInsert attrs attr
+  when (bcFontStrike config) $ do
+    attr <- Cairo.liftIO $ Pango.attrStrikethroughNew True
+    Cairo.liftIO $ Pango.attrListInsert attrs attr
+  Cairo.liftIO $ Pango.layoutSetAttributes layout (Just attrs)
 
   -- Set wrapping - use CHAR mode for Japanese text support (like ninix-kagari)
   Cairo.liftIO $ Pango.layoutSetWidth layout (fromIntegral $ bcValidWidth config * fromIntegral Pango.SCALE)
@@ -483,17 +526,43 @@ drawText config text scrollLine = do
     (fromIntegral $ bcValidHeight config)
   Cairo.clip
 
+  -- Move to text origin with scroll offset
+  let scrollOffset = fromIntegral scrollLine * lineHeight
+  
+  -- Draw Shadow (if enabled)
+  case bcShadowStyle config of
+    ShadowNone -> return ()
+    ShadowOffset -> do
+      Cairo.save
+      Cairo.setSourceRGB (bcShadowColorR config) (bcShadowColorG config) (bcShadowColorB config)
+      -- Draw offset by 1 pixel (standard for ShadowOffset)
+      Cairo.moveTo
+        (fromIntegral (bcOriginX config) + 1)
+        (fromIntegral (bcOriginY config) - scrollOffset + 1)
+      Cairo.liftIO $ PangoCairo.showLayout ctx layout
+      Cairo.restore
+    ShadowOutline -> do
+      -- Outline shadow: stroke the path
+      Cairo.save
+      Cairo.setSourceRGB (bcShadowColorR config) (bcShadowColorG config) (bcShadowColorB config)
+      Cairo.moveTo
+        (fromIntegral (bcOriginX config))
+        (fromIntegral (bcOriginY config) - scrollOffset)
+      Cairo.liftIO $ PangoCairo.layoutPath ctx layout
+      Cairo.setLineWidth 2.0 -- 1px border on each side effectively
+      Cairo.stroke
+      Cairo.restore
+
+  -- Draw main text
+  Cairo.moveTo
+    (fromIntegral $ bcOriginX config)
+    (fromIntegral (bcOriginY config) - scrollOffset)
+
   -- Set text color
   Cairo.setSourceRGB
     (bcTextColorR config)
     (bcTextColorG config)
     (bcTextColorB config)
-
-  -- Move to text origin with scroll offset
-  let scrollOffset = fromIntegral scrollLine * lineHeight
-  Cairo.moveTo
-    (fromIntegral $ bcOriginX config)
-    (fromIntegral (bcOriginY config) - scrollOffset)
 
   -- Draw the text
   Cairo.liftIO $ PangoCairo.showLayout ctx layout
@@ -911,6 +980,12 @@ clearChoices bs = do
   writeIORef (bsChoices bs) []
   writeIORef (bsChoiceRects bs) []
   Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Check if balloon has any active choices
+hasChoices :: BalloonState -> IO Bool
+hasChoices bs = do
+  choices <- readIORef (bsChoices bs)
+  return (not (null choices))
 
 -- | Set the callback to be called when a choice is selected.
 setChoiceCallback :: BalloonState -> (BalloonChoice -> IO ()) -> IO ()
