@@ -15,6 +15,7 @@ module Kokage.Character
   , showCharacter
   , hideCharacter
   , isCharacterVisible
+  , tickCharacter
     -- * Surface Operations
   , setCharacterSurface
   , getCharacterSurface
@@ -43,6 +44,7 @@ import qualified GI.GdkPixbuf               as Pixbuf
 import qualified GI.GLib                    as GLib
 import qualified GI.Gtk                     as Gtk
 
+import           Kokage.Animation           ( AnimationState(..), newAnimationState, tickAnimations, compositeAnimation )
 import           Kokage.Balloon             ( BalloonState, BalloonDirection(..)
                                             , newBalloonState
                                             , newBalloonStateWithSurface
@@ -72,6 +74,7 @@ data CharacterState = CharacterState
   , csVisible        :: !(IORef Bool)           -- ^ Whether character is currently shown
   , csScopeId        :: !Int                    -- ^ Scope index (0=sakura, 1=kero, etc.)
   , csLayerShell     :: !(IORef Bool)           -- ^ Whether layer-shell is active
+  , csAnimState      :: !AnimationState         -- ^ Animation state manager
   }
 
 -- | Map from scope ID to character state.
@@ -147,6 +150,11 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
           visibleRef <- newIORef False
           layerShellRef <- newIORef False
 
+          -- Initialize animation state
+          animState <- newAnimationState
+          -- Set the initial base pixbuf
+          writeIORef (asBasePixbuf animState) (Just pixbuf)
+
           -- Determine character type for balloon surface
           -- Scope 0 = sakura -> "s", Scope 1+ = kero -> "k"
           let charType = if scopeId == 0 then "s" else "k"
@@ -179,6 +187,7 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
                 , csVisible = visibleRef
                 , csScopeId = scopeId
                 , csLayerShell = layerShellRef
+                , csAnimState = animState
                 }
 
           putStrLn $ "[Character " <> show scopeId <> "] Created: "
@@ -228,7 +237,10 @@ isCharacterVisible = readIORef . csVisible
 setCharacterSurface :: CharacterState -> Shell -> Int -> IO ()
 setCharacterSurface cs shell newSurfId = do
   currentId <- readIORef (csCurrentSurface cs)
-  when (currentId /= newSurfId) $ do
+  -- Allow reloading same surface to reset animations if needed (e.g., runonce)
+  -- But for optimization we check if ID is different OR if forced refresh is desired.
+  -- For now, always reload to support surface-specific animations correctly.
+  when (True) $ do
     let surfaces = shellSurfaces shell
     case findSurfaceById newSurfId surfaces of
       Nothing -> putStrLn $ "[Character " <> show (csScopeId cs)
@@ -242,6 +254,13 @@ setCharacterSurface cs shell newSurfId = do
             -- Get surface dimensions for future use
             w <- Pixbuf.pixbufGetWidth pixbuf
             h <- Pixbuf.pixbufGetHeight pixbuf
+            
+            -- Update animation state
+            -- Reset animations for the new surface
+            let animState = csAnimState cs
+            writeIORef (asActiveAnims animState) []
+            writeIORef (asBasePixbuf animState) (Just pixbuf)
+            
             -- Schedule GTK operations on main thread
             _ <- GLib.idleAdd GLib.PRIORITY_HIGH $ do
               texture <- Gdk.textureNewForPixbuf pixbuf
@@ -257,6 +276,46 @@ setCharacterSurface cs shell newSurfId = do
                       <> "] Surface changed to " <> show newSurfId
               return False
             return ()
+
+-- | Tick animation for the character.
+-- Should be called periodically (e.g. 50ms).
+tickCharacter :: CharacterState -> Shell -> Int -> IO ()
+tickCharacter cs shell delta = do
+  -- Only process if visible
+  visible <- readIORef (csVisible cs)
+  when visible $ do
+    let animState = csAnimState cs
+    surfId <- readIORef (csCurrentSurface cs)
+    
+    -- Find current surface definition
+    case findSurfaceById surfId (shellSurfaces shell) of
+      Nothing -> return ()
+      Just surfDef -> do
+        activeAnims <- readIORef (asActiveAnims animState)
+        currentTimers <- readIORef (asPeriodicState animState)
+        
+        -- Tick animations
+        (newAnims, newTimers, needsRedraw) <- tickAnimations shell surfDef activeAnims currentTimers delta
+        writeIORef (asActiveAnims animState) newAnims
+        writeIORef (asPeriodicState animState) newTimers
+        
+        -- If visual state changed, composite and update
+        when needsRedraw $ do
+          mBasePixbuf <- readIORef (asBasePixbuf animState)
+          case mBasePixbuf of
+            Nothing -> return ()
+            Just basePixbuf -> do
+              -- Composite active animations onto base
+              mFinalPixbuf <- compositeAnimation shell basePixbuf newAnims
+              case mFinalPixbuf of
+                Nothing -> return ()
+                Just finalPixbuf -> do
+                  -- Update the picture (must be on main thread)
+                  _ <- GLib.idleAdd GLib.PRIORITY_DEFAULT_IDLE $ do
+                    texture <- Gdk.textureNewForPixbuf finalPixbuf
+                    Gtk.pictureSetPaintable (csPicture cs) (Just texture)
+                    return False
+                  return ()
 
 -- | Get the current surface ID for a character.
 getCharacterSurface :: CharacterState -> IO Int

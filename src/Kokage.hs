@@ -77,7 +77,7 @@ import           Kokage.Character           ( CharacterState(..)
                                             , createCharacter, showCharacter
                                             , setCharacterSurface, getCharacterBalloon
                                             , setCharacterPosition, initBalloonPosition
-                                            , updateBalloonPosition )
+                                            , updateBalloonPosition, tickCharacter )
 import           Kokage.Collision
 import           Kokage.Event               ( InputHandlers(..)
                                             , TimerHandlers(..), MoveMode(..)
@@ -636,7 +636,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           anyHasChoices <- or <$> mapM (\cs -> hasChoices (getCharacterBalloon cs)) (Map.elems characters)
           unless anyHasChoices $ do
             -- wait for a short moment to ensure user sees the completed text
-            _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 2000 $ do
+            _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
              putStrLn "[Script] No pending choices, hiding balloons"
              forM_ (Map.elems characters) $ \cs ->
                hideBalloon (getCharacterBalloon cs)
@@ -737,6 +737,14 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       fireMinuteTick lt
       return True
 
+    -- Set up animation timer (fires every 50ms = 20fps)
+    -- This drives the SERIKO animations
+    _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 50 $ do
+      -- Tick all characters
+      forM_ (Map.elems characters) $ \cs ->
+        tickCharacter cs shell 50
+      return True
+
     -- Set up global timer FRP network
     let globalConfig = GlobalNetworkConfig
           { gncTimers = TimerHandlers
@@ -744,6 +752,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
               , thMinuteTick = minuteTickHandler
               }
           , gncShiori = mShioriConfig
+          , gncScriptHandler = displayScript
           }
     globalNetwork <- compile (setupGlobalNetwork globalConfig)
     actuate globalNetwork
@@ -851,6 +860,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
             , cncMoveMode   = moveMode
             , cncScopeId    = scopeId
             , cncShiori     = mShioriConfig
+            , cncScriptHandler = displayScript
             }
 
       -- Compile and activate character network

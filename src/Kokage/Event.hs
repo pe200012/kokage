@@ -21,6 +21,7 @@ module Kokage.Event
   , TimerHandlers(..)
   , MoveMode(..)
   , BalloonMoveMode(..)
+  , ScriptHandler
     -- * Network Setup
   , setupNetwork
   , setupCharacterNetwork
@@ -133,6 +134,9 @@ data ShioriConfig
   , scGhostPath :: !FilePath        -- ^ Path to ghost directory (for HISTORY)
   }
 
+-- | Handler for executing SHIORI response scripts.
+type ScriptHandler = Maybe T.Text -> IO ()
+
 -- | Configuration for a single character's FRP network.
 -- Each character window has its own FRP network for input handling.
 data CharacterNetworkConfig
@@ -143,6 +147,7 @@ data CharacterNetworkConfig
   , cncMoveMode   :: !MoveMode                  -- ^ How to handle window movement
   , cncScopeId    :: !Int                       -- ^ Character scope ID (0=sakura, 1=kero, etc.)
   , cncShiori     :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
+  , cncScriptHandler :: !ScriptHandler          -- ^ Handler for SHIORI scripts
   }
 
 -- | Configuration for the global FRP network (timers).
@@ -151,6 +156,7 @@ data GlobalNetworkConfig
   = GlobalNetworkConfig
   { gncTimers  :: !TimerHandlers             -- ^ Timer event handlers (shared)
   , gncShiori  :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
+  , gncScriptHandler :: !ScriptHandler       -- ^ Handler for SHIORI scripts
   }
 
 -- | Balloon window move mode.
@@ -485,11 +491,12 @@ setupCharacterNetwork config = do
       moveMode   = cncMoveMode config
       scopeId    = cncScopeId config
       mShiori    = cncShiori config
+      handler    = cncScriptHandler config
 
   -- Create close event - closeRequest returns Bool, we return False to allow close
   closeE <- signalE0R window #closeRequest False
   -- Send OnClose event when window closes
-  reactimate $ sendShioriAndLog mShiori OnClose Map.empty <$ closeE
+  reactimate $ sendShioriWithCallback mShiori OnClose Map.empty handler <$ closeE
 
   -- Get input events from drag gesture
   dragBeginE <- fromAddHandler (ihDragBegin inputs)
@@ -512,7 +519,7 @@ setupCharacterNetwork config = do
                   , (4, crName cr)                  -- Reference4: part name
                   , (5, T.pack $ show surfId)       -- Reference5: surface id
                   ]
-            sendShioriAndLog mShiori OnMouseMove refs
+            sendShioriWithCallback mShiori OnMouseMove refs handler
           Nothing -> return ()
 
   reactimate $ handleMotion <$> motionE
@@ -545,7 +552,7 @@ setupCharacterNetwork config = do
                   , (4, T.pack $ show scopeId)      -- Character scope
                   , (5, T.pack $ show surfId)
                   ]
-            sendShioriAndLog mShiori OnMouseClick refs
+            sendShioriWithCallback mShiori OnMouseClick refs handler
           HitNothing evt -> do
             let surfId = maybe 0 scSurfaceId mShiori
                 refs = Map.fromList
@@ -556,7 +563,7 @@ setupCharacterNetwork config = do
                   , (4, T.pack $ show scopeId)
                   , (5, T.pack $ show surfId)
                   ]
-            sendShioriAndLog mShiori OnMouseClick refs
+            sendShioriWithCallback mShiori OnMouseClick refs handler
 
   reactimate $ handleCollisionHit <$> hitE
   reactimate $ (putStrLn "[Click] Suppressed (drag exceeded threshold)") <$ suppressedE
@@ -592,6 +599,7 @@ setupGlobalNetwork :: GlobalNetworkConfig -> MomentIO ()
 setupGlobalNetwork config = do
   let timers  = gncTimers config
       mShiori = gncShiori config
+      handler = gncScriptHandler config
 
   -- Get timer events
   secondTickE <- fromAddHandler (thSecondTick timers)
@@ -610,7 +618,7 @@ setupGlobalNetwork config = do
               , (2, "0")  -- kasanari - TODO
               , (3, "1")  -- cantalk
               ]
-        sendShioriAndLog mShiori OnSecondChange refs
+        sendShioriWithCallback mShiori OnSecondChange refs handler
 
   -- Handle minute tick
   let handleMinuteTick lt = do
@@ -625,7 +633,7 @@ setupGlobalNetwork config = do
               , (2, "0")
               , (3, "1")
               ]
-        sendShioriAndLog mShiori OnMinuteChange refs
+        sendShioriWithCallback mShiori OnMinuteChange refs handler
 
   reactimate $ handleSecondTick <$> secondTickE
   reactimate $ handleMinuteTick <$> minuteTickE

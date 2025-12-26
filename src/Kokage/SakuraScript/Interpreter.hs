@@ -202,7 +202,7 @@ displayChar state c = do
   quick <- readIORef (esQuickMode state)
   unless quick $ do
     let delayMs = ecCharDelay (esConfig state)
-    threadDelay (delayMs * 1000)
+    threadDelay (delayMs * 1500)
 
 --------------------------------------------------------------------------------
 -- Scope Handling
