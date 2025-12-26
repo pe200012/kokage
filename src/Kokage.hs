@@ -75,7 +75,7 @@ import           Kokage.Balloon             ( clearBalloon, appendText, appendCh
 import           Kokage.Character           ( CharacterState(..)
                                             , createCharacter, showCharacter
                                             , setCharacterSurface, getCharacterBalloon
-                                            , setCharacterPosition
+                                            , setCharacterPosition, initBalloonPosition
                                             , updateBalloonPosition )
 import           Kokage.Collision
 import           Kokage.Event               ( InputHandlers(..)
@@ -920,9 +920,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- This needs a small delay to ensure windows are realized
     _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 100 $ do
       forM_ (Map.elems characters) $ \cs ->
-        -- updateBalloonPosition cs dx dy
-        -- TODO: Calculate initial offsets properly
-        updateBalloonPosition cs 0 0
+        initBalloonPosition cs shell
       return False  -- Don't repeat
 
     -- Send OnBoot or OnFirstBoot event

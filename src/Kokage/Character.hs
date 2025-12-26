@@ -20,6 +20,7 @@ module Kokage.Character
   , getCharacterSurface
     -- * Balloon Operations
   , getCharacterBalloon
+  , initBalloonPosition
   , updateBalloonPosition
   , flipBalloonDirection
     -- * Position Operations
@@ -264,6 +265,55 @@ getCharacterSurface = readIORef . csCurrentSurface
 -- | Get the balloon state for a character.
 getCharacterBalloon :: CharacterState -> BalloonState
 getCharacterBalloon = csBalloon
+
+-- | Initialize the balloon position based on character position.
+-- This should be called after the character's initial position is set.
+--
+-- The balloon is positioned relative to the character:
+-- - BalloonLeft: To the left of the character
+-- - BalloonRight: To the right of the character
+--
+-- Takes into account:
+-- - Character window position
+-- - Character surface size
+-- - Balloon size
+-- - Balloon direction
+-- - Shell-defined offsets (from getBalloonOffset)
+initBalloonPosition :: CharacterState -> Shell -> IO ()
+initBalloonPosition cs shell = do
+  -- Get character position and size
+  (charX, charY) <- readIORef (csPosition cs)
+  (surfW, surfH) <- readIORef (csSurfaceSize cs)
+  
+  -- Get balloon size
+  balloonSize <- Balloon.getBalloonSize (csBalloon cs)
+  let (balloonW, _balloonH) = balloonSize
+  
+  -- Get current surface and direction
+  surfId <- readIORef (csCurrentSurface cs)
+  dir <- readIORef (csBalloonDir cs)
+  
+  -- Get offset from shell/surface definitions
+  let (offsetX, offsetY) = getBalloonOffset shell (csScopeId cs) surfId dir
+  
+  -- Calculate balloon position based on direction
+  -- BalloonRight: balloon to the right of character (sakura default)
+  -- BalloonLeft: balloon to the left of character (kero default)
+  let balloonX = case dir of
+        BalloonRight -> fromIntegral charX + surfW + offsetX
+        BalloonLeft  -> fromIntegral charX - balloonW + offsetX
+      balloonY = fromIntegral charY + offsetY
+  
+  putStrLn $ "[Character " <> show (csScopeId cs) <> "] Balloon initial position:"
+          <> " char=(" <> show charX <> "," <> show charY <> ")"
+          <> " surfSize=(" <> show surfW <> "," <> show surfH <> ")"
+          <> " balloonSize=" <> show balloonSize
+          <> " dir=" <> show dir
+          <> " offset=(" <> show offsetX <> "," <> show offsetY <> ")"
+          <> " -> balloon=(" <> show balloonX <> "," <> show balloonY <> ")"
+  
+  -- Set the balloon position
+  Balloon.setBalloonPosition (csBalloon cs) balloonX balloonY
 
 -- | Update the balloon position based on character surface position.
 -- Takes into account balloon direction and shell-defined offsets.

@@ -670,29 +670,17 @@ pixbufToCairoSurface pixbuf = do
 
   return $ Just surface
 
--- | Set the balloon position.
--- Note: In GTK4, window positioning depends on the display server.
--- Use updateBalloonPosition for delta-based positioning via Platform module.
-setBalloonPosition :: BalloonState -> Int32 -> Int32 -> IO ()
-setBalloonPosition _bs surfaceX surfaceY = do
-  -- For now, this is a placeholder
-  -- Proper positioning requires layer-shell or X11-specific code
-  let balloonX = surfaceX - 320  -- 300 width + 20 margin
-      balloonY = surfaceY
-  putStrLn $ "[Balloon] Position request: " <> show balloonX <> ", " <> show balloonY
+-- | Set the balloon position (absolute).
+-- This sets the balloon's base position and moves the window.
+-- Use this for initial positioning or repositioning the balloon.
+setBalloonPosition :: BalloonState -> Int -> Int -> IO ()
+setBalloonPosition bs x y = do
+  writeIORef (bsPosition bs) (x, y)
+  -- Move the window using unified Platform API
+  _ <- setWindowPosition (bsWindow bs) (fromIntegral x) (fromIntegral y)
+  putStrLn $ "[Balloon] Set position to: " <> show x <> ", " <> show y
 
 -- | Update the balloon position relative to a character window.
---
--- The balloon is positioned:
--- - To the LEFT of the character when direction is BalloonLeft (direction=0)
--- - To the RIGHT of the character when direction is BalloonRight (direction=1)
---
--- The positioning also takes into account:
--- - The drag offset (user can drag the balloon to adjust its position)
--- - Screen boundaries (balloon is kept within the visible monitor area)
---
--- NOTE: This function is skipped if a drag is currently in progress to avoid
--- interfering with the user's drag operation.
 updateBalloonPosition :: BalloonState
                       -> Double           -- ^ Delta x
                       -> Double           -- ^ Delta y
