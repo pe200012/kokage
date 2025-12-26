@@ -27,6 +27,8 @@ module Kokage.Balloon
   , initBalloonAlwaysOnTop
   , scrollUp
   , scrollDown
+  , setAutoScroll
+  , getAutoScroll
     -- * Choice Support
   , BalloonChoice(..)
   , addChoice
@@ -36,13 +38,16 @@ module Kokage.Balloon
   , extractPlainText
   ) where
 
-import           Control.Monad              ( void, when )
+import           Control.Monad              ( void, when, unless )
 import qualified Data.ByteString            as BS
 import           Data.IORef                 ( IORef, newIORef, readIORef, writeIORef, modifyIORef' )
 import           Data.Int                   ( Int32 )
+import           Data.Maybe                 ( fromMaybe )
 import qualified Data.Text                  as T
 import           Data.Word                  ( Word8 )
 import           Foreign.Ptr                ( castPtr )
+import           System.FilePath            ( (</>) )
+import           System.Directory           ( doesFileExist )
 
 import           Data.GI.Base               ( AttrOp((:=)), new, on )
 import qualified GI.Cairo.Render            as Cairo
@@ -58,6 +63,7 @@ import           Kokage.Balloon.Surface     ( loadBalloonSurface )
 import           Kokage.Platform            ( initPlatformWindow, setWindowAlwaysOnTop
                                             , setWindowPosition, setWindowLayer, Layer(..)
                                             , isPlatformInitialized )
+import           Types.Balloon              ( BalloonDescript(..), readBalloonDescript, FontSettings(..) )
 import           Types.SakuraScript         ( Script, SakuraScript(..), BalloonCmd(..) )
 
 -- | A choice presented in the balloon that the user can click.
@@ -116,6 +122,65 @@ defaultBalloonConfig = BalloonConfig
   , bcLineSpacing = 2
   }
 
+-- | Create BalloonConfig from BalloonDescript and image dimensions
+-- 
+-- The text area is calculated according to ukadoc:
+-- - X = origin.x + validrect.left
+-- - Y = origin.y + validrect.top
+-- - Width = (image_width + validrect.right) - X - origin.x
+--   - Or use wordwrappoint.x if specified (negative value from right edge)
+-- - Height = (image_height + validrect.bottom) - Y - origin.y
+configFromDescript :: BalloonDescript -> Int -> Int -> BalloonConfig
+configFromDescript bd imgWidth imgHeight = BalloonConfig
+  { bcOriginX     = originX
+  , bcOriginY     = originY
+  , bcValidWidth  = validWidth
+  , bcValidHeight = validHeight
+  , bcFontName    = fromMaybe "Sans" (fsName (bdFont bd))
+  , bcFontSize    = fromMaybe 12 (fsHeight (bdFont bd))
+  , bcTextColorR  = maybe 0.2 (\v -> fromIntegral v / 255.0) (fsColorR (bdFont bd))
+  , bcTextColorG  = maybe 0.2 (\v -> fromIntegral v / 255.0) (fsColorG (bdFont bd))
+  , bcTextColorB  = maybe 0.2 (\v -> fromIntegral v / 255.0) (fsColorB (bdFont bd))
+  , bcBgColorR    = 1.0
+  , bcBgColorG    = 1.0
+  , bcBgColorB    = 0.94
+  , bcBgAlpha     = 0.95
+  , bcLineSpacing = 2
+  }
+  where
+    -- Origin point (where text starts)
+    originX = fromMaybe 10 (bdOriginX bd)
+    originY = fromMaybe 10 (bdOriginY bd)
+    
+    -- Valid rect offsets (can be negative)
+    validRectLeft   = fromMaybe 0 (bdValidRectLeft bd)
+    validRectTop    = fromMaybe 0 (bdValidRectTop bd)
+    validRectRight  = fromMaybe 0 (bdValidRectRight bd)
+    validRectBottom = fromMaybe 0 (bdValidRectBottom bd)
+    
+    -- Text area start position
+    textAreaX = originX + validRectLeft
+    textAreaY = originY + validRectTop
+    
+    -- Calculate valid width
+    -- If wordwrappoint.x is specified, use it (negative value from right edge)
+    -- Otherwise use validrect.right
+    validWidth = case bdWordWrapPointX bd of
+      Just wwpX -> 
+        -- wordwrappoint.x is offset from right edge (negative)
+        -- width = imgWidth + wwpX - textAreaX
+        imgWidth + wwpX - textAreaX
+      Nothing ->
+        -- Use validrect.right (can be negative, meaning from right edge)
+        -- width = (imgWidth + validRectRight) - originX - textAreaX
+        -- Simplified: imgWidth + validRectRight - originX - (originX + validRectLeft)
+        --           = imgWidth + validRectRight - 2*originX - validRectLeft
+        imgWidth + validRectRight - textAreaX - originX
+    
+    -- Calculate valid height
+    -- validrect.bottom can be negative, meaning offset from bottom edge
+    validHeight = imgHeight + validRectBottom - textAreaY - originY
+
 -- | State for a balloon window.
 data BalloonState
   = BalloonState
@@ -134,6 +199,8 @@ data BalloonState
   , bsBalloonDir    :: !(IORef (Maybe FilePath))  -- ^ Balloon directory path for surface loading
   , bsCharType      :: !(IORef T.Text)            -- ^ Character type: "s" (sakura), "k" (kero), "c" (communicate)
   , bsPosition      :: !(IORef (Int, Int))        -- ^ Current balloon position (x, y)
+  , bsAutoScroll    :: !(IORef Bool)              -- ^ Whether to auto-scroll when text overflows (default: True)
+  , bsDescript      :: !(IORef (Maybe BalloonDescript))  -- ^ Balloon descript.txt settings
   }
 
 -- | Create a new balloon state with default configuration.
@@ -159,6 +226,8 @@ newBalloonStateWithConfig app config = do
   balloonDirRef <- newIORef Nothing
   charTypeRef <- newIORef "s"  -- Default to sakura
   positionRef <- newIORef (bcOriginX config, bcOriginY config) -- Initial balloon position
+  autoScrollRef <- newIORef True  -- Auto-scroll enabled by default (like ninix-kagari)
+  descriptRef <- newIORef Nothing  -- Balloon descript (loaded later)
 
   -- Create the balloon window
   window <- new Gtk.Window
@@ -259,6 +328,8 @@ newBalloonStateWithConfig app config = do
     , bsBalloonDir     = balloonDirRef
     , bsCharType       = charTypeRef
     , bsPosition       = positionRef
+    , bsAutoScroll     = autoScrollRef
+    , bsDescript       = descriptRef
     }
 
 -- | Create a new balloon state with a surface loaded from a balloon directory.
@@ -274,11 +345,33 @@ newBalloonStateWithSurface
   -> T.Text           -- ^ Character type: "s" for sakura, "k" for kero
   -> IO BalloonState
 newBalloonStateWithSurface app balloonDir charType = do
+  -- Try to load descript.txt from balloon directory
+  let descriptPath = balloonDir </> "descript.txt"
+  descriptExists <- doesFileExist descriptPath
+  mDescript <- if descriptExists
+    then do
+      descript <- readBalloonDescript descriptPath
+      putStrLn $ "[Balloon] Loaded descript.txt from: " <> descriptPath
+      putStrLn $ "[Balloon]   origin: (" <> show (bdOriginX descript) <> ", " <> show (bdOriginY descript) <> ")"
+      putStrLn $ "[Balloon]   validrect: left=" <> show (bdValidRectLeft descript) 
+              <> " top=" <> show (bdValidRectTop descript)
+              <> " right=" <> show (bdValidRectRight descript)
+              <> " bottom=" <> show (bdValidRectBottom descript)
+      putStrLn $ "[Balloon]   wordwrappoint.x: " <> show (bdWordWrapPointX descript)
+      return (Just descript)
+    else do
+      putStrLn $ "[Balloon] No descript.txt found at: " <> descriptPath <> ", using defaults"
+      return Nothing
+  
+  -- Create balloon with default config first
   bs <- newBalloonStateWithConfig app defaultBalloonConfig
-  -- Store balloon directory and char type for future surface switches
+  
+  -- Store balloon directory, char type, and descript for future surface switches
   writeIORef (bsBalloonDir bs) (Just balloonDir)
   writeIORef (bsCharType bs) charType
-  -- Load the initial surface (index 0)
+  writeIORef (bsDescript bs) mDescript
+  
+  -- Load the initial surface (index 0) - this will also update config based on image size
   _ <- loadAndSetBalloonSurface bs balloonDir charType 0
   return bs
 
@@ -362,9 +455,9 @@ drawText config text scrollLine = do
   Cairo.liftIO $ Pango.fontDescriptionSetSize fontDesc (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
   Cairo.liftIO $ Pango.layoutSetFontDescription layout (Just fontDesc)
 
-  -- Set wrapping
+  -- Set wrapping - use CHAR mode for Japanese text support (like ninix-kagari)
   Cairo.liftIO $ Pango.layoutSetWidth layout (fromIntegral $ bcValidWidth config * fromIntegral Pango.SCALE)
-  Cairo.liftIO $ Pango.layoutSetWrap layout Pango.WrapModeWord
+  Cairo.liftIO $ Pango.layoutSetWrap layout Pango.WrapModeChar
 
   -- Set line spacing
   Cairo.liftIO $ Pango.layoutSetSpacing layout (fromIntegral $ bcLineSpacing config * fromIntegral Pango.SCALE)
@@ -543,9 +636,13 @@ clearBalloon bs = do
 
 -- | Append text to the balloon.
 -- This is the main function called when processing SakuraScript text.
+-- If auto-scroll is enabled, automatically scrolls to show the last line.
 appendText :: BalloonState -> T.Text -> IO ()
 appendText bs txt = do
   modifyIORef' (bsText bs) (<> txt)
+  -- Perform auto-scroll if enabled
+  autoScroll <- readIORef (bsAutoScroll bs)
+  when autoScroll $ autoScrollToLastLine bs
   Gtk.widgetQueueDraw (bsDrawArea bs)
   -- Auto-show when text is added
   showBalloon bs
@@ -595,8 +692,22 @@ loadAndSetBalloonSurface bs balloonDir charType index = do
   mPixbuf <- loadBalloonSurface balloonDir charType index
   setBalloonSurface bs mPixbuf
   case mPixbuf of
-    Just _ -> do
+    Just pixbuf -> do
       putStrLn $ "[Balloon] Loaded surface: balloon" <> T.unpack charType <> show index
+      -- Get image dimensions and update config based on descript
+      imgWidth <- fromIntegral <$> Pixbuf.pixbufGetWidth pixbuf
+      imgHeight <- fromIntegral <$> Pixbuf.pixbufGetHeight pixbuf
+      mDescript <- readIORef (bsDescript bs)
+      case mDescript of
+        Just descript -> do
+          let newConfig = configFromDescript descript imgWidth imgHeight
+          writeIORef (bsConfig bs) newConfig
+          putStrLn $ "[Balloon]   image size: " <> show imgWidth <> "x" <> show imgHeight
+          putStrLn $ "[Balloon]   text area: origin=(" <> show (bcOriginX newConfig) <> "," <> show (bcOriginY newConfig) 
+                  <> ") size=" <> show (bcValidWidth newConfig) <> "x" <> show (bcValidHeight newConfig)
+        Nothing -> 
+          -- No descript, keep default config but still log image size
+          putStrLn $ "[Balloon]   image size: " <> show imgWidth <> "x" <> show imgHeight <> " (using default config)"
       return True
     Nothing -> do
       putStrLn $ "[Balloon] Failed to load: balloon" <> T.unpack charType <> show index
@@ -725,6 +836,62 @@ scrollDown :: BalloonState -> IO ()
 scrollDown bs = do
   modifyIORef' (bsScrollLine bs) (+ 1)
   Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set whether auto-scroll is enabled.
+-- When enabled (default), the balloon automatically scrolls to show the last
+-- line of text when new text is added that would overflow the visible area.
+-- This matches the behavior of ninix-kagari's autoscroll feature.
+setAutoScroll :: BalloonState -> Bool -> IO ()
+setAutoScroll bs flag = writeIORef (bsAutoScroll bs) flag
+
+-- | Get current auto-scroll setting.
+getAutoScroll :: BalloonState -> IO Bool
+getAutoScroll bs = readIORef (bsAutoScroll bs)
+
+-- | Auto-scroll to show the last line of text.
+-- This calculates the text height using Pango and adjusts the scroll position
+-- so that the bottom of the text is visible within the valid area.
+-- Called automatically when text is appended and auto-scroll is enabled.
+autoScrollToLastLine :: BalloonState -> IO ()
+autoScrollToLastLine bs = do
+  config <- readIORef (bsConfig bs)
+  text <- readIORef (bsText bs)
+  
+  -- Early return if no text
+  unless (T.null text) $ do
+    -- Get a Pango context from the drawing area widget
+    pangoCtx <- Gtk.widgetGetPangoContext (bsDrawArea bs)
+    layout <- Pango.layoutNew pangoCtx
+    
+    -- Set up layout same as in drawText
+    Pango.layoutSetText layout text (-1)
+    
+    fontDesc <- Pango.fontDescriptionNew
+    Pango.fontDescriptionSetFamily fontDesc (bcFontName config)
+    Pango.fontDescriptionSetSize fontDesc (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
+    Pango.layoutSetFontDescription layout (Just fontDesc)
+    
+    -- Use CHAR wrapping like in drawText
+    Pango.layoutSetWidth layout (fromIntegral $ bcValidWidth config * fromIntegral Pango.SCALE)
+    Pango.layoutSetWrap layout Pango.WrapModeChar
+    Pango.layoutSetSpacing layout (fromIntegral $ bcLineSpacing config * fromIntegral Pango.SCALE)
+    
+    -- Get text height and calculate line height
+    (_, textHeight) <- Pango.layoutGetPixelSize layout
+    metrics <- Pango.contextGetMetrics pangoCtx (Just fontDesc) Nothing
+    ascent <- Pango.fontMetricsGetAscent metrics
+    descent <- Pango.fontMetricsGetDescent metrics
+    let lineHeight = (fromIntegral ascent + fromIntegral descent + fromIntegral (bcLineSpacing config * fromIntegral Pango.SCALE)) / fromIntegral Pango.SCALE :: Double
+    
+    -- Calculate how much text overflows the valid area
+    let validHeight = fromIntegral (bcValidHeight config) :: Double
+        totalTextHeight = fromIntegral textHeight :: Double
+        
+    -- If text overflows, calculate scroll lines needed
+    when (totalTextHeight > validHeight && lineHeight > 0) $ do
+      let overflow = totalTextHeight - validHeight
+          scrollLinesNeeded = ceiling (overflow / lineHeight)
+      writeIORef (bsScrollLine bs) scrollLinesNeeded
 
 --------------------------------------------------------------------------------
 -- Choice Support

@@ -215,6 +215,7 @@ data BalloonCmd
   | NoUserBreakEnd                                  -- ^ \_! - Enable user break
   | VerbatimStart                                   -- ^ \![set,verbatim,true] - Start verbatim
   | VerbatimEnd                                     -- ^ \![set,verbatim,false] - End verbatim
+  | SyncSection !(Maybe [Int])                      -- ^ \_s or \_s[id1,id2,...] - Synchronize section
   deriving ( Eq, Show )
 
 -- | Balloon image specification

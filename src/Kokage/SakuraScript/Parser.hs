@@ -207,8 +207,15 @@ pBalloonCmd
     , pClearChars
     , pCursorMove
     , pBalloonHideOrImage
+    , pSyncSection
     , pBalloonBang
     ]
+
+-- | Parse sync section: \_s or \_s[id1,id2,...]
+pSyncSection :: Parser BalloonCmd
+pSyncSection = string "_s" *> option (SyncSection Nothing) (pBracketed pSyncSectionArgs)
+  where
+    pSyncSectionArgs = SyncSection . Just <$> (pInt `sepBy` pComma)
 
 -- | Parse balloon change: \b[n]
 pBalloonChange :: Parser BalloonCmd
