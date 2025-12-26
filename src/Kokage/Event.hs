@@ -13,12 +13,19 @@ module Kokage.Event
   , TimerEvent(..)
     -- * Network Configuration
   , NetworkConfig(..)
+  , CharacterNetworkConfig(..)
+  , GlobalNetworkConfig(..)
+  , BalloonNetworkConfig(..)
   , ShioriConfig(..)
   , InputHandlers(..)
   , TimerHandlers(..)
   , MoveMode(..)
+  , BalloonMoveMode(..)
     -- * Network Setup
   , setupNetwork
+  , setupCharacterNetwork
+  , setupGlobalNetwork
+  , setupBalloonNetwork
     -- * Event Handlers
   , handleClick
     -- * SHIORI Helpers
@@ -30,6 +37,8 @@ module Kokage.Event
 
 import           Data.Time.Clock             ( UTCTime, diffUTCTime, getCurrentTime )
 import           Data.Time.LocalTime        ( LocalTime(..), TimeOfDay(..) )
+import           Data.IORef                 ( IORef, newIORef, readIORef, writeIORef )
+import           Control.Monad              ( when )
 import qualified Data.Map.Strict            as Map
 import qualified Data.Text                  as T
 
@@ -39,7 +48,7 @@ import           Kokage.Collision           ( findCollisionAt )
 import           Kokage.Shiori.WineBridge   ( WineShiori, sendEvent )
 
 import           Reactive.Banana            ( (<@), (<@>), Behavior, filterE, stepper )
-import           Reactive.Banana.Frameworks ( AddHandler, MomentIO, fromAddHandler, reactimate )
+import           Reactive.Banana.Frameworks ( AddHandler, MomentIO, fromAddHandler, reactimate, liftIO )
 import           Reactive.Banana.GI.Gtk     ( signalE0R )
 
 import           Types.Ghost                ( CollisionRegion(..) )
@@ -124,8 +133,45 @@ data ShioriConfig
   , scGhostPath :: !FilePath        -- ^ Path to ghost directory (for HISTORY)
   }
 
--- | Configuration for the FRP network.
--- Extensible record for all network inputs.
+-- | Configuration for a single character's FRP network.
+-- Each character window has its own FRP network for input handling.
+data CharacterNetworkConfig
+  = CharacterNetworkConfig
+  { cncWindow     :: !Gtk.Window                -- ^ The character's surface window
+  , cncInputs     :: !InputHandlers             -- ^ Input event handlers for this window
+  , cncCollisions :: ![ CollisionRegion ]       -- ^ Collision regions for hit testing
+  , cncMoveMode   :: !MoveMode                  -- ^ How to handle window movement
+  , cncScopeId    :: !Int                       -- ^ Character scope ID (0=sakura, 1=kero, etc.)
+  , cncShiori     :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
+  }
+
+-- | Configuration for the global FRP network (timers).
+-- This is shared across all character windows.
+data GlobalNetworkConfig
+  = GlobalNetworkConfig
+  { gncTimers  :: !TimerHandlers             -- ^ Timer event handlers (shared)
+  , gncShiori  :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
+  }
+
+-- | Balloon window move mode.
+-- Uses absolute positioning (basePos + cumulativeOffset) for layer-shell.
+data BalloonMoveMode
+  = BalloonMoveToplevel (Double -> Double -> IO ())
+    -- ^ Standard toplevel move (X11): call once when drag starts.
+  | BalloonMoveLayerShell
+      !(Double -> Double -> IO ())      -- ^ Function to set layer-shell position
+
+-- | Configuration for a balloon's FRP network.
+-- Each balloon window has its own FRP network for input handling.
+data BalloonNetworkConfig
+  = BalloonNetworkConfig
+  { bncWindow      :: !Gtk.Window              -- ^ The balloon window
+  , bncInputs      :: !InputHandlers           -- ^ Input event handlers for this window
+  , bncMoveMode    :: !BalloonMoveMode         -- ^ How to handle window movement
+  }
+
+-- | Legacy configuration for single-window FRP network.
+-- Kept for backwards compatibility during transition.
 data NetworkConfig
   = NetworkConfig { ncWindow     :: !Gtk.Window                -- ^ The main window
                   , ncInputs     :: !InputHandlers             -- ^ Input event handlers
@@ -140,7 +186,7 @@ isDragSignificant :: Double -> Double -> Bool
 isDragSignificant ox oy
   = let
       dist = sqrt (ox * ox + oy * oy)
-    in 
+    in
       dist >= dragThreshold
 
 -- | Process a click event against collision regions.
@@ -150,7 +196,7 @@ handleClick collisions ( x, y )
       ix  = floor x :: Int
       iy  = floor y :: Int
       evt = ClickEvent ix iy
-    in 
+    in
       case findCollisionAt ix iy collisions of
         Just cr -> HitRegion evt cr
         Nothing -> HitNothing evt
@@ -202,7 +248,7 @@ formatTime tod
 
 -- | Calculate uptime in hours from start time to now.
 getUptimeHours :: UTCTime -> UTCTime -> Int
-getUptimeHours startTime now = 
+getUptimeHours startTime now =
   let diffSeconds = diffUTCTime now startTime
       hours = floor (realToFrac diffSeconds / 3600 :: Double) :: Int
   in max 0 hours  -- Ensure non-negative
@@ -240,9 +286,9 @@ sendShioriAndLog (Just sc) event refs = do
 -- | Send a SHIORI event with a callback for the response.
 -- The callback receives Just the script text on success, Nothing on failure.
 -- Does nothing if SHIORI is not configured.
-sendShioriWithCallback :: Maybe ShioriConfig 
-                       -> ShioriEvent 
-                       -> Map.Map Int T.Text 
+sendShioriWithCallback :: Maybe ShioriConfig
+                       -> ShioriEvent
+                       -> Map.Map Int T.Text
                        -> (Maybe T.Text -> IO ())  -- ^ Callback with response script
                        -> IO ()
 sendShioriWithCallback Nothing _ _ _ = return ()  -- No SHIORI, skip
@@ -294,7 +340,7 @@ setupNetwork config = do
             refs = Map.fromList
               [ (0, T.pack $ show uptime)  -- Reference0: uptime in hours
               , (1, "0")                   -- Reference1: mikire (overlap count) - TODO
-              , (2, "0")                   -- Reference2: kasanari (overlap) - TODO  
+              , (2, "0")                   -- Reference2: kasanari (overlap) - TODO
               , (3, "1")                   -- Reference3: cantalk (1=can talk)
               ]
         sendShioriAndLog mShiori OnSecondChange refs
@@ -359,7 +405,7 @@ setupNetwork config = do
 
   -- Process clicks against collision regions
   let hitE = handleClick collisions <$> clickE
-  
+
   -- Handle click with collision info and send to SHIORI
   let handleCollisionHit hit = do
         logCollisionHit hit
@@ -367,7 +413,7 @@ setupNetwork config = do
           HitRegion evt cr -> do
             -- Send OnMouseClick with collision info
             -- Reference0: x coordinate
-            -- Reference1: y coordinate  
+            -- Reference1: y coordinate
             -- Reference2: 0 (left button)
             -- Reference3: collision region name
             -- Reference4: character id (0 for sakura)
@@ -394,7 +440,7 @@ setupNetwork config = do
                   , (5, T.pack $ show surfId)
                   ]
             sendShioriAndLog mShiori OnMouseClick refs
-  
+
   reactimate $ handleCollisionHit <$> hitE
 
   -- Log suppressed clicks
@@ -427,3 +473,190 @@ setupNetwork config = do
       -- For layer-shell, update position on every drag update that exceeds threshold
       let significantUpdateE = filterE exceedsThreshold dragUpdateE
       reactimate $ uncurry updatePosition <$> significantUpdateE
+
+-- | Set up the FRP network for a single character window.
+-- Handles window close, click events, drag events, window movement, and mouse motion.
+-- Does NOT handle timers - those are in the global network.
+setupCharacterNetwork :: CharacterNetworkConfig -> MomentIO ()
+setupCharacterNetwork config = do
+  let window     = cncWindow config
+      inputs     = cncInputs config
+      collisions = cncCollisions config
+      moveMode   = cncMoveMode config
+      scopeId    = cncScopeId config
+      mShiori    = cncShiori config
+
+  -- Create close event - closeRequest returns Bool, we return False to allow close
+  closeE <- signalE0R window #closeRequest False
+  -- Send OnClose event when window closes
+  reactimate $ sendShioriAndLog mShiori OnClose Map.empty <$ closeE
+
+  -- Get input events from drag gesture
+  dragBeginE <- fromAddHandler (ihDragBegin inputs)
+  dragUpdateE <- fromAddHandler (ihDragUpdate inputs)
+  dragEndE <- fromAddHandler (ihDragEnd inputs)
+  motionE <- fromAddHandler (ihMotion inputs)
+
+  -- Handle mouse motion events - send OnMouseMove to SHIORI
+  let handleMotion ( x, y ) = do
+        let ix = floor x :: Int
+            iy = floor y :: Int
+            surfId = maybe 0 scSurfaceId mShiori
+        case findCollisionAt ix iy collisions of
+          Just cr -> do
+            let refs = Map.fromList
+                  [ (0, T.pack $ show ix)           -- Reference0: x
+                  , (1, T.pack $ show iy)           -- Reference1: y
+                  , (2, "")                         -- Reference2: wheel (empty for move)
+                  , (3, T.pack $ show scopeId)      -- Reference3: side (scope id)
+                  , (4, crName cr)                  -- Reference4: part name
+                  , (5, T.pack $ show surfId)       -- Reference5: surface id
+                  ]
+            sendShioriAndLog mShiori OnMouseMove refs
+          Nothing -> return ()
+
+  reactimate $ handleMotion <$> motionE
+
+  -- Track drag start position using Behavior
+  dragStartB :: Behavior ( Double, Double ) <- stepper ( 0, 0 ) dragBeginE
+
+  -- Helper to check if offset exceeds threshold
+  let exceedsThreshold ( ox, oy ) = isDragSignificant ox oy
+
+  -- Detect click vs drag
+  let dragEndWithStart = (,) <$> dragStartB <@> dragEndE
+      clickE           = fst <$> filterE (not . exceedsThreshold . snd) dragEndWithStart
+      suppressedE      = filterE (exceedsThreshold . snd) dragEndWithStart
+
+  -- Process clicks against collision regions
+  let hitE = handleClick collisions <$> clickE
+
+  -- Handle click with collision info and send to SHIORI
+  let handleCollisionHit hit = do
+        logCollisionHit hit
+        case hit of
+          HitRegion evt cr -> do
+            let surfId = maybe 0 scSurfaceId mShiori
+                refs = Map.fromList
+                  [ (0, T.pack $ show $ clickX evt)
+                  , (1, T.pack $ show $ clickY evt)
+                  , (2, "0")                        -- Left button
+                  , (3, crName cr)
+                  , (4, T.pack $ show scopeId)      -- Character scope
+                  , (5, T.pack $ show surfId)
+                  ]
+            sendShioriAndLog mShiori OnMouseClick refs
+          HitNothing evt -> do
+            let surfId = maybe 0 scSurfaceId mShiori
+                refs = Map.fromList
+                  [ (0, T.pack $ show $ clickX evt)
+                  , (1, T.pack $ show $ clickY evt)
+                  , (2, "0")
+                  , (3, "")
+                  , (4, T.pack $ show scopeId)
+                  , (5, T.pack $ show surfId)
+                  ]
+            sendShioriAndLog mShiori OnMouseClick refs
+
+  reactimate $ handleCollisionHit <$> hitE
+  reactimate $ (putStrLn "[Click] Suppressed (drag exceeded threshold)") <$ suppressedE
+
+  -- Create DragEvents for logging
+  let mkDragStart ( x, y ) = DragEvent DragStart x y 0 0
+      mkDragMove ( ox, oy ) = DragEvent DragMove 0 0 ox oy
+      mkDragEnd ( ox, oy ) = DragEvent DragEnd 0 0 ox oy
+
+  let dragStartE = mkDragStart <$> dragBeginE
+      dragMoveE  = mkDragMove <$> filterE exceedsThreshold dragUpdateE
+      dragEndE'  = mkDragEnd <$> filterE exceedsThreshold dragEndE
+
+  reactimate $ logDragEvent <$> dragStartE
+  reactimate $ logDragEvent <$> dragMoveE
+  reactimate $ logDragEvent <$> dragEndE'
+
+  -- Handle window movement based on mode
+  case moveMode of
+    MoveToplevel beginMove -> do
+      let firstExceedE = filterE exceedsThreshold dragUpdateE
+          moveE        = dragStartB <@ firstExceedE
+      reactimate $ uncurry beginMove <$> moveE
+
+    MoveLayerShell updatePosition -> do
+      let significantUpdateE = filterE exceedsThreshold dragUpdateE
+      reactimate $ uncurry updatePosition <$> significantUpdateE
+
+-- | Set up the global FRP network for timers.
+-- This handles OnSecondChange and OnMinuteChange events.
+-- Should be run once, not per-character.
+setupGlobalNetwork :: GlobalNetworkConfig -> MomentIO ()
+setupGlobalNetwork config = do
+  let timers  = gncTimers config
+      mShiori = gncShiori config
+
+  -- Get timer events
+  secondTickE <- fromAddHandler (thSecondTick timers)
+  minuteTickE <- fromAddHandler (thMinuteTick timers)
+
+  -- Handle second tick
+  let handleSecondTick lt = do
+        logSecondTick lt
+        now <- getCurrentTime
+        let uptime = case mShiori of
+              Just sc -> getUptimeHours (scStartTime sc) now
+              Nothing -> 0
+            refs = Map.fromList
+              [ (0, T.pack $ show uptime)
+              , (1, "0")  -- mikire - TODO
+              , (2, "0")  -- kasanari - TODO
+              , (3, "1")  -- cantalk
+              ]
+        sendShioriAndLog mShiori OnSecondChange refs
+
+  -- Handle minute tick
+  let handleMinuteTick lt = do
+        logMinuteTick lt
+        now <- getCurrentTime
+        let uptime = case mShiori of
+              Just sc -> getUptimeHours (scStartTime sc) now
+              Nothing -> 0
+            refs = Map.fromList
+              [ (0, T.pack $ show uptime)
+              , (1, "0")
+              , (2, "0")
+              , (3, "1")
+              ]
+        sendShioriAndLog mShiori OnMinuteChange refs
+
+  reactimate $ handleSecondTick <$> secondTickE
+  reactimate $ handleMinuteTick <$> minuteTickE
+
+-- | Set up the FRP network for a balloon window.
+-- Handles drag events for window movement using delta-based tracking for layer-shell.
+-- This avoids jitter caused by coordinate frame shifts when moving layer-shell windows.
+setupBalloonNetwork :: BalloonNetworkConfig -> MomentIO ()
+setupBalloonNetwork config = do
+  let window       = bncWindow config
+      inputs       = bncInputs config
+      moveMode     = bncMoveMode config
+
+  -- Create close event - just hide, don't destroy
+  closeE <- signalE0R window #closeRequest True
+  reactimate $ (putStrLn "[Balloon] Close request (hidden)") <$ closeE
+
+  -- Get input events from drag gesture
+  dragBeginE <- fromAddHandler (ihDragBegin inputs)
+  dragUpdateE <- fromAddHandler (ihDragUpdate inputs)
+  _dragEndE <- fromAddHandler (ihDragEnd inputs)
+
+  -- Handle window movement based on mode
+  case moveMode of
+    BalloonMoveToplevel beginMove -> do
+      -- For X11/standard toplevel: just initiate move on drag start
+      let exceedsThreshold ( ox, oy ) = isDragSignificant ox oy
+          firstExceedE = filterE exceedsThreshold dragUpdateE
+      dragStartB <- stepper ( 0, 0 ) dragBeginE
+      let moveE = dragStartB <@ firstExceedE
+      reactimate $ uncurry beginMove <$> moveE
+
+    BalloonMoveLayerShell setPosition ->
+      reactimate $ uncurry setPosition <$> dragUpdateE

@@ -8,6 +8,9 @@ module Kokage.X11
   ( -- * Always On Top
     setWindowAbove
   , setWindowAboveFromGtk
+    -- * Window Positioning
+  , moveWindow
+  , moveWindowFromGtk
     -- * Re-exports
   , X11.Window
   ) where
@@ -29,6 +32,8 @@ import           Graphics.X11.Xlib          ( openDisplay, closeDisplay
                                             , clientMessage )
 import qualified Graphics.X11.Xlib          as X11
 import           Graphics.X11.Xlib.Extras   ( setEventType, setClientMessageEvent' )
+
+import           Data.Int                   ( Int32 )
 
 -- | Set a window to be always on top (or remove the hint).
 -- This sends a _NET_WM_STATE client message to the root window
@@ -96,5 +101,50 @@ setWindowAboveFromGtk gtkWindow setAbove = do
     
     -- Set the window above state
     MaybeT $ Just <$> setWindowAbove (fromIntegral xid) setAbove
+    
+  return $ result == Just True
+
+-- | Move a window to a specific position on X11.
+-- This uses XMoveWindow to reposition the window.
+--
+-- Returns True if successful, False if the X11 operation failed.
+moveWindow :: X11.Window  -- ^ The X11 window ID
+           -> Int32       -- ^ X position
+           -> Int32       -- ^ Y position
+           -> IO Bool
+moveWindow win x y = do
+  result <- try $ do
+    -- Open connection to X server
+    dpy <- openDisplay ""
+    
+    -- Move the window
+    X11.moveWindow dpy win (fromIntegral x) (fromIntegral y)
+    
+    flush dpy
+    closeDisplay dpy
+    
+  case result of
+    Left (_ :: SomeException) -> return False
+    Right () -> return True
+
+-- | Move a GTK window to a specific position using X11.
+-- This extracts the X11 window ID from a GTK window and calls moveWindow.
+-- Only works on X11; silently does nothing on Wayland.
+--
+-- Returns True if successful, False if not on X11 or operation failed.
+moveWindowFromGtk :: Gtk.Window -> Int32 -> Int32 -> IO Bool
+moveWindowFromGtk gtkWindow x y = do
+  result <- runMaybeT $ do
+    -- Get the GDK surface from the GTK window
+    surface <- MaybeT $ Gtk.nativeGetSurface gtkWindow
+    
+    -- Try to cast to X11Surface (will fail on Wayland)
+    x11Surface <- MaybeT $ Gdk.castTo GdkX11.X11Surface surface
+    
+    -- Get the X11 window ID (XID)
+    xid <- MaybeT $ Just <$> GdkX11.x11SurfaceGetXid x11Surface
+    
+    -- Move the window
+    MaybeT $ Just <$> moveWindow (fromIntegral xid) x y
     
   return $ result == Just True

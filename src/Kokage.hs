@@ -47,10 +47,11 @@ module Kokage
 
 import           Control.Exception          ( try, SomeException, finally )
 import           Control.Monad              ( forM_, void, filterM, when )
+import           Control.Monad.Trans.Class  ( lift )
 import           Control.Monad.Trans.Maybe  ( MaybeT(runMaybeT, MaybeT) )
 
 import           Data.GI.Base               ( AttrOp((:=)), new, on, glibType
-                                            , withManagedPtr, newObject )
+                                            , withManagedPtr, newObject, castTo )
 import           Data.GI.Base.GValue        ( get_object )
 import           Data.Int                   ( Int32 )
 import           Data.IORef                 ( newIORef, readIORef, writeIORef )
@@ -68,15 +69,24 @@ import qualified GI.Gio                     as Gio
 import qualified GI.GLib                    as GLib
 import qualified GI.Gtk                     as Gtk
 
-import           Kokage.Balloon             ( newBalloonState, initBalloonAlwaysOnTop
-                                            , clearBalloon, appendText, appendChar, appendNewline
-                                            , BalloonChoice(..), addChoice, clearChoices, setChoiceCallback )
-import           Kokage.InputRegion         ( setInputRegionFromPixbuf )
+import           Kokage.Balloon             ( clearBalloon, appendText, appendChar, appendNewline
+                                            , BalloonChoice(..), addChoice, clearChoices, setChoiceCallback
+                                            , BalloonState(..) )
+import           Kokage.Character           ( CharacterState(..)
+                                            , createCharacter, showCharacter
+                                            , setCharacterSurface, getCharacterBalloon
+                                            , setCharacterPosition
+                                            , updateBalloonPosition )
 import           Kokage.Collision
-import           Kokage.Event               ( NetworkConfig(..), InputHandlers(..)
+import           Kokage.Event               ( InputHandlers(..)
                                             , TimerHandlers(..), MoveMode(..)
                                             , ShioriConfig(..)
-                                            , setupNetwork, sendShioriWithCallback )
+                                            , CharacterNetworkConfig(..)
+                                            , GlobalNetworkConfig(..)
+                                            , BalloonNetworkConfig(..), BalloonMoveMode(..)
+                                            , setupCharacterNetwork, setupGlobalNetwork
+                                            , setupBalloonNetwork
+                                            , sendShioriWithCallback )
 import           Kokage.Install             ( BaseDir(..), InstallResult(..), installNar )
 import           Kokage.SakuraScript.Parser ( parseScript )
 import           Kokage.SakuraScript.Interpreter ( InterpreterCallbacks(..)
@@ -158,6 +168,45 @@ defaultConfig = do
 -- | Get the default shell (first shell) from a ghost.
 getDefaultShell :: Ghost -> Maybe Shell
 getDefaultShell ghost = listToMaybe (ghostShells ghost)
+
+-- | Get the primary monitor dimensions (width, height).
+-- Returns Nothing if no display or monitors are available.
+getScreenDimensions :: IO (Maybe (Int32, Int32))
+getScreenDimensions = runMaybeT $ do
+  display <- MaybeT Gdk.displayGetDefault
+  monitors <- lift $ Gdk.displayGetMonitors display
+  nMonitors <- lift $ Gio.listModelGetNItems monitors
+  if nMonitors == 0
+    then MaybeT $ return Nothing
+    else do
+      -- Get first monitor (primary)
+      mObject <- lift $ Gio.listModelGetItem monitors 0
+      obj <- MaybeT $ return mObject
+      mMonitor <- lift $ castTo Gdk.Monitor obj
+      monitor <- MaybeT $ return mMonitor
+      rect <- lift $ Gdk.monitorGetGeometry monitor
+      w <- lift $ Gdk.getRectangleWidth rect
+      h <- lift $ Gdk.getRectangleHeight rect
+      return (w, h)
+
+-- | Calculate initial position for a character based on descript settings and screen size.
+-- For sakura (scope 0): positioned at right side of screen (bottom-right by default)
+-- For kero (scope 1): positioned to the left of sakura
+-- Returns position in display coordinates (x, y).
+calcInitialPosition :: GhostDescript -> Int -> (Int, Int) -> (Int32, Int32) -> (Int32, Int32)
+calcInitialPosition descript scopeId (surfW, surfH) (screenW, screenH) =
+  case scopeId of
+    0 -> -- Sakura: bottom-right of screen
+      let x = maybe (screenW - fromIntegral surfW) fromIntegral (descriptSakuraDefaultLeft descript)
+          y = maybe (screenH - fromIntegral surfH) fromIntegral (descriptSakuraDefaultTop descript)
+      in (x, y)
+    _ -> -- Kero and others: default to left of sakura position
+      let -- Default kero position: left of sakura, same bottom alignment
+          defaultX = screenW - fromIntegral surfW - 300  -- 300px left of sakura
+          defaultY = screenH - fromIntegral surfH
+          x = maybe defaultX fromIntegral (descriptKeroDefaultLeft descript)
+          y = maybe defaultY fromIntegral (descriptKeroDefaultTop descript)
+      in (x, y)
 
 --------------------------------------------------------------------------------
 -- Ghost Management
@@ -314,7 +363,7 @@ saveGhostHistory ghostPath history = do
         ]
   result <- try $ TIO.writeFile historyFile content
   case result of
-    Left (e :: SomeException) -> 
+    Left (e :: SomeException) ->
       putStrLn $ "[HISTORY] Warning: Could not save history: " <> show e
     Right () -> return ()
 
@@ -326,6 +375,59 @@ isFirstBoot ghostPath = do
     Nothing -> True   -- No HISTORY file = first boot
     Just _  -> False
 
+--------------------------------------------------------------------------------
+-- Balloon Directory Resolution
+--------------------------------------------------------------------------------
+
+-- | Find the balloon directory for a ghost.
+-- Priority:
+--   1. Bundled balloon in ghost directory (ghostPath/balloon/)
+--   2. First available balloon in global balloon directory (bdBalloon baseDir)
+--   3. Nothing if no balloons found
+findBalloonDir :: FilePath -> BaseDir -> IO (Maybe FilePath)
+findBalloonDir ghostPath baseDir = do
+  -- Check for bundled balloon first
+  let bundledBalloon = ghostPath </> "balloon"
+  hasBundled <- doesDirectoryExist bundledBalloon
+  if hasBundled
+    then do
+      -- Verify it has balloon surfaces
+      hasSurfaces <- doesFileExist (bundledBalloon </> "balloons0.png")
+      if hasSurfaces
+        then do
+          putStrLn $ "[Balloon] Using bundled balloon: " <> bundledBalloon
+          return $ Just bundledBalloon
+        else tryGlobalBalloon
+    else tryGlobalBalloon
+  where
+    tryGlobalBalloon = do
+      let globalBalloonDir = bdBalloon baseDir
+      exists <- doesDirectoryExist globalBalloonDir
+      if not exists
+        then do
+          putStrLn "[Balloon] No balloon directory found"
+          return Nothing
+        else do
+          -- List subdirectories (each is a balloon)
+          entries <- listDirectory globalBalloonDir
+          let fullPaths = map (globalBalloonDir </>) entries
+          validBalloons <- filterM isBalloonDir fullPaths
+          case validBalloons of
+            [] -> do
+              putStrLn "[Balloon] No valid balloons in global directory"
+              return Nothing
+            (first:_) -> do
+              putStrLn $ "[Balloon] Using global balloon: " <> first
+              return $ Just first
+
+    -- Check if a directory contains balloon surfaces
+    isBalloonDir :: FilePath -> IO Bool
+    isBalloonDir path = do
+      isDir <- doesDirectoryExist path
+      if not isDir
+        then return False
+        else doesFileExist (path </> "balloons0.png")
+
 -- | Main entry point for Kokage.
 -- Resolves which ghost to load (explicit path, last used, or first available)
 -- and runs the GTK event loop.
@@ -335,13 +437,13 @@ kokageMain config = do
 
   -- Resolve which ghost to load
   mGhostPath <- resolveGhost config
-  
+
   case mGhostPath of
     Nothing -> do
       putStrLn "Error: No ghosts available"
       putStrLn $ "  Ghost directory: " <> bdGhost (configBaseDir config)
       putStrLn "  Please install a ghost first (drag and drop a .nar file)"
-    
+
     Just gPath -> do
       putStrLn $ "Loading ghost from: " <> gPath
       mGhost <- loadGhost gPath
@@ -350,7 +452,7 @@ kokageMain config = do
         Nothing -> putStrLn $ "Error: Failed to load ghost from " <> gPath
         Just ghost -> do
           putStrLn $ "Loaded ghost: " <> gPath
-          
+
           -- Save this as the last used ghost
           saveLastGhost config gPath
 
@@ -398,11 +500,14 @@ kokageMain config = do
                       firstBoot <- isFirstBoot gPath
                       mHistory <- loadGhostHistory gPath
                       let vanishedCount = maybe 0 ghVanishedCount mHistory
-                      
+
                       when firstBoot $ putStrLn "[HISTORY] First boot detected"
 
+                      -- Find balloon directory for the ghost
+                      mBalloonDir <- findBalloonDir gPath (configBaseDir config)
+
                       -- Run the GTK application with shell (for surface switching)
-                      runGtkApp shell surfId mShiori gPath firstBoot vanishedCount
+                      runGtkApp ghost shell surfId mShiori gPath firstBoot vanishedCount mBalloonDir
                         `finally` cleanupShiori mShiori
 
 -- | Initialize SHIORI bridge and load the DLL.
@@ -412,7 +517,7 @@ initializeShiori :: FilePath -> T.Text -> IO (Maybe WineShiori)
 initializeShiori ghostMasterPath shioriName = do
   -- Build path from descript's shiori field
   let dllPath = ghostMasterPath </> T.unpack shioriName
-  
+
   -- Check if the DLL exists
   exists <- doesFileExist dllPath
   if not exists
@@ -421,13 +526,13 @@ initializeShiori ghostMasterPath shioriName = do
       return Nothing
     else do
       putStrLn $ "[SHIORI] Found DLL: " <> dllPath
-      
+
       -- Determine which bridge to use based on DLL architecture
       -- For now, assume 32-bit DLLs (most ghosts use 32-bit)
       let bridgeConfig = defaultWineBridgeConfig
             { wbcBridgePath = "wine-helper" </> "shiori_bridge32.exe"
             }
-      
+
       -- Start the Wine bridge
       putStrLn "[SHIORI] Starting Wine bridge..."
       bridgeResult <- startWineBridge bridgeConfig
@@ -459,346 +564,377 @@ cleanupShiori (Just shiori) = do
 
 -- | Run the GTK application with the given shell.
 -- The shell contains surface definitions for dynamic surface switching.
-runGtkApp :: Shell -> Int -> Maybe WineShiori -> FilePath -> Bool -> Int -> IO ()
-runGtkApp shell initialSurfaceId mShiori ghostPath firstBoot vanishedCount = do
+-- Now uses CharacterMap for multi-character support.
+runGtkApp :: Ghost -> Shell -> Int -> Maybe WineShiori -> FilePath -> Bool -> Int -> Maybe FilePath -> IO ()
+runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCount mBalloonDir = do
   -- Get start time for uptime tracking
   startTime <- getCurrentTime
-  
-  -- Find initial surface definition
-  let surfaces = shellSurfaces shell
-  case findSurfaceById initialSurfaceId surfaces of
-    Nothing -> putStrLn $ "Error: Initial surface " <> show initialSurfaceId <> " not found"
-    Just initialSurfDef -> do
-      -- Composite initial surface
-      mInitialPixbuf <- compositeSurface (shellPath shell) initialSurfDef
-      case mInitialPixbuf of
-        Nothing -> putStrLn "Error: Failed to composite initial surface"
-        Just initialPixbuf -> do
-          width <- Pixbuf.pixbufGetWidth initialPixbuf
-          height <- Pixbuf.pixbufGetHeight initialPixbuf
-          
-          -- Create SHIORI config if we have a bridge
-          let mShioriConfig = case mShiori of
-                Nothing -> Nothing
-                Just ws -> Just $ ShioriConfig 
-                  { scShiori    = ws
-                  , scSurfaceId = initialSurfaceId
-                  , scStartTime = startTime
-                  , scGhostPath = ghostPath
-                  }
-                
-          -- Initialize GTK application
-          app <- new
-            Gtk.Application
-            [ #applicationId := "com.kokage.app", #flags := [ Gio.ApplicationFlagsFlagsNone ] ]
 
-          -- Connect activate signal
-          _ <- on app #activate $ do
-            -- Create window
-            window <- new
-              Gtk.Window
-              [ #application := app
-              , #title := "Kokage"
-              , #defaultWidth := width
-              , #defaultHeight := height
-              , #resizable := False
-              , #decorated := False  -- Hide title bar
-              ]
+  let ghostDesc = ghostDescript ghost
 
-            -- Make window transparent using CSS
-            cssProvider <- new Gtk.CssProvider []
-            Gtk.cssProviderLoadFromString
-              cssProvider
-              "window.transparent { background-color: transparent; }"
-            display <- Gdk.displayGetDefault
-            case display of
-              Nothing -> putStrLn "Warning: Could not get default display"
-              Just d  -> Gtk.styleContextAddProviderForDisplay d cssProvider 800
-            Gtk.widgetAddCssClass window "transparent"
+  -- Create SHIORI config if we have a bridge
+  let mShioriConfig = case mShiori of
+        Nothing -> Nothing
+        Just ws -> Just $ ShioriConfig
+          { scShiori    = ws
+          , scSurfaceId = initialSurfaceId
+          , scStartTime = startTime
+          , scGhostPath = ghostPath'
+          }
 
-            -- Create texture from pixbuf for GTK4
-            texture <- Gdk.textureNewForPixbuf initialPixbuf
+  -- Initialize GTK application
+  app <- new
+    Gtk.Application
+    [ #applicationId := "com.kokage.app", #flags := [ Gio.ApplicationFlagsFlagsNone ] ]
 
-            -- Create picture widget to display the texture
-            picture <- new Gtk.Picture [ #paintable := texture, #canShrink := False ]
-            
-            -- Track current surface ID for each scope (sakura=0, kero=1, etc.)
-            -- For now we only handle scope 0 (main character)
-            currentSurfaceRef <- newIORef initialSurfaceId
-            
-            -- Surface change function - updates the displayed surface
-            -- IMPORTANT: This may be called from a background thread (script interpreter),
-            -- so we must schedule GTK operations on the main thread using idleAdd.
-            let changeSurface :: Int -> Int -> IO ()
-                changeSurface _scope newSurfaceId = do
-                  currentId <- readIORef currentSurfaceRef
-                  when (currentId /= newSurfaceId) $ do
-                    putStrLn $ "[Surface] Changing from " <> show currentId <> " to " <> show newSurfaceId
-                    case findSurfaceById newSurfaceId surfaces of
-                      Nothing -> putStrLn $ "[Surface] Surface " <> show newSurfaceId <> " not found"
-                      Just newSurfDef -> do
-                        -- Composite the new surface (can be done on any thread)
-                        mNewPixbuf <- compositeSurface (shellPath shell) newSurfDef
-                        case mNewPixbuf of
-                          Nothing -> putStrLn "[Surface] Failed to composite new surface"
-                          Just newPixbuf -> do
-                            -- Schedule GTK operations on the main thread
-                            _ <- GLib.idleAdd GLib.PRIORITY_HIGH $ do
-                              -- Update the picture widget with new texture
-                              newTexture <- Gdk.textureNewForPixbuf newPixbuf
-                              Gtk.pictureSetPaintable picture (Just newTexture)
-                              -- Update input region for click-through
-                              applyInputRegion window newPixbuf
-                              -- Track new surface ID
-                              writeIORef currentSurfaceRef newSurfaceId
-                              putStrLn $ "[Surface] Changed to surface " <> show newSurfaceId
-                              return False  -- Don't repeat
-                            return ()
+  -- Connect activate signal
+  _ <- on app #activate $ do
+    -- Create characters using the Character module
+    -- Scope 0 = Sakura, Scope 1 = Kero
+    -- Pass balloon directory so each character loads the correct balloon surface
+    mSakura <- createCharacter app shell ghostDesc 0 mBalloonDir
+    mKero <- createCharacter app shell ghostDesc 1 mBalloonDir
 
-            -- Create all event handlers BEFORE creating gestures
-            ( dragBeginHandler, fireDragBegin ) <- newAddHandler
-            ( dragUpdateHandler, fireDragUpdate ) <- newAddHandler
-            ( dragEndHandler, fireDragEnd ) <- newAddHandler
-            ( motionHandler, fireMotion ) <- newAddHandler
+    -- Build character map from successfully created characters
+    let characters = Map.fromList $ concat
+          [ maybe [] (\c -> [(0, c)]) mSakura
+          , maybe [] (\c -> [(1, c)]) mKero
+          ]
 
-            -- Create drag gesture and connect signals BEFORE adding to widget
-            -- We use only GestureDrag for both click and drag detection
-            -- Click is detected as a drag that ends without moving beyond threshold
-            dragGesture <- new Gtk.GestureDrag []
-            _ <- on dragGesture #dragBegin $ \x y -> fireDragBegin ( x, y )
-            _ <- on dragGesture #dragUpdate $ \ox oy -> fireDragUpdate ( ox, oy )
-            _ <- on dragGesture #dragEnd $ \ox oy -> fireDragEnd ( ox, oy )
-            Gtk.widgetAddController picture dragGesture
+    when (Map.null characters) $ do
+      putStrLn "Error: No characters could be created"
+      return ()
 
-            -- Create motion controller for OnMouseMove events
-            motionController <- new Gtk.EventControllerMotion []
-            _ <- on motionController #motion $ \x y -> fireMotion ( x, y )
-            Gtk.widgetAddController picture motionController
+    -- Track current character scope (0=sakura, 1=kero, etc.)
+    currentScopeRef <- newIORef (0 :: Int)
 
-            -- Create DropTarget for NAR file drops
-            -- GFile type is used to accept file drops
-            gfileType <- glibType @Gio.File
-            dropTarget <- Gtk.dropTargetNew gfileType [Gdk.DragActionCopy]
-            _ <- on dropTarget #drop $ \gvalue _x _y -> do
-              -- Extract GFile from GValue using get_object
-              -- The drop signal provides a GValue containing the dropped data
-              mPath <- withManagedPtr gvalue $ \gvPtr -> do
-                objPtr <- get_object gvPtr :: IO (Ptr Gio.File)
-                if objPtr == nullPtr
-                  then return Nothing
-                  else do
-                    file <- newObject Gio.File objPtr
-                    Gio.fileGetPath file
-              case mPath of
-                Nothing -> do
-                  putStrLn "Drop: Could not get file path"
-                  return False
-                Just path -> do
-                  putStrLn $ "Dropped file: " <> path
-                  -- Check if it's a .nar file
-                  if takeExtension path == ".nar"
-                    then do
-                      -- Get base directories for installation
-                      baseDir <- getDefaultBaseDir
-                      result <- installNar baseDir path
-                      case result of
-                        InstallSuccess name itype ipath _ -> do
-                          putStrLn $ "Installed " <> T.unpack name
-                                  <> " (" <> show itype <> ") to " <> ipath
-                          return True
-                        InstallFailure err -> do
-                          putStrLn $ "Installation failed: " <> T.unpack err
-                          return False
-                    else do
-                      putStrLn $ "Ignored non-NAR file: " <> path
+    -- Helper to get balloon for a scope (falls back to sakura if scope doesn't exist)
+    let getBalloon scope = case Map.lookup scope characters of
+          Just cs -> getCharacterBalloon cs
+          Nothing -> case Map.lookup 0 characters of
+            Just cs -> getCharacterBalloon cs
+            Nothing -> error "No characters available"  -- Should never happen
+
+    -- Helper to get balloon for current scope
+    let getCurrentBalloon = do
+          scope <- readIORef currentScopeRef
+          return $ getBalloon scope
+
+    -- Surface change function using Character module
+    let changeSurface :: Int -> Int -> IO ()
+        changeSurface scope newSurfaceId = do
+          case Map.lookup scope characters of
+            Nothing -> putStrLn $ "[Surface] Scope " <> show scope <> " not found"
+            Just cs -> setCharacterSurface cs shell newSurfaceId
+
+    -- Create interpreter callbacks that interact with the balloon and surface
+    let interpreterCallbacks = defaultCallbacks
+          { cbAppendChar    = \c -> getCurrentBalloon >>= \b -> appendChar b c
+          , cbAppendText    = \t -> getCurrentBalloon >>= \b -> appendText b t
+          , cbNewline       = getCurrentBalloon >>= appendNewline
+          , cbClear         = getCurrentBalloon >>= clearBalloon
+          , cbSetScope      = \scope -> do
+              writeIORef currentScopeRef scope
+              putStrLn $ "[Scope] Switched to scope " <> show scope
+          , cbSetSurface    = changeSurface
+          , cbAddChoice     = \choiceId text action -> do
+              b <- getCurrentBalloon
+              addChoice b (BalloonChoice text choiceId action)
+          , cbClearChoices  = getCurrentBalloon >>= clearChoices
+          , cbOnComplete    = putStrLn "[Script] Execution complete"
+          , cbOnInterrupt   = putStrLn "[Script] Execution interrupted"
+          }
+
+    -- Helper to display script in balloon with character-by-character animation
+    let displayScript :: Maybe T.Text -> IO ()
+        displayScript Nothing = return ()
+        displayScript (Just scriptText) = do
+          -- Reset scope to sakura (0) at start of each new script
+          writeIORef currentScopeRef 0
+          -- Parse the SakuraScript
+          case parseScript scriptText of
+            Left err -> putStrLn $ "[Balloon] Parse error: " <> show err
+            Right script -> do
+              -- Clear all balloons before new script
+              forM_ (Map.elems characters) $ \cs ->
+                clearBalloon (getCharacterBalloon cs)
+              -- Execute script asynchronously with animation
+              _ <- executeScriptAsync defaultInterpreterConfig interpreterCallbacks script
+              return ()
+
+    -- Set up choice callback on sakura's balloon
+    case Map.lookup 0 characters of
+      Just sakura -> do
+        let sakuraBalloon = getCharacterBalloon sakura
+        setChoiceCallback sakuraBalloon $ \choice -> do
+          putStrLn $ "[Choice] Selected: " <> T.unpack (bcText choice)
+                  <> " (id=" <> T.unpack (bcId choice)
+                  <> ", action=" <> T.unpack (bcAction choice) <> ")"
+          -- Clear all balloons and choices after selection
+          forM_ (Map.elems characters) $ \cs -> do
+            clearBalloon (getCharacterBalloon cs)
+            clearChoices (getCharacterBalloon cs)
+          -- Handle the action based on its type
+          let action = bcAction choice
+          case T.stripPrefix "event:" action of
+            Just _eventId -> do
+              let refs = Map.fromList [(0, bcId choice), (1, bcText choice)]
+              sendShioriWithCallback mShioriConfig OnChoiceSelect refs displayScript
+            Nothing -> case T.stripPrefix "script:" action of
+              Just scriptText -> displayScript (Just scriptText)
+              Nothing -> case T.stripPrefix "url:" action of
+                Just _url -> putStrLn "[Choice] URL action not yet implemented"
+                Nothing -> case T.stripPrefix "anchor:" action of
+                  Just anchorId -> do
+                    let refs = Map.fromList [(0, anchorId), (1, bcText choice)]
+                    sendShioriWithCallback mShioriConfig OnAnchorSelect refs displayScript
+                  Nothing -> do
+                    let refs = Map.fromList [(0, bcId choice), (1, bcText choice)]
+                    sendShioriWithCallback mShioriConfig OnChoiceSelect refs displayScript
+      Nothing -> return ()
+
+    -- Create global timer event handlers
+    ( secondTickHandler, fireSecondTick ) <- newAddHandler
+    ( minuteTickHandler, fireMinuteTick ) <- newAddHandler
+
+    -- Helper to get current local time
+    let getLocalTime' = do
+          tz <- getCurrentTimeZone
+          utc <- getCurrentTime
+          return $ utcToLocalTime tz utc
+
+    -- Set up second timer (fires every 1000ms = 1 second)
+    _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 1000 $ do
+      lt <- getLocalTime'
+      fireSecondTick lt
+      return True
+
+    -- Set up minute timer (fires every 60000ms = 1 minute)
+    _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 60000 $ do
+      lt <- getLocalTime'
+      fireMinuteTick lt
+      return True
+
+    -- Set up global timer FRP network
+    let globalConfig = GlobalNetworkConfig
+          { gncTimers = TimerHandlers
+              { thSecondTick = secondTickHandler
+              , thMinuteTick = minuteTickHandler
+              }
+          , gncShiori = mShioriConfig
+          }
+    globalNetwork <- compile (setupGlobalNetwork globalConfig)
+    actuate globalNetwork
+
+    -- Set up FRP network for each character window
+    forM_ (Map.toList characters) $ \(scopeId, cs) -> do
+      -- Create input handlers for this character's window
+      ( dragBeginHandler, fireDragBegin ) <- newAddHandler
+      ( dragUpdateHandler, fireDragUpdate ) <- newAddHandler
+      ( dragEndHandler, fireDragEnd ) <- newAddHandler
+      ( motionHandler, fireMotion ) <- newAddHandler
+
+      let window = csWindow cs
+          picture = csPicture cs
+
+      -- Create drag gesture
+      dragGesture <- new Gtk.GestureDrag []
+      _ <- on dragGesture #dragBegin $ \x y -> fireDragBegin ( x, y )
+      _ <- on dragGesture #dragUpdate $ \ox oy -> fireDragUpdate ( ox, oy )
+      _ <- on dragGesture #dragEnd $ \ox oy -> fireDragEnd ( ox, oy )
+      Gtk.widgetAddController picture dragGesture
+
+      -- Create motion controller
+      motionController <- new Gtk.EventControllerMotion []
+      _ <- on motionController #motion $ \x y -> fireMotion ( x, y )
+      Gtk.widgetAddController picture motionController
+
+      -- Create DropTarget for NAR file drops (only on sakura)
+      when (scopeId == 0) $ do
+        gfileType <- glibType @Gio.File
+        dropTarget <- Gtk.dropTargetNew gfileType [Gdk.DragActionCopy]
+        _ <- on dropTarget #drop $ \gvalue _x _y -> do
+          mPath <- withManagedPtr gvalue $ \gvPtr -> do
+            objPtr <- get_object gvPtr :: IO (Ptr Gio.File)
+            if objPtr == nullPtr
+              then return Nothing
+              else do
+                file <- newObject Gio.File objPtr
+                Gio.fileGetPath file
+          case mPath of
+            Nothing -> do
+              putStrLn "Drop: Could not get file path"
+              return False
+            Just path -> do
+              putStrLn $ "Dropped file: " <> path
+              if takeExtension path == ".nar"
+                then do
+                  baseDir <- getDefaultBaseDir
+                  result <- installNar baseDir path
+                  case result of
+                    InstallSuccess name itype ipath _ -> do
+                      putStrLn $ "Installed " <> T.unpack name
+                              <> " (" <> show itype <> ") to " <> ipath
+                      return True
+                    InstallFailure err -> do
+                      putStrLn $ "Installation failed: " <> T.unpack err
                       return False
-            Gtk.widgetAddController window dropTarget
+                else do
+                  putStrLn $ "Ignored non-NAR file: " <> path
+                  return False
+        Gtk.widgetAddController window dropTarget
 
-            -- Set picture as window content
-            Gtk.windowSetChild window (Just picture)
+      -- Get collision regions from current surface
+      currentSurfId <- readIORef (csCurrentSurface cs)
+      let surfaces = shellSurfaces shell
+          collisions = case findSurfaceById currentSurfId surfaces of
+            Nothing -> []
+            Just sd -> sdCollisions sd
 
-            -- Try to initialize layer-shell BEFORE window is shown
-            -- This determines which move mode we'll use
-            layerShellSuccess <- initLayerShell window
-            
-            -- Create the appropriate move mode based on platform
-            moveMode <- if layerShellSuccess
-              then do
-                -- Layer-shell mode: track position via margins
-                -- We need to track the window position to update it during drags
-                positionRef <- newIORef (0 :: Int32, 0 :: Int32)
-                
-                -- Create update function that applies offset to current position
-                let updatePosition :: Double -> Double -> IO ()
-                    updatePosition dx dy = do
-                      (currentX, currentY) <- readIORef positionRef
-                      let newX = currentX + round dx
-                          newY = currentY + round dy
-                      writeIORef positionRef (newX, newY)
-                      setLayerShellPosition window newX newY
-                
-                return $ MoveLayerShell updatePosition
-              else do
-                -- Standard toplevel mode: use compositor-driven move
-                let beginMove :: Double -> Double -> IO ()
-                    beginMove x y = void $ runMaybeT $ do
-                      surface <- MaybeT $ Gtk.nativeGetSurface window
-                      toplevel <- MaybeT $ Gdk.castTo Gdk.Toplevel surface
-                      disp <- MaybeT Gdk.displayGetDefault
-                      seat <- MaybeT $ Gdk.displayGetDefaultSeat disp
-                      device <- MaybeT $ Gdk.seatGetPointer seat
-                      MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
-                
-                return $ MoveToplevel beginMove
+      -- Create move mode based on layer-shell status
+      isLayerShell <- readIORef (csLayerShell cs)
+      moveMode <- if isLayerShell
+        then do
+          let updatePosition :: Double -> Double -> IO ()
+              updatePosition dx dy = do
+                (currentX, currentY) <- readIORef (csPosition cs)
+                let newX = currentX + round dx
+                    newY = currentY + round dy
+                writeIORef (csPosition cs) (newX, newY)
+                setLayerShellPosition window newX newY
+                -- Update balloon position after character moves
+                updateBalloonPosition cs dx dy
+          return $ MoveLayerShell updatePosition
+        else do
+          let beginMove :: Double -> Double -> IO ()
+              beginMove x y = void $ runMaybeT $ do
+                surface <- MaybeT $ Gtk.nativeGetSurface window
+                toplevel <- MaybeT $ Gdk.castTo Gdk.Toplevel surface
+                disp <- MaybeT Gdk.displayGetDefault
+                seat <- MaybeT $ Gdk.displayGetDefaultSeat disp
+                device <- MaybeT $ Gdk.seatGetPointer seat
+                MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
+          return $ MoveToplevel beginMove
 
-            -- Create timer event handlers
-            ( secondTickHandler, fireSecondTick ) <- newAddHandler
-            ( minuteTickHandler, fireMinuteTick ) <- newAddHandler
+      -- Build character network config
+      let charConfig = CharacterNetworkConfig
+            { cncWindow     = window
+            , cncInputs     = InputHandlers
+                { ihDragBegin  = dragBeginHandler
+                , ihDragUpdate = dragUpdateHandler
+                , ihDragEnd    = dragEndHandler
+                , ihMotion     = motionHandler
+                }
+            , cncCollisions = collisions
+            , cncMoveMode   = moveMode
+            , cncScopeId    = scopeId
+            , cncShiori     = mShioriConfig
+            }
 
-            -- Helper to get current local time
-            let getLocalTime = do
-                  tz <- getCurrentTimeZone
-                  utc <- getCurrentTime
-                  return $ utcToLocalTime tz utc
+      -- Compile and activate character network
+      charNetwork <- compile (setupCharacterNetwork charConfig)
+      actuate charNetwork
 
-            -- Set up second timer (fires every 1000ms = 1 second)
-            _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 1000 $ do
-              lt <- getLocalTime
-              fireSecondTick lt
-              return True  -- True = keep timer running
+      putStrLn $ "[Character " <> show scopeId <> "] FRP network activated"
 
-            -- Set up minute timer (fires every 60000ms = 1 minute)
-            _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 60000 $ do
-              lt <- getLocalTime
-              fireMinuteTick lt
-              return True  -- True = keep timer running
+      -- Set up balloon FRP network for this character's balloon
+      let bs = getCharacterBalloon cs
 
-            -- Get collision regions from initial surface
-            let collisions = sdCollisions initialSurfDef
+      -- Create input handlers for balloon window
+      ( balloonDragBeginHandler, fireBalloonDragBegin ) <- newAddHandler
+      ( balloonDragUpdateHandler, fireBalloonDragUpdate ) <- newAddHandler
+      ( balloonDragEndHandler, fireBalloonDragEnd ) <- newAddHandler
+      ( balloonMotionHandler, fireBalloonMotion ) <- newAddHandler
 
-            -- Build network config
-            let inputHandlers
-                  = InputHandlers { ihDragBegin  = dragBeginHandler
-                                  , ihDragUpdate = dragUpdateHandler
-                                  , ihDragEnd    = dragEndHandler
-                                  , ihMotion     = motionHandler
-                                  }
-                timerHandlers
-                  = TimerHandlers { thSecondTick = secondTickHandler
-                                  , thMinuteTick = minuteTickHandler
-                                  }
-                networkConfig
-                  = NetworkConfig { ncWindow     = window
-                                  , ncInputs     = inputHandlers
-                                  , ncTimers     = timerHandlers
-                                  , ncCollisions = collisions
-                                  , ncMoveMode   = moveMode
-                                  , ncShiori     = mShioriConfig
-                                  }
+      -- Create drag gesture for balloon
+      balloonDragGesture <- new Gtk.GestureDrag []
+      _ <- on balloonDragGesture #dragBegin $ \x y -> fireBalloonDragBegin ( x, y )
+      _ <- on balloonDragGesture #dragUpdate $ \ox oy -> fireBalloonDragUpdate ( ox, oy )
+      _ <- on balloonDragGesture #dragEnd $ \ox oy -> fireBalloonDragEnd ( ox, oy )
+      Gtk.widgetAddController (bsDrawArea bs) balloonDragGesture
 
-            -- Set up and activate FRP network
-            network <- compile (setupNetwork networkConfig)
-            actuate network
+      -- Create motion controller for balloon (for future hover effects, etc.)
+      balloonMotionController <- new Gtk.EventControllerMotion []
+      _ <- on balloonMotionController #motion $ \x y -> fireBalloonMotion ( x, y )
+      Gtk.widgetAddController (bsDrawArea bs) balloonMotionController
 
-            -- Create balloon window for displaying SHIORI responses
-            balloon <- newBalloonState app
-            
-            -- Initialize balloon for always-on-top (must be before first show)
-            _ <- initBalloonAlwaysOnTop balloon
-            
-            -- Create interpreter callbacks that interact with the balloon and surface
-            let interpreterCallbacks = defaultCallbacks
-                  { cbAppendChar    = appendChar balloon
-                  , cbAppendText    = appendText balloon
-                  , cbNewline       = appendNewline balloon
-                  , cbClear         = clearBalloon balloon
-                  , cbSetSurface    = changeSurface
-                  , cbAddChoice     = \choiceId text action -> 
-                      addChoice balloon (BalloonChoice text choiceId action)
-                  , cbClearChoices  = clearChoices balloon
-                  , cbOnComplete    = putStrLn "[Script] Execution complete"
-                  , cbOnInterrupt   = putStrLn "[Script] Execution interrupted"
-                  }
-            
-            -- Helper to display script in balloon with character-by-character animation
-            let displayScript :: Maybe T.Text -> IO ()
-                displayScript Nothing = return ()
-                displayScript (Just scriptText) = do
-                  -- Parse the SakuraScript
-                  case parseScript scriptText of
-                    Left err -> putStrLn $ "[Balloon] Parse error: " <> show err
-                    Right script -> do
-                      -- Clear balloon before new script
-                      clearBalloon balloon
-                      -- Execute script asynchronously with animation
-                      _ <- executeScriptAsync defaultInterpreterConfig interpreterCallbacks script
-                      return ()
+      -- Create balloon move mode based on layer-shell status
+      balloonIsLayerShell <- readIORef (bsLayerShell bs)
+      balloonMoveMode <- if balloonIsLayerShell
+        then do
+          let updatePosition :: Double -> Double -> IO ()
+              updatePosition dx dy = do
+                (currentX, currentY) <- readIORef (bsPosition bs)
+                let newX = currentX + round dx
+                    newY = currentY + round dy
+                writeIORef (bsPosition bs) (newX, newY)
+                setLayerShellPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
+          return $ BalloonMoveLayerShell updatePosition
+        else do
+          let beginBalloonMove :: Double -> Double -> IO ()
+              beginBalloonMove x y = void $ runMaybeT $ do
+                surface <- MaybeT $ Gtk.nativeGetSurface (bsWindow bs)
+                toplevel <- MaybeT $ Gdk.castTo Gdk.Toplevel surface
+                disp <- MaybeT Gdk.displayGetDefault
+                seat <- MaybeT $ Gdk.displayGetDefaultSeat disp
+                device <- MaybeT $ Gdk.seatGetPointer seat
+                MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
+          return $ BalloonMoveToplevel beginBalloonMove
 
-            -- Set up choice callback to handle user clicks on choices
-            setChoiceCallback balloon $ \choice -> do
-              putStrLn $ "[Choice] Selected: " <> T.unpack (bcText choice) 
-                      <> " (id=" <> T.unpack (bcId choice) 
-                      <> ", action=" <> T.unpack (bcAction choice) <> ")"
-              -- Clear the balloon and choices after selection
-              clearBalloon balloon
-              clearChoices balloon
-              -- Handle the action based on its type
-              let action = bcAction choice
-              case T.stripPrefix "event:" action of
-                Just _eventId -> do
-                  -- Fire OnChoiceSelect event with the choice ID
-                  let refs = Map.fromList [(0, bcId choice), (1, bcText choice)]
-                  sendShioriWithCallback mShioriConfig OnChoiceSelect refs displayScript
-                Nothing -> case T.stripPrefix "script:" action of
-                  Just script -> do
-                    -- Execute script directly
-                    displayScript (Just script)
-                  Nothing -> case T.stripPrefix "url:" action of
-                    Just _url -> do
-                      -- TODO: Open URL in browser
-                      putStrLn $ "[Choice] URL action not yet implemented"
-                    Nothing -> case T.stripPrefix "anchor:" action of
-                      Just anchorId -> do
-                        -- Anchors fire OnAnchorSelect
-                        let refs = Map.fromList [(0, anchorId), (1, bcText choice)]
-                        sendShioriWithCallback mShioriConfig OnAnchorSelect refs displayScript
-                      Nothing -> do
-                        -- Default: treat as event ID
-                        let refs = Map.fromList [(0, bcId choice), (1, bcText choice)]
-                        sendShioriWithCallback mShioriConfig OnChoiceSelect refs displayScript
+      -- Build balloon network config
+      let balloonConfig = BalloonNetworkConfig
+            { bncWindow      = bsWindow bs
+            , bncInputs      = InputHandlers
+                { ihDragBegin  = balloonDragBeginHandler
+                , ihDragUpdate = balloonDragUpdateHandler
+                , ihDragEnd    = balloonDragEndHandler
+                , ihMotion     = balloonMotionHandler
+                }
+            , bncMoveMode    = balloonMoveMode
+            }
 
-            -- Send OnBoot or OnFirstBoot event after network is activated
-            -- OnFirstBoot: Reference0 = vanished count
-            if firstBoot
-              then do
-                let refs = Map.fromList [(0, T.pack $ show vanishedCount)]
-                sendShioriWithCallback mShioriConfig OnFirstBoot refs displayScript
-                -- Create HISTORY file for next time
-                saveGhostHistory ghostPath defaultGhostHistory
-              else sendShioriWithCallback mShioriConfig OnBoot Map.empty displayScript
+      -- Compile and activate balloon network
+      balloonNetwork <- compile (setupBalloonNetwork balloonConfig)
+      actuate balloonNetwork
 
-            -- Finalize window setup based on platform
-            if layerShellSuccess
-              then do
-                -- Layer shell: set layer and show
-                setWindowLayer window LayerTop
-                putStrLn "Window set to always-on-top (Wayland layer-shell)"
-                Gtk.windowPresent window
-              else do
-                -- Not layer-shell: show window then try X11
-                Gtk.windowPresent window
-                x11Success <- setWindowAboveFromGtk window True
-                if x11Success
-                  then putStrLn "Window set to always-on-top (X11)"
-                  else putStrLn "Note: Always-on-top not available (Wayland without layer-shell or X11 error)"
+      putStrLn $ "[Character " <> show scopeId <> "] Balloon FRP network activated"
 
-            -- Set input region based on pixbuf alpha for click-through on transparent areas
-            -- This must be done after the window is realized (has a GDK surface)
-            applyInputRegion window initialPixbuf
+    -- Set initial positions for characters based on descript and screen size
+    mScreenDims <- getScreenDimensions
+    case mScreenDims of
+      Just screenDims -> do
+        putStrLn $ "[Position] Screen dimensions: " <> show screenDims
+        forM_ (Map.toList characters) $ \(scopeId, cs) -> do
+          surfSize <- readIORef (csSurfaceSize cs)
+          let pos = calcInitialPosition ghostDesc scopeId surfSize screenDims
+          putStrLn $ "[Position] Character " <> show scopeId <> " initial position: " <> show pos
+          setCharacterPosition cs (fst pos) (snd pos)
+      Nothing ->
+        putStrLn "[Position] Warning: Could not get screen dimensions, using default positions"
 
-          -- Run application
-          _ <- Gio.applicationRun app Nothing
-          return ()
+    -- Show all characters and set always-on-top
+    forM_ (Map.elems characters) showCharacter
+
+    -- Position balloons relative to their characters
+    -- This needs a small delay to ensure windows are realized
+    _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 100 $ do
+      forM_ (Map.elems characters) $ \cs ->
+        -- updateBalloonPosition cs dx dy
+        -- TODO: Calculate initial offsets properly
+        updateBalloonPosition cs 0 0
+      return False  -- Don't repeat
+
+    -- Send OnBoot or OnFirstBoot event
+    if firstBoot
+      then do
+        let refs = Map.fromList [(0, T.pack $ show vanishedCount)]
+        sendShioriWithCallback mShioriConfig OnFirstBoot refs displayScript
+        saveGhostHistory ghostPath' defaultGhostHistory
+      else sendShioriWithCallback mShioriConfig OnBoot Map.empty displayScript
+
+  -- Run application
+  _ <- Gio.applicationRun app Nothing
+  return ()
 
 -- | Get the default base directories for NAR installation
 -- Uses XDG data directory (~/.local/share/kokage/)
@@ -813,17 +949,3 @@ getDefaultBaseDir = do
     , bdCalendar = cwd </> "calendar"
     , bdCalendarSkin = cwd </> "calendar" </> "skin"
     }
-
--- | Apply input region to window based on pixbuf alpha channel.
--- This enables click-through on transparent areas of the surface.
-applyInputRegion :: Gtk.Window -> Pixbuf.Pixbuf -> IO ()
-applyInputRegion window pixbuf = void $ runMaybeT $ do
-  -- Get the GDK surface from the window
-  surface <- MaybeT $ Gtk.nativeGetSurface window
-  -- Set input region based on pixbuf alpha
-  success <- setInputRegionFromPixbuf surface pixbuf
-  MaybeT $ do
-    if success
-      then putStrLn "[InputRegion] Set input region from pixbuf alpha"
-      else putStrLn "[InputRegion] Pixbuf has no alpha channel, using full surface"
-    return $ Just ()

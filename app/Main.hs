@@ -4,19 +4,22 @@ module Main ( main ) where
 
 import Kokage ( kokageMain, KokageConfig(..), defaultConfig, loadLastGhost )
 
+import System.IO ( hSetBuffering, stdout, BufferMode(..) )
+
 main :: IO ()
 main = do
-  -- Get default configuration
+  -- Set line buffering for stdout to ensure logs appear immediately
+  hSetBuffering stdout LineBuffering
+  
+  -- Get default configuration (uses cwd for ghost/balloon discovery)
   config <- defaultConfig
   
   -- Load last ghost from persistent storage
   mLastGhost <- loadLastGhost config
   
   -- Run Kokage with loaded configuration
-  -- The ghost path can be overridden via command line args in the future
+  -- Ghost and balloon are auto-discovered from cwd/ghost and cwd/balloon
   kokageMain config
     { configLastGhost = mLastGhost
-    -- Uncomment to explicitly specify a ghost:
-    -- , configGhostPath = Just "/path/to/ghost"
     , configSurfaceId = 0  -- Default surface
     }

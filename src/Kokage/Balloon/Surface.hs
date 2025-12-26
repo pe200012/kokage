@@ -5,7 +5,7 @@
 --
 -- Balloon surface naming convention:
 -- - @balloons0.png@, @balloons1.png@, ... for sakura (main character)
--- - @balloonk0.png@, @balloonk1.png@, ... for kero (secondary character)  
+-- - @balloonk0.png@, @balloonk1.png@, ... for kero (secondary character)
 -- - @balloonc0.png@, @balloonc1.png@, ... for communicate box
 -- - @arrow0.png@, @arrow1.png@ for scroll arrows (up/down)
 -- - @sstp.png@ for SSTP marker
@@ -40,9 +40,9 @@ import qualified GI.GdkPixbuf        as Pixbuf
 import           Kokage.Transparency ( loadWithTransparency )
 
 import           System.Directory    ( doesFileExist )
-import           System.FilePath     ( (</>), takeExtension )
+import           System.FilePath     ( (</>) )
+import Data.Maybe (isJust)
 
-import           Text.Printf         ( printf )
 
 -- | Direction the balloon faces (left or right).
 -- Even numbers (0, 2, 4, ...) are typically left-facing.
@@ -126,20 +126,20 @@ loadBalloonSurfaces :: FilePath -> IO BalloonSurfaces
 loadBalloonSurfaces balloonDir = do
   -- Load sakura surfaces (balloons0..9)
   sakuraSurfaces <- loadSurfaceRange balloonDir "s" [0..9]
-  
+
   -- Load kero surfaces (balloonk0..9)
   keroSurfaces <- loadSurfaceRange balloonDir "k" [0..9]
-  
+
   -- Load communicate box surfaces (balloonc0..9)
   communicateSurfaces <- loadSurfaceRange balloonDir "c" [0..9]
-  
+
   -- Load arrow images
   arrowUp <- loadArrowSurface balloonDir 0
   arrowDown <- loadArrowSurface balloonDir 1
-  
+
   -- Load SSTP marker
   sstp <- loadSstpSurface balloonDir
-  
+
   return BalloonSurfaces
     { bsSakura      = sakuraSurfaces
     , bsKero        = keroSurfaces

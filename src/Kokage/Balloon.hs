@@ -2,15 +2,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Balloon window for displaying text from SHIORI responses.
--- This implementation uses Cairo for rendering balloon surfaces and Pango for text,
--- matching the behavior of SSP/ninix-kagari balloons.
+-- This implementation uses Cairo for rendering balloon surfaces and Pango for text
 module Kokage.Balloon
   ( -- * Balloon State
-    BalloonState
+    BalloonState(..)  -- Export all fields for FRP network access
   , BalloonConfig(..)
+  , BalloonDirection(..)
   , defaultBalloonConfig
   , newBalloonState
   , newBalloonStateWithConfig
+  , newBalloonStateWithSurface
     -- * Balloon Operations
   , showBalloon
   , hideBalloon
@@ -21,6 +22,8 @@ module Kokage.Balloon
   , setBalloonSurface
   , loadAndSetBalloonSurface
   , setBalloonPosition
+  , updateBalloonPosition
+  , getBalloonSize
   , initBalloonAlwaysOnTop
   , scrollUp
   , scrollDown
@@ -52,8 +55,8 @@ import qualified GI.Pango                   as Pango
 import qualified GI.PangoCairo              as PangoCairo
 
 import           Kokage.Balloon.Surface     ( loadBalloonSurface )
-import           Kokage.LayerShell          ( initLayerShell, setWindowLayer, Layer(..) )
-import           Kokage.X11                 ( setWindowAboveFromGtk )
+import           Kokage.LayerShell          ( initLayerShell, setWindowLayer, setLayerShellPosition, Layer(..) )
+import           Kokage.X11                 ( setWindowAboveFromGtk, moveWindowFromGtk )
 import           Types.SakuraScript         ( Script, SakuraScript(..), BalloonCmd(..) )
 
 -- | A choice presented in the balloon that the user can click.
@@ -63,6 +66,13 @@ data BalloonChoice
   , bcId     :: !T.Text   -- ^ Choice ID (for \q[id,text,action] style)
   , bcAction :: !T.Text   -- ^ Action to take when clicked (event ID, script, or URL)
   }
+  deriving ( Show, Eq )
+
+-- | Balloon direction relative to the character.
+-- This determines which side of the character the balloon appears on.
+data BalloonDirection
+  = BalloonLeft   -- ^ Balloon appears to the left of the character
+  | BalloonRight  -- ^ Balloon appears to the right of the character
   deriving ( Show, Eq )
 
 -- | Configuration for balloon rendering.
@@ -120,6 +130,9 @@ data BalloonState
   , bsChoices       :: !(IORef [BalloonChoice]) -- ^ Current choices to display
   , bsChoiceCallback :: !(IORef (Maybe (BalloonChoice -> IO ()))) -- ^ Callback when choice is selected
   , bsChoiceRects   :: !(IORef [(BalloonChoice, Double, Double, Double, Double)]) -- ^ Choice hit boxes (choice, x, y, w, h)
+  , bsBalloonDir    :: !(IORef (Maybe FilePath))  -- ^ Balloon directory path for surface loading
+  , bsCharType      :: !(IORef T.Text)            -- ^ Character type: "s" (sakura), "k" (kero), "c" (communicate)
+  , bsPosition      :: !(IORef (Int, Int))        -- ^ Current balloon position (x, y)
   }
 
 -- | Create a new balloon state with default configuration.
@@ -142,6 +155,9 @@ newBalloonStateWithConfig app config = do
   choicesRef <- newIORef []
   choiceCallbackRef <- newIORef Nothing
   choiceRectsRef <- newIORef []
+  balloonDirRef <- newIORef Nothing
+  charTypeRef <- newIORef "s"  -- Default to sakura
+  positionRef <- newIORef (bcOriginX config, bcOriginY config) -- Initial balloon position
 
   -- Create the balloon window
   window <- new Gtk.Window
@@ -196,7 +212,7 @@ newBalloonStateWithConfig app config = do
     Gtk.widgetQueueDraw drawArea
     return True
   Gtk.widgetAddController drawArea scrollController
-  
+
   -- Add click gesture for choice selection
   clickGesture <- new Gtk.GestureClick []
   void $ on clickGesture #released $ \_nPress x y -> do
@@ -213,6 +229,10 @@ newBalloonStateWithConfig app config = do
             putStrLn $ "[Balloon] Choice clicked: " <> T.unpack (bcText choice)
             callback choice
   Gtk.widgetAddController drawArea clickGesture
+
+  -- Note: Drag gesture for window movement is set up separately via FRP network.
+  -- The setupBalloonNetwork function in Event.hs handles drag-based movement
+  -- with delta-based tracking to avoid jitter on layer-shell windows.
 
   Gtk.windowSetChild window (Just drawArea)
 
@@ -235,7 +255,31 @@ newBalloonStateWithConfig app config = do
     , bsChoices        = choicesRef
     , bsChoiceCallback = choiceCallbackRef
     , bsChoiceRects    = choiceRectsRef
+    , bsBalloonDir     = balloonDirRef
+    , bsCharType       = charTypeRef
+    , bsPosition       = positionRef
     }
+
+-- | Create a new balloon state with a surface loaded from a balloon directory.
+-- This is the preferred method for creating balloons for characters, as it
+-- automatically loads the correct balloon surface based on character type.
+--
+-- Character types:
+-- - Scope 0 (sakura): "s" -> loads balloons0.png
+-- - Scope 1+ (kero, etc.): "k" -> loads balloonk0.png
+newBalloonStateWithSurface
+  :: Gtk.Application
+  -> FilePath         -- ^ Balloon directory path
+  -> T.Text           -- ^ Character type: "s" for sakura, "k" for kero
+  -> IO BalloonState
+newBalloonStateWithSurface app balloonDir charType = do
+  bs <- newBalloonStateWithConfig app defaultBalloonConfig
+  -- Store balloon directory and char type for future surface switches
+  writeIORef (bsBalloonDir bs) (Just balloonDir)
+  writeIORef (bsCharType bs) charType
+  -- Load the initial surface (index 0)
+  _ <- loadAndSetBalloonSurface bs balloonDir charType 0
+  return bs
 
 -- | Cairo drawing implementation.
 -- Returns the list of choice rectangles for click detection.
@@ -259,7 +303,7 @@ drawBalloonCairo config text scrollLine mSurface choices = do
   -- Draw text using PangoCairo (with clipping and scrolling)
   -- Returns the Y position after text for choice drawing
   textEndY <- drawText config text scrollLine
-  
+
   -- Draw choices below the text
   drawChoices config choices textEndY scrollLine
 
@@ -332,7 +376,7 @@ drawText config text scrollLine = do
     ascent <- Pango.fontMetricsGetAscent metrics
     descent <- Pango.fontMetricsGetDescent metrics
     return $ (fromIntegral ascent + fromIntegral descent + fromIntegral (bcLineSpacing config * fromIntegral Pango.SCALE)) / fromIntegral Pango.SCALE
-  
+
   -- Get text layout height
   (_, textHeight) <- Cairo.liftIO $ Pango.layoutGetPixelSize layout
 
@@ -362,14 +406,14 @@ drawText config text scrollLine = do
 
   -- Restore Cairo state (removes clipping)
   Cairo.restore
-  
+
   -- Return the Y position after the text (accounting for scroll)
   return $ fromIntegral (bcOriginY config) + fromIntegral textHeight - scrollOffset + fromIntegral (bcLineSpacing config)
 
 -- | Draw choices below the text.
 -- Returns list of choice rectangles for hit testing.
-drawChoices :: BalloonConfig 
-            -> [BalloonChoice] 
+drawChoices :: BalloonConfig
+            -> [BalloonChoice]
             -> Double          -- ^ Y position to start drawing choices
             -> Int             -- ^ Scroll line offset (unused for now)
             -> Cairo.Render [(BalloonChoice, Double, Double, Double, Double)]
@@ -378,19 +422,19 @@ drawChoices config choices startY _scrollLine = do
     then return []
     else do
       ctx <- Cairo.getContext
-      
+
       -- Create font description for choices
       fontDesc <- Cairo.liftIO Pango.fontDescriptionNew
       Cairo.liftIO $ Pango.fontDescriptionSetFamily fontDesc (bcFontName config)
       Cairo.liftIO $ Pango.fontDescriptionSetSize fontDesc (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
-      
+
       -- Get line height from a sample layout
       sampleLayout <- Cairo.liftIO $ PangoCairo.createLayout ctx
       Cairo.liftIO $ Pango.layoutSetFontDescription sampleLayout (Just fontDesc)
       Cairo.liftIO $ Pango.layoutSetText sampleLayout "Test" (-1)
       (_, sampleHeight) <- Cairo.liftIO $ Pango.layoutGetPixelSize sampleLayout
       let lineHeight = fromIntegral sampleHeight + fromIntegral (bcLineSpacing config)
-      
+
       -- Set up clipping rectangle for text area
       Cairo.save
       Cairo.rectangle
@@ -399,43 +443,43 @@ drawChoices config choices startY _scrollLine = do
         (fromIntegral $ bcValidWidth config)
         (fromIntegral $ bcValidHeight config)
       Cairo.clip
-      
+
       -- Draw each choice and collect rectangles
       rects <- drawChoiceLoop fontDesc config choices startY lineHeight []
-      
+
       Cairo.restore
       return rects
   where
-    drawChoiceLoop :: Pango.FontDescription 
-                   -> BalloonConfig 
-                   -> [BalloonChoice] 
-                   -> Double 
-                   -> Double 
+    drawChoiceLoop :: Pango.FontDescription
+                   -> BalloonConfig
+                   -> [BalloonChoice]
+                   -> Double
+                   -> Double
                    -> [(BalloonChoice, Double, Double, Double, Double)]
                    -> Cairo.Render [(BalloonChoice, Double, Double, Double, Double)]
     drawChoiceLoop _ _ [] _ _ acc = return $ reverse acc
     drawChoiceLoop fontDesc cfg (choice:rest) y lh acc = do
       -- Get the Cairo context for drawing
       ctx <- Cairo.getContext
-      
+
       -- Create layout for this choice
       layout <- Cairo.liftIO $ PangoCairo.createLayout ctx
       let choiceText = "▶ " <> bcText choice  -- Add bullet prefix
       Cairo.liftIO $ Pango.layoutSetText layout choiceText (-1)
       Cairo.liftIO $ Pango.layoutSetFontDescription layout (Just fontDesc)
       Cairo.liftIO $ Pango.layoutSetWidth layout (fromIntegral $ bcValidWidth cfg * fromIntegral Pango.SCALE)
-      
+
       -- Get choice dimensions
       (textWidth, textHeight) <- Cairo.liftIO $ Pango.layoutGetPixelSize layout
-      
+
       -- Set choice color (blue for links)
       Cairo.setSourceRGB 0.0 0.4 0.8
       Cairo.moveTo (fromIntegral $ bcOriginX cfg) y
       Cairo.liftIO $ PangoCairo.showLayout ctx layout
-      
+
       -- Add rect to accumulator
       let rect = (choice, fromIntegral $ bcOriginX cfg, y, fromIntegral textWidth, fromIntegral textHeight)
-      
+
       -- Continue with next choice
       drawChoiceLoop fontDesc cfg rest (y + lh) lh (rect : acc)
 
@@ -591,9 +635,9 @@ pixbufToCairoSurface pixbuf = do
             let pixel = take (fromIntegral nChannels) rowData
                 restRow = drop (fromIntegral nChannels) rowData
                 (r, g, b, a) = case pixel of
-                  [r', g', b', a'] -> (r', g', b', a')
-                  [r', g', b']     -> (r', g', b', 255)  -- No alpha = fully opaque
-                  _                -> (0, 0, 0, 0)       -- Invalid
+                  [r', g', b', a''] -> (r', g', b', a'')
+                  [r', g', b']      -> (r', g', b', 255)  -- No alpha = fully opaque
+                  _                 -> (0, 0, 0, 0)       -- Invalid
                 -- Pre-multiply alpha for Cairo
                 a' = fromIntegral a / 255.0 :: Double
                 premulR = round (fromIntegral r * a') :: Word8
@@ -635,6 +679,59 @@ setBalloonPosition _bs surfaceX surfaceY = do
   let balloonX = surfaceX - 320  -- 300 width + 20 margin
       balloonY = surfaceY
   putStrLn $ "[Balloon] Position request: " <> show balloonX <> ", " <> show balloonY
+
+-- | Update the balloon position relative to a character window.
+--
+-- The balloon is positioned:
+-- - To the LEFT of the character when direction is BalloonLeft (direction=0)
+-- - To the RIGHT of the character when direction is BalloonRight (direction=1)
+--
+-- The positioning also takes into account:
+-- - The drag offset (user can drag the balloon to adjust its position)
+-- - Screen boundaries (balloon is kept within the visible monitor area)
+--
+-- NOTE: This function is skipped if a drag is currently in progress to avoid
+-- interfering with the user's drag operation.
+updateBalloonPosition :: BalloonState
+                      -> Double           -- ^ Delta x
+                      -> Double           -- ^ Delta y
+                      -> IO ()
+updateBalloonPosition bs dx dy = do
+      (baseX, baseY) <- readIORef (bsPosition bs)
+      let finalX = baseX + round dx
+          finalY = baseY + round dy
+      writeIORef (bsPosition bs) (finalX, finalY)
+
+      -- Move the window
+      isLayerShell <- readIORef (bsLayerShell bs)
+      if isLayerShell
+        then do
+          -- On Wayland with layer-shell, use layer-shell positioning
+          setLayerShellPosition (bsWindow bs) (fromIntegral finalX) (fromIntegral finalY)
+          putStrLn $ "[Balloon] Wayland position: " <> show finalX <> ", " <> show finalY
+        else do
+          -- On X11, use XMoveWindow
+          success <- moveWindowFromGtk (bsWindow bs) (fromIntegral finalX) (fromIntegral finalY)
+          when success $
+            putStrLn $ "[Balloon] Moved to: " <> show finalX <> ", " <> show finalY
+
+-- | Get the current balloon window size.
+-- Returns (width, height) in pixels.
+getBalloonSize :: BalloonState -> IO (Int, Int)
+getBalloonSize bs = do
+  -- Try to get the size from the surface pixbuf first
+  mPixbuf <- readIORef (bsSurface bs)
+  case mPixbuf of
+    Just pixbuf -> do
+      w <- Pixbuf.pixbufGetWidth pixbuf
+      h <- Pixbuf.pixbufGetHeight pixbuf
+      return (fromIntegral w, fromIntegral h)
+    Nothing -> do
+      -- Fall back to config-based size
+      config <- readIORef (bsConfig bs)
+      return ( bcOriginX config * 2 + bcValidWidth config
+             , bcOriginY config * 2 + bcValidHeight config
+             )
 
 -- | Scroll up by one line.
 scrollUp :: BalloonState -> IO ()
