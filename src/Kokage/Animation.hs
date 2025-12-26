@@ -10,6 +10,8 @@ module Kokage.Animation
     -- * Animation Logic
   , tickAnimations
   , compositeAnimation
+    -- * Re-export cache type for callers
+  , ImageCache
   ) where
 
 import           Control.Monad              ( foldM, when )
@@ -25,6 +27,7 @@ import           System.Random              ( randomRIO )
 
 import qualified GI.GdkPixbuf               as Pixbuf
 
+import           Kokage.ImageCache          ( ImageCache, newImageCache, getCachedImage )
 import           Kokage.Surface             ( compositeSurface, findSurfaceById, loadDefaultSurface )
 import           Types.Ghost                ( Animation(..)
                                             , AnimationInterval(..)
@@ -49,6 +52,7 @@ data AnimationState = AnimationState
   { asActiveAnims   :: !(IORef [ActiveAnim])       -- ^ Currently active animations
   , asBasePixbuf    :: !(IORef (Maybe Pixbuf.Pixbuf)) -- ^ The base surface image (without animations)
   , asPeriodicState :: !(IORef (Map Int Int))      -- ^ State for periodic animations (AnimID -> Accumulated Time ms)
+  , asImageCache    :: !ImageCache                 -- ^ LRU cache for animation overlay images
   }
 
 -- | Create a new empty animation state.
@@ -57,10 +61,12 @@ newAnimationState = do
   animsRef <- newIORef []
   baseRef <- newIORef Nothing
   periodicRef <- newIORef Map.empty
+  cache <- newImageCache 64  -- Cache up to 64 overlay images
   return AnimationState
     { asActiveAnims = animsRef
     , asBasePixbuf  = baseRef
     , asPeriodicState = periodicRef
+    , asImageCache = cache
     }
 
 -- | Process one tick (typically 50ms) of animations.
@@ -194,10 +200,11 @@ updateActiveAnims anims delta = do
 -- Returns a NEW Pixbuf (does not modify base).
 compositeAnimation
   :: Shell
-  -> Pixbuf.Pixbuf -- ^ Base pixbuf
-  -> [ActiveAnim]  -- ^ Active animations to apply
+  -> ImageCache      -- ^ Image cache for overlay surfaces
+  -> Pixbuf.Pixbuf   -- ^ Base pixbuf
+  -> [ActiveAnim]    -- ^ Active animations to apply
   -> IO (Maybe Pixbuf.Pixbuf)
-compositeAnimation shell basePixbuf anims = do
+compositeAnimation shell cache basePixbuf anims = do
   -- Filter visible animations and sort by ID (or z-order if available)
   -- For now just use list order (which implies start order) or definition order?
   -- Usually animations are layered by their definition order in surfaces.txt or sorted by ID.
@@ -214,12 +221,12 @@ compositeAnimation shell basePixbuf anims = do
       height <- Pixbuf.pixbufGetHeight dest
 
       -- Apply each animation pattern
-      foldM_ (\_ anim -> applyPattern shell dest width height anim) () sortedAnims
+      foldM_ (\_ anim -> applyPattern shell cache dest width height anim) () sortedAnims
       
       return $ Just dest
 
   where
-    applyPattern shell dest destW destH anim = do
+    applyPattern shell cache dest destW destH anim = do
       let pat = animPatterns (aaDef anim) !! aaStepIndex anim
           surfId = apSurfaceId pat
           x = apX pat
@@ -228,15 +235,16 @@ compositeAnimation shell basePixbuf anims = do
 
       -- surfId < 0 means no image (just wait/logic), so skip drawing
       when (surfId >= 0) $ do
-        -- Load the surface image for the pattern
+        -- Load the surface image for the pattern (with caching)
         -- Animation patterns often reference surface IDs that are just raw PNG files
         -- (e.g., surface4000.png) without a corresponding surface definition.
-        -- We try the definition first, then fallback to loading the raw file.
-        -- TODO: Cache these pattern images.
         let surfaces = shellSurfaces shell
-        mPatPixbuf <- case findSurfaceById surfId surfaces of
-          Just patSurfDef -> compositeSurface (shellPath shell) patSurfDef
-          Nothing         -> loadDefaultSurface (shellPath shell) surfId
+            cacheKey = shellPath shell <> "/surface" <> show surfId
+            
+        mPatPixbuf <- getCachedImage cache cacheKey $ do
+          case findSurfaceById surfId surfaces of
+            Just patSurfDef -> compositeSurface (shellPath shell) patSurfDef
+            Nothing         -> loadDefaultSurface (shellPath shell) surfId
 
         case mPatPixbuf of
           Nothing -> return ()

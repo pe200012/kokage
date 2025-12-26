@@ -44,7 +44,7 @@ import qualified GI.GdkPixbuf               as Pixbuf
 import qualified GI.GLib                    as GLib
 import qualified GI.Gtk                     as Gtk
 
-import           Kokage.Animation           ( AnimationState(..), newAnimationState, tickAnimations, compositeAnimation )
+import           Kokage.Animation           ( AnimationState(..), newAnimationState, tickAnimations, compositeAnimation, ImageCache )
 import           Kokage.Balloon             ( BalloonState, BalloonDirection(..)
                                             , newBalloonState
                                             , newBalloonStateWithSurface
@@ -305,8 +305,8 @@ tickCharacter cs shell delta = do
           case mBasePixbuf of
             Nothing -> return ()
             Just basePixbuf -> do
-              -- Composite active animations onto base
-              mFinalPixbuf <- compositeAnimation shell basePixbuf newAnims
+              -- Composite active animations onto base (using the cache)
+              mFinalPixbuf <- compositeAnimation shell (asImageCache animState) basePixbuf newAnims
               case mFinalPixbuf of
                 Nothing -> return ()
                 Just finalPixbuf -> do
