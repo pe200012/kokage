@@ -15,7 +15,6 @@ module Kokage.Event
   , NetworkConfig(..)
   , CharacterNetworkConfig(..)
   , GlobalNetworkConfig(..)
-  , BalloonNetworkConfig(..)
   , ShioriConfig(..)
   , InputHandlers(..)
   , TimerHandlers(..)
@@ -26,7 +25,6 @@ module Kokage.Event
   , setupNetwork
   , setupCharacterNetwork
   , setupGlobalNetwork
-  , setupBalloonNetwork
     -- * Event Handlers
   , handleClick
     -- * SHIORI Helpers
@@ -141,6 +139,7 @@ type ScriptHandler = Maybe T.Text -> IO ()
 
 -- | Configuration for a single character's FRP network.
 -- Each character window has its own FRP network for input handling.
+-- Since each character has exactly one balloon, the balloon config is integrated here.
 data CharacterNetworkConfig
   = CharacterNetworkConfig
   { cncWindow     :: !Gtk.Window                -- ^ The character's surface window
@@ -151,6 +150,10 @@ data CharacterNetworkConfig
   , cncShiori     :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
   , cncScriptHandler :: !ScriptHandler          -- ^ Handler for SHIORI scripts
   , cncContextMenu :: !Gtk.PopoverMenu          -- ^ Context menu for right-click
+  -- Balloon integration (one balloon per character)
+  , cncBalloonWindow   :: !Gtk.Window           -- ^ The balloon window
+  , cncBalloonInputs   :: !InputHandlers        -- ^ Input event handlers for balloon
+  , cncBalloonMoveMode :: !BalloonMoveMode      -- ^ How to handle balloon window movement
   }
 
 -- | Configuration for the global FRP network (timers).
@@ -169,15 +172,6 @@ data BalloonMoveMode
     -- ^ Standard toplevel move (X11): call once when drag starts.
   | BalloonMoveLayerShell
       !(Double -> Double -> IO ())      -- ^ Function to set layer-shell position
-
--- | Configuration for a balloon's FRP network.
--- Each balloon window has its own FRP network for input handling.
-data BalloonNetworkConfig
-  = BalloonNetworkConfig
-  { bncWindow      :: !Gtk.Window              -- ^ The balloon window
-  , bncInputs      :: !InputHandlers           -- ^ Input event handlers for this window
-  , bncMoveMode    :: !BalloonMoveMode         -- ^ How to handle window movement
-  }
 
 -- | Legacy configuration for single-window FRP network.
 -- Kept for backwards compatibility during transition.
@@ -615,6 +609,35 @@ setupCharacterNetwork config = do
       let significantUpdateE = filterE exceedsThreshold dragUpdateE
       reactimate $ uncurry updatePosition <$> significantUpdateE
 
+  -- ============ BALLOON EVENTS ============
+  -- Each character has exactly one balloon, handle its events here.
+
+  let balloonWindow   = cncBalloonWindow config
+      balloonInputs   = cncBalloonInputs config
+      balloonMoveMode = cncBalloonMoveMode config
+
+  -- Create close event for balloon - return True to prevent destruction, just hide
+  balloonCloseE <- signalE0R balloonWindow #closeRequest True
+  reactimate $ (putStrLn "[Balloon] Close request (hidden)") <$ balloonCloseE
+
+  -- Get balloon input events from drag gesture
+  balloonDragBeginE <- fromAddHandler (ihDragBegin balloonInputs)
+  balloonDragUpdateE <- fromAddHandler (ihDragUpdate balloonInputs)
+  _balloonDragEndE <- fromAddHandler (ihDragEnd balloonInputs)
+
+  -- Handle balloon window movement based on mode
+  case balloonMoveMode of
+    BalloonMoveToplevel beginBalloonMove -> do
+      -- For X11/standard toplevel: just initiate move on drag start
+      let balloonExceedsThreshold ( ox, oy ) = isDragSignificant ox oy
+          balloonFirstExceedE = filterE balloonExceedsThreshold balloonDragUpdateE
+      balloonDragStartB <- stepper ( 0, 0 ) balloonDragBeginE
+      let balloonMoveE = balloonDragStartB <@ balloonFirstExceedE
+      reactimate $ uncurry beginBalloonMove <$> balloonMoveE
+
+    BalloonMoveLayerShell setBalloonPosition ->
+      reactimate $ uncurry setBalloonPosition <$> balloonDragUpdateE
+
 -- | Set up the global FRP network for timers.
 -- This handles OnSecondChange and OnMinuteChange events.
 -- Should be run once, not per-character.
@@ -660,34 +683,3 @@ setupGlobalNetwork config = do
 
   reactimate $ handleSecondTick <$> secondTickE
   reactimate $ handleMinuteTick <$> minuteTickE
-
--- | Set up the FRP network for a balloon window.
--- Handles drag events for window movement using delta-based tracking for layer-shell.
--- This avoids jitter caused by coordinate frame shifts when moving layer-shell windows.
-setupBalloonNetwork :: BalloonNetworkConfig -> MomentIO ()
-setupBalloonNetwork config = do
-  let window       = bncWindow config
-      inputs       = bncInputs config
-      moveMode     = bncMoveMode config
-
-  -- Create close event - just hide, don't destroy
-  closeE <- signalE0R window #closeRequest True
-  reactimate $ (putStrLn "[Balloon] Close request (hidden)") <$ closeE
-
-  -- Get input events from drag gesture
-  dragBeginE <- fromAddHandler (ihDragBegin inputs)
-  dragUpdateE <- fromAddHandler (ihDragUpdate inputs)
-  _dragEndE <- fromAddHandler (ihDragEnd inputs)
-
-  -- Handle window movement based on mode
-  case moveMode of
-    BalloonMoveToplevel beginMove -> do
-      -- For X11/standard toplevel: just initiate move on drag start
-      let exceedsThreshold ( ox, oy ) = isDragSignificant ox oy
-          firstExceedE = filterE exceedsThreshold dragUpdateE
-      dragStartB <- stepper ( 0, 0 ) dragBeginE
-      let moveE = dragStartB <@ firstExceedE
-      reactimate $ uncurry beginMove <$> moveE
-
-    BalloonMoveLayerShell setPosition ->
-      reactimate $ uncurry setPosition <$> dragUpdateE

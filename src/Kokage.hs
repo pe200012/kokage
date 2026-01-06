@@ -52,7 +52,7 @@ import           Control.Exception               ( Exception
                                                  , throwIO
                                                  , try
                                                  )
-import           Control.Monad                   ( filterM, forM_, unless, void, when )
+import           Control.Monad                   ( filterM, forM_, unless, void, when, join )
 import           Control.Monad.Except            ( MonadError(throwError) )
 import           Control.Monad.Trans.Class       ( lift )
 import           Control.Monad.Trans.Maybe       ( MaybeT(runMaybeT, MaybeT) )
@@ -110,7 +110,6 @@ import           Kokage.Character                ( CharacterState(..)
                                                  )
 import           Kokage.Collision
 import           Kokage.Event                    ( BalloonMoveMode(..)
-                                                 , BalloonNetworkConfig(..)
                                                  , CharacterNetworkConfig(..)
                                                  , GlobalNetworkConfig(..)
                                                  , InputHandlers(..)
@@ -118,7 +117,6 @@ import           Kokage.Event                    ( BalloonMoveMode(..)
                                                  , ShioriConfig(..)
                                                  , TimerHandlers(..)
                                                  , sendShioriWithCallback
-                                                 , setupBalloonNetwork
                                                  , setupCharacterNetwork
                                                  , setupGlobalNetwork
                                                  )
@@ -263,7 +261,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
               (descriptSakuraDefaultLeft descript)
           relY
             = maybe (screenH - fromIntegral surfH) fromIntegral (descriptSakuraDefaultTop descript)
-        in 
+        in
           ( monX + relX, monY + relY )
     _    -- Kero and others: default to left of sakura position
       -> let
@@ -272,7 +270,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
           defaultY = screenH - fromIntegral surfH
           relX     = maybe defaultX fromIntegral (descriptKeroDefaultLeft descript)
           relY     = maybe defaultY fromIntegral (descriptKeroDefaultTop descript)
-        in 
+        in
           ( monX + relX, monY + relY )
 
 --------------------------------------------------------------------------------
@@ -416,7 +414,7 @@ parseHistory content
         Just v  -> case reads (T.unpack v) of
           [ ( n, "" ) ] -> n
           _ -> def
-    in 
+    in
       GhostHistory { ghTime = lookupInt "time" 0, ghVanishedCount = lookupInt "vanished_count" 0 }
 
 -- | Save ghost history to HISTORY file.
@@ -765,8 +763,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
         displayScript Nothing           = return ()
         displayScript (Just scriptText) = do
           -- Interrupt any currently running script first
-          currentInterrupt <- readIORef currentScriptInterruptRef
-          currentInterrupt
+          join $ readIORef currentScriptInterruptRef
           -- Reset scope to sakura (0) at start of each new script
           writeIORef currentScopeRef 0
           -- Parse the SakuraScript
@@ -890,8 +887,16 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       ( motionHandler, fireMotion ) <- newAddHandler
       ( rightClickHandler, fireRightClick ) <- newAddHandler
 
+      -- Create input handlers for this character's balloon
+      ( balloonDragBeginHandler, fireBalloonDragBegin ) <- newAddHandler
+      ( balloonDragUpdateHandler, fireBalloonDragUpdate ) <- newAddHandler
+      ( balloonDragEndHandler, fireBalloonDragEnd ) <- newAddHandler
+      ( balloonMotionHandler, fireBalloonMotion ) <- newAddHandler
+      ( balloonRightClickHandler, _fireBalloonRightClick ) <- newAddHandler
+
       let window  = csWindow cs
           picture = csPicture cs
+          bs = getCharacterBalloon cs
 
       -- Create drag gesture (for left-click drag/move)
       dragGesture <- new Gtk.GestureDrag []
@@ -899,6 +904,18 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       _ <- on dragGesture #dragUpdate $ \ox oy -> fireDragUpdate ( ox, oy )
       _ <- on dragGesture #dragEnd $ \ox oy -> fireDragEnd ( ox, oy )
       Gtk.widgetAddController picture dragGesture
+
+      -- Create drag gesture for balloon
+      balloonDragGesture <- new Gtk.GestureDrag []
+      _ <- on balloonDragGesture #dragBegin $ \x y -> fireBalloonDragBegin ( x, y )
+      _ <- on balloonDragGesture #dragUpdate $ \ox oy -> fireBalloonDragUpdate ( ox, oy )
+      _ <- on balloonDragGesture #dragEnd $ \ox oy -> fireBalloonDragEnd ( ox, oy )
+      Gtk.widgetAddController (bsDrawArea bs) balloonDragGesture
+
+      -- Create motion controller for balloon
+      balloonMotionController <- new Gtk.EventControllerMotion []
+      _ <- on balloonMotionController #motion $ \x y -> fireBalloonMotion ( x, y )
+      Gtk.widgetAddController (bsDrawArea bs) balloonMotionController
 
       -- Create right-click gesture (Button 3) for context menu
       rightClickGesture <- new Gtk.GestureClick [ #button := 3 ]  -- Button 3 = right-click
@@ -982,7 +999,31 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
           return $ MoveToplevel beginMove
 
-      -- Build character network config
+      -- Create balloon move mode based on layer-shell status
+      balloonIsLayerShell <- readIORef (bsLayerShell bs)
+      balloonMoveMode <- if balloonIsLayerShell
+        then do
+          let updateBalloonPos :: Double -> Double -> IO ()
+              updateBalloonPos dx dy = do
+                ( currentX, currentY ) <- readIORef (bsPosition bs)
+                let newX = currentX + round dx
+                    newY = currentY + round dy
+                writeIORef (bsPosition bs) ( newX, newY )
+                _ <- setWindowPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
+                return ()
+          return $ BalloonMoveLayerShell updateBalloonPos
+        else do
+          let beginBalloonMove :: Double -> Double -> IO ()
+              beginBalloonMove x y = void $ runMaybeT $ do
+                surface <- MaybeT $ Gtk.nativeGetSurface (bsWindow bs)
+                toplevel <- MaybeT $ Gdk.castTo Gdk.Toplevel surface
+                disp <- MaybeT Gdk.displayGetDefault
+                seat <- MaybeT $ Gdk.displayGetDefaultSeat disp
+                device <- MaybeT $ Gdk.seatGetPointer seat
+                MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
+          return $ BalloonMoveToplevel beginBalloonMove
+
+      -- Build unified character+balloon network config
       let charConfig
             = CharacterNetworkConfig
             { cncWindow        = window
@@ -999,77 +1040,23 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
             , cncShiori        = mShioriConfig
             , cncScriptHandler = displayScript
             , cncContextMenu   = contextMenu
-            }
-
-      -- Compile and activate character network
-      charNetwork <- compile (setupCharacterNetwork charConfig)
-      actuate charNetwork
-
-      putStrLn $ "[Character " <> show scopeId <> "] FRP network activated"
-
-      -- Set up balloon FRP network for this character's balloon
-      let bs = getCharacterBalloon cs
-
-      -- Create input handlers for balloon window
-      ( balloonDragBeginHandler, fireBalloonDragBegin ) <- newAddHandler
-      ( balloonDragUpdateHandler, fireBalloonDragUpdate ) <- newAddHandler
-      ( balloonDragEndHandler, fireBalloonDragEnd ) <- newAddHandler
-      ( balloonMotionHandler, fireBalloonMotion ) <- newAddHandler
-
-      -- Create drag gesture for balloon
-      balloonDragGesture <- new Gtk.GestureDrag []
-      _ <- on balloonDragGesture #dragBegin $ \x y -> fireBalloonDragBegin ( x, y )
-      _ <- on balloonDragGesture #dragUpdate $ \ox oy -> fireBalloonDragUpdate ( ox, oy )
-      _ <- on balloonDragGesture #dragEnd $ \ox oy -> fireBalloonDragEnd ( ox, oy )
-      Gtk.widgetAddController (bsDrawArea bs) balloonDragGesture
-
-      -- Create motion controller for balloon (for future hover effects, etc.)
-      balloonMotionController <- new Gtk.EventControllerMotion []
-      _ <- on balloonMotionController #motion $ \x y -> fireBalloonMotion ( x, y )
-      Gtk.widgetAddController (bsDrawArea bs) balloonMotionController
-
-      -- Create balloon move mode based on layer-shell status
-      balloonIsLayerShell <- readIORef (bsLayerShell bs)
-      balloonMoveMode <- if balloonIsLayerShell
-        then do
-          let updatePosition :: Double -> Double -> IO ()
-              updatePosition dx dy = do
-                ( currentX, currentY ) <- readIORef (bsPosition bs)
-                let newX = currentX + round dx
-                    newY = currentY + round dy
-                writeIORef (bsPosition bs) ( newX, newY )
-                _ <- setWindowPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
-                return ()
-          return $ BalloonMoveLayerShell updatePosition
-        else do
-          let beginBalloonMove :: Double -> Double -> IO ()
-              beginBalloonMove x y = void $ runMaybeT $ do
-                surface <- MaybeT $ Gtk.nativeGetSurface (bsWindow bs)
-                toplevel <- MaybeT $ Gdk.castTo Gdk.Toplevel surface
-                disp <- MaybeT Gdk.displayGetDefault
-                seat <- MaybeT $ Gdk.displayGetDefaultSeat disp
-                device <- MaybeT $ Gdk.seatGetPointer seat
-                MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
-          return $ BalloonMoveToplevel beginBalloonMove
-
-      -- Build balloon network config
-      let balloonConfig
-            = BalloonNetworkConfig
-            { bncWindow   = bsWindow bs
-            , bncInputs   = InputHandlers
+            -- Balloon integration
+            , cncBalloonWindow   = bsWindow bs
+            , cncBalloonInputs   = InputHandlers
                 { ihDragBegin  = balloonDragBeginHandler
                 , ihDragUpdate = balloonDragUpdateHandler
                 , ihDragEnd    = balloonDragEndHandler
                 , ihMotion     = balloonMotionHandler
+                , ihRightClick = balloonRightClickHandler
                 }
-            , bncMoveMode = balloonMoveMode
+            , cncBalloonMoveMode = balloonMoveMode
             }
 
-      -- Compile and activate balloon network
-      balloonNetwork <- compile (setupBalloonNetwork balloonConfig)
-      actuate balloonNetwork
+      -- Compile and activate unified character+balloon network
+      charNetwork <- compile (setupCharacterNetwork charConfig)
+      actuate charNetwork
 
-      putStrLn $ "[Character " <> show scopeId <> "] Balloon FRP network activated"
+      putStrLn $ "[Character " <> show scopeId <> "] FRP network activated (with balloon)"
 
     -- Set initial positions for characters based on descript and screen size
     mScreenGeom <- getScreenGeometry
