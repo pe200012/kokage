@@ -174,7 +174,7 @@ findCharsetDeclaration :: [ BL.ByteString ] -> Maybe EncodingName
 findCharsetDeclaration lns = case filter (BL8.isPrefixOf (BL8.pack "charset,")) lns of
   (l : _) -> let
       charset = map toLower . cleanStr . BL8.unpack . BL8.drop 8 $ l
-    in 
+    in
       Just $ normalizeCharset charset
   []      -> Nothing
 
@@ -471,7 +471,7 @@ readGhostDescript path = do
             key    = T.toLower (clean rawKey)
             rawVal = T.drop 1 rest  -- drop the comma
             val    = clean rawVal
-          in 
+          in
             case key of
               "charset" -> desc { descriptCharset = val }
               "name" -> desc { descriptName = val }
@@ -801,7 +801,7 @@ updateCharSettings idx f desc
       chars   = shellDescriptCharacters desc
       current = Map.findWithDefault emptyCharacterSettings idx chars
       updated = f current
-    in 
+    in
       desc { shellDescriptCharacters = Map.insert idx updated chars }
 
 readShellDescript :: FilePath -> IO ShellDescript
@@ -847,7 +847,7 @@ readShellDescript path = do
           groups  = csBindGroups cs
           current = Map.findWithDefault emptyBindGroup bgAnimId groups
           updated = f current
-        in 
+        in
           cs { csBindGroups = Map.insert bgAnimId updated groups }
 
     -- Parse bind option types from "+" separated string
@@ -855,7 +855,7 @@ readShellDescript path = do
     parseBindOptions val
       = let
           parts = T.splitOn "+" val
-        in 
+        in
           concatMap parseOne parts
       where
         parseOne t = case T.toLower (T.strip t) of
@@ -875,7 +875,7 @@ readShellDescript path = do
             key    = T.toLower (clean rawKey)
             rawVal = T.drop 1 rest  -- drop the comma
             val    = clean rawVal
-          in 
+          in
             case key of
               -- Global settings
               "charset" -> desc { shellDescriptCharset = val }
@@ -1003,12 +1003,12 @@ readShellDescript path = do
               [] -> desc
           "default" -> let
               isDefault = val == "1" || T.toLower val == "true"
-            in 
+            in
               updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
                                                                 { bgDefault = isDefault })) desc
           "addid"   -> let
               ids = mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," val)
-            in 
+            in
               updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg { bgAddIds = ids })) desc
           _         -> desc
 
@@ -1021,7 +1021,7 @@ readShellDescript path = do
               (cat : optPart : _) -> let
                   opts = parseBindOptions optPart
                   opt  = BindOption (clean cat) opts
-                in 
+                in
                   updateCharSettings idx (\cs -> cs
                                           { csBindOptions = csBindOptions cs ++ [ opt ] }) desc
               _ -> desc
@@ -1031,7 +1031,7 @@ readShellDescript path = do
       _
         | Just ( _, "" ) <- parseIndexedKey "menuitem" restKey -> let
             item = parseMenuItem val
-          in 
+          in
             updateCharSettings idx (\cs -> cs { csMenuItems = csMenuItems cs ++ [ item ] }) desc
 
       -- Extended menu item settings: menuitemex<N>
@@ -1042,7 +1042,7 @@ readShellDescript path = do
             (menuName : idPart : _) -> let
                 item   = parseMenuItem (clean idPart)
                 itemEx = MenuItemEx (clean menuName) item
-              in 
+              in
                 updateCharSettings idx (\cs -> cs
                                         { csMenuItemsEx = csMenuItemsEx cs ++ [ itemEx ] }) desc
             _ -> desc
@@ -1298,7 +1298,7 @@ tokenizeBraces contents = go Nothing [] (filter (not . isCommentOrEmpty) (T.line
     isCommentOrEmpty line
       = let
           stripped = T.strip line
-        in 
+        in
           T.null stripped || "//" `T.isPrefixOf` stripped
 
     go :: Maybe Text -> [ Text ] -> [ Text ] -> [ BraceBlock ]
@@ -1310,7 +1310,7 @@ tokenizeBraces contents = go Nothing [] (filter (not . isCommentOrEmpty) (T.line
         -- Name might be on same line as {
         let
             name = T.strip (T.dropEnd 1 (T.strip line))
-          in 
+          in
             go (Just name) [] rest
       | otherwise
         =
@@ -1333,7 +1333,7 @@ parseDrawMethod txt
         = if T.null rest
           then []
           else mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," (T.drop 1 rest))
-    in 
+    in
       case method of
         "base" -> DrawBase
         "overlay" -> DrawOverlay
@@ -1362,7 +1362,7 @@ parseAnimationInterval :: Text -> AnimationInterval
 parseAnimationInterval txt
   = let
       stripped = T.toLower (T.strip txt)
-    in 
+    in
       if "+" `T.isInfixOf` stripped
         then IntervalCombined (map parseAnimationInterval (T.splitOn "+" stripped))
         else parseSingleInterval stripped
@@ -1397,7 +1397,7 @@ parseAnimationOption txt
         = if T.null rest
           then Nothing
           else Just (mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," (T.drop 1 rest)))
-    in 
+    in
       case opt of
         "exclusive" -> Just (OptionExclusive ids)
         "background" -> Just OptionBackground
@@ -1417,7 +1417,7 @@ parseSurfaceIds txt
           else if "surface" `T.isPrefixOf` stripped
             then ( False, T.drop 7 stripped )  -- "surface" is 7 chars
             else ( False, stripped )
-    in 
+    in
       ( isAppend, parseIdSpec numPart )
   where
     parseIdSpec :: Text -> [ Int ]
@@ -1427,7 +1427,7 @@ parseSurfaceIds txt
           ( includes, excludes ) = foldr categorize ( [], [] ) parts
           baseIds = concatMap parseRange includes
           excludeIds = concatMap parseRange excludes
-        in 
+        in
           filter (`notElem` excludeIds) baseIds
 
     categorize :: Text -> ( [ Text ], [ Text ] ) -> ( [ Text ], [ Text ] )
@@ -1440,7 +1440,7 @@ parseSurfaceIds txt
       ( start, rest )
         | not (T.null rest) && not (T.null start) -> let
             end = T.drop 1 rest
-          in 
+          in
             case ( readMaybe (T.unpack start), readMaybe (T.unpack end) ) of
               ( Just s, Just e ) -> [ s .. e ]
               _ -> maybeToList (readMaybe (T.unpack part))
@@ -1461,7 +1461,7 @@ parseCollision :: Text -> Text -> Maybe CollisionRegion
 parseCollision key val
   = let
       parts = T.splitOn "," val
-    in 
+    in
       if "collisionex" `T.isPrefixOf` key
         then parseCollisionEx parts
         else parseCollisionOld key parts
@@ -1609,7 +1609,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
         | not (T.null rest) -> let
             key = T.toLower (T.strip rawKey)
             val = T.drop 1 rest  -- drop comma
-          in 
+          in
             parseKey sd key val
       _ -> sd
 
@@ -1661,7 +1661,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
           | not (T.null dotRest) -> case readMaybe (T.unpack numPart) of
             Just aid -> let
                 subKey = T.drop 1 dotRest  -- drop the dot
-              in 
+              in
                 updateAnimation sd aid subKey val
             Nothing  -> sd
         _ -> sd
@@ -1680,7 +1680,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
             []      -> emptyAnimationAcc
           acc'     = updateAnimationAcc acc subKey val
           anim     = accToAnimation aid acc'
-        in 
+        in
           sd { sdAnimations = others ++ [ anim ] }
 
     updateAnimationAcc :: AnimationAcc -> Text -> Text -> AnimationAcc
@@ -1697,7 +1697,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
       | "collision" `T.isPrefixOf` subKey
         = let
             fullKey = "collision" <> T.drop 9 subKey  -- rebuild collision key
-          in 
+          in
             case parseCollision fullKey val of
               Just col -> acc { aaCollisions = aaCollisions acc ++ [ col ] }
               Nothing  -> acc
@@ -1713,7 +1713,7 @@ parseDescriptBrace = foldl' parseLine emptySurfacesDescript
         | not (T.null rest) -> let
             key = T.toLower (T.strip rawKey)
             val = T.strip (T.drop 1 rest)
-          in 
+          in
             case key of
               "version" -> sd { surfDescVersion = readIntOr 1 val }
               "maxwidth" -> sd { surfDescMaxWidth = readMaybeInt val }
@@ -1735,7 +1735,7 @@ parseAliasBrace = mapMaybe parseLine
             -- Parse [id1,id2,...] format
             cleaned = T.filter (\c -> c /= '[' && c /= ']') idsPart
             ids     = mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," cleaned)
-          in 
+          in
             if null ids
               then Nothing
               else Just $ SurfaceAlias (T.strip name) ids
@@ -1753,11 +1753,11 @@ parseCursorBrace = foldl' parseLine emptyScopeCursors
         | not (T.null rest) -> let
             key   = T.toLower (T.strip rawKey)
             parts = T.splitOn "," (T.drop 1 rest)
-          in 
+          in
             case parts of
               [ collId, cursorFile ] -> let
                   def = CursorDef (T.strip collId) (T.strip cursorFile)
-                in 
+                in
                   categorize key def sc
               _ -> sc
       _ -> sc
@@ -1793,7 +1793,7 @@ parseScopeIndex txt
     = let
         rest    = T.drop 4 txt  -- drop "char"
         numPart = T.takeWhile (/= '.') rest
-      in 
+      in
         readMaybe (T.unpack numPart)
   | otherwise = Nothing
 
@@ -1826,12 +1826,10 @@ readSurfaces path = do
           = let
               ( isAppend, ids ) = parseSurfaceIds name
               newDefs           = map (`parseSurfaceBrace` lns) ids
-            in 
-              if isAppend
-                then surf
-                  { surfaceDefinitions = mergeSurfaceDefinitions (surfaceDefinitions surf) newDefs
-                  }
-                else surf { surfaceDefinitions = surfaceDefinitions surf ++ newDefs }
+            in
+              surf
+                { surfaceDefinitions = mergeSurfaceDefinitions (surfaceDefinitions surf) newDefs
+                }
 
         -- surface aliases
         | name == "sakura.surface.alias" = surf { surfaceSakuraAlias = parseAliasBrace lns }
@@ -1870,14 +1868,14 @@ readSurfaces path = do
       = let
           existingMap = Map.fromList [ ( sdId sd, sd ) | sd <- existing ]
           merged      = foldl' mergeOne existingMap appends
-        in 
+        in
           Map.elems merged
 
     mergeOne :: Map Int SurfaceDefinition -> SurfaceDefinition -> Map Int SurfaceDefinition
     mergeOne m append
       = let
           sid = sdId append
-        in 
+        in
           case Map.lookup sid m of
             Just existing -> Map.insert sid (mergeSurfaceDef existing append) m
             Nothing       -> Map.insert sid append m
