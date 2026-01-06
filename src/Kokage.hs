@@ -45,96 +45,137 @@ module Kokage
   , Edge(..)
   ) where
 
-import           Control.Exception          ( try, SomeException, finally )
-import           Control.Monad              ( forM_, void, filterM, when, unless )
-import           Control.Monad.Trans.Class  ( lift )
-import           Control.Monad.Trans.Maybe  ( MaybeT(runMaybeT, MaybeT) )
+import           Control.Concurrent              ( threadDelay )
+import           Control.Exception               ( Exception
+                                                 , SomeException
+                                                 , finally
+                                                 , throwIO
+                                                 , try
+                                                 )
+import           Control.Monad                   ( filterM, forM_, unless, void, when )
+import           Control.Monad.Except            ( MonadError(throwError) )
+import           Control.Monad.Trans.Class       ( lift )
+import           Control.Monad.Trans.Maybe       ( MaybeT(runMaybeT, MaybeT) )
 
-import           Data.GI.Base               ( AttrOp((:=)), new, on, glibType
-                                            , withManagedPtr, newObject, castTo )
-import           Data.GI.Base.GValue        ( get_object )
-import           Data.Int                   ( Int32 )
-import           Data.IORef                 ( newIORef, readIORef, writeIORef )
-import           Foreign.Ptr                ( Ptr, nullPtr )
-import           Data.List                  ( sort )
-import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 ( listToMaybe )
-import qualified Data.Text                  as T
-import qualified Data.Text.IO               as TIO
-import           Data.Time                  ( getCurrentTime, utcToLocalTime, getCurrentTimeZone )
+import           Data.GI.Base                    ( AttrOp((:=))
+                                                 , castTo
+                                                 , glibType
+                                                 , new
+                                                 , newObject
+                                                 , on
+                                                 , withManagedPtr
+                                                 )
+import           Data.GI.Base.GValue             ( get_object )
+import           Data.IORef                      ( newIORef, readIORef, writeIORef )
+import           Data.Int                        ( Int32 )
+import           Data.List                       ( sort )
+import qualified Data.Map.Strict                 as Map
+import           Data.Maybe                      ( listToMaybe )
+import qualified Data.Text                       as T
+import qualified Data.Text.IO                    as TIO
+import           Data.Time                       ( getCurrentTime
+                                                 , getCurrentTimeZone
+                                                 , utcToLocalTime
+                                                 )
 
-import qualified GI.Gdk                     as Gdk
-import qualified GI.GdkPixbuf               as Pixbuf
-import qualified GI.Gio                     as Gio
-import qualified GI.GLib                    as GLib
-import qualified GI.Gtk                     as Gtk
+import           Foreign.Ptr                     ( Ptr, nullPtr )
 
-import           Kokage.Balloon             ( clearBalloon, appendText, appendChar, appendNewline
-                                            , BalloonChoice(..), addChoice, clearChoices, setChoiceCallback
-                                            , hasChoices, hideBalloon
-                                            , BalloonState(..) )
-import           Kokage.Character           ( CharacterState(..)
-                                            , createCharacter, showCharacter
-                                            , setCharacterSurface, getCharacterBalloon
-                                            , setCharacterPosition, initBalloonPosition
-                                            , updateBalloonPosition, tickCharacter )
+import qualified GI.GLib                         as GLib
+import qualified GI.Gdk                          as Gdk
+import qualified GI.GdkPixbuf                    as Pixbuf
+import qualified GI.Gio                          as Gio
+import qualified GI.Gtk                          as Gtk
+
+import           Kokage.Balloon                  ( BalloonChoice(..)
+                                                 , BalloonState(..)
+                                                 , addChoice
+                                                 , appendChar
+                                                 , appendNewline
+                                                 , appendText
+                                                 , clearBalloon
+                                                 , clearChoices
+                                                 , hasChoices
+                                                 , hideBalloon
+                                                 , setChoiceCallback
+                                                 )
+import           Kokage.Character                ( CharacterState(..)
+                                                 , createCharacter
+                                                 , getCharacterBalloon
+                                                 , initBalloonPosition
+                                                 , setCharacterPosition
+                                                 , setCharacterSurface
+                                                 , showCharacter
+                                                 , tickCharacter
+                                                 , updateBalloonPosition
+                                                 )
 import           Kokage.Collision
-import           Kokage.Event               ( InputHandlers(..)
-                                            , TimerHandlers(..), MoveMode(..)
-                                            , ShioriConfig(..)
-                                            , CharacterNetworkConfig(..)
-                                            , GlobalNetworkConfig(..)
-                                            , BalloonNetworkConfig(..), BalloonMoveMode(..)
-                                            , setupCharacterNetwork, setupGlobalNetwork
-                                            , setupBalloonNetwork
-                                            , sendShioriWithCallback )
-import           Kokage.Install             ( BaseDir(..), InstallResult(..), installNar )
-import           Kokage.Menu                ( createContextMenu, menuStyleFromShellDescript )
-import           Kokage.SakuraScript.Parser ( parseScript )
+import           Kokage.Event                    ( BalloonMoveMode(..)
+                                                 , BalloonNetworkConfig(..)
+                                                 , CharacterNetworkConfig(..)
+                                                 , GlobalNetworkConfig(..)
+                                                 , InputHandlers(..)
+                                                 , MoveMode(..)
+                                                 , ShioriConfig(..)
+                                                 , TimerHandlers(..)
+                                                 , sendShioriWithCallback
+                                                 , setupBalloonNetwork
+                                                 , setupCharacterNetwork
+                                                 , setupGlobalNetwork
+                                                 )
+import           Kokage.Install                  ( BaseDir(..), InstallResult(..), installNar )
+import           Kokage.Menu                     ( createContextMenu, menuStyleFromShellDescript )
+import           Kokage.Platform                 ( Edge(..)
+                                                 , Layer(..)
+                                                 , getWindowPosition
+                                                 , initPlatformWindow
+                                                 , isLayerShellSupported
+                                                 , isPlatformInitialized
+                                                 , setWindowAlwaysOnTop
+                                                 , setWindowLayer
+                                                 , setWindowPosition
+                                                 )
 import           Kokage.SakuraScript.Interpreter ( InterpreterCallbacks(..)
-                                              , defaultInterpreterConfig, defaultCallbacks
-                                              , executeScriptAsync )
-import           Kokage.Shiori.WineBridge   ( WineShiori(..)
-                                            , WineBridgeConfig(..)
-                                            , defaultWineBridgeConfig
-                                            , startWineBridge
-                                            , stopWineBridge
-                                            , withWineBridge
-                                            , loadShiori
-                                            , unloadShiori
-                                            , sendRequest
-                                            , sendEvent
-                                            , toWinePath
-                                            )
+                                                 , defaultCallbacks
+                                                 , defaultInterpreterConfig
+                                                 , executeScriptAsync
+                                                 )
+import           Kokage.SakuraScript.Parser      ( parseScript )
+import           Kokage.Shiori.WineBridge        ( WineBridgeConfig(..)
+                                                 , WineShiori(..)
+                                                 , defaultWineBridgeConfig
+                                                 , loadShiori
+                                                 , sendEvent
+                                                 , sendRequest
+                                                 , startWineBridge
+                                                 , stopWineBridge
+                                                 , toWinePath
+                                                 , unloadShiori
+                                                 , withWineBridge
+                                                 )
 import           Kokage.Surface
-import           Kokage.Platform            ( isLayerShellSupported, initPlatformWindow
-                                            , isPlatformInitialized, setWindowLayer
-                                            , setWindowPosition, getWindowPosition
-                                            , setWindowAlwaysOnTop
-                                            , Layer(..), Edge(..) )
 
-import           Reactive.Banana            ( compile )
-import           Reactive.Banana.Frameworks ( actuate, newAddHandler )
+import           Reactive.Banana                 ( compile )
+import           Reactive.Banana.Frameworks      ( actuate, newAddHandler )
 
-import           System.Directory           ( createDirectoryIfMissing
-                                            , doesDirectoryExist
-                                            , doesFileExist
-                                            , getCurrentDirectory
-                                            , getXdgDirectory
-                                            , listDirectory
-                                            , XdgDirectory(..)
-                                            )
-import           System.FilePath            ( takeExtension, (</>) )
+import           System.Directory                ( XdgDirectory(..)
+                                                 , createDirectoryIfMissing
+                                                 , doesDirectoryExist
+                                                 , doesFileExist
+                                                 , getCurrentDirectory
+                                                 , getXdgDirectory
+                                                 , listDirectory
+                                                 )
+import           System.FilePath                 ( (</>), takeExtension )
 
-import           Types.Ghost                ( CollisionRegion(..)
-                                            , Ghost(..)
-                                            , GhostDescript(..)
-                                            , Shell(..)
-                                            , SurfaceDefinition(..)
-                                            , loadGhost
-                                            )
-import           Types.Shiori               ( ShioriEvent(..) )
-import Control.Concurrent (threadDelay)
+import           Types.Ghost                     ( CollisionRegion(..)
+                                                 , Ghost(..)
+                                                 , GhostDescript(..)
+                                                 , Shell(..)
+                                                 , SurfaceDefinition(..)
+                                                 , loadGhost
+                                                 )
+import           Types.Shiori                    ( ShioriEvent(..) )
+
 data KokageError
   = NoGhostsAvailable
   | GhostLoadError FilePath
@@ -146,12 +187,13 @@ instance Exception KokageError
 
 -- | Configuration for the Kokage application.
 data KokageConfig
-  = KokageConfig { configGhostPath   :: !(Maybe FilePath)  -- ^ Explicit ghost path (overrides lastGhost)
-                 , configLastGhost   :: !(Maybe FilePath)  -- ^ Last used ghost path (from saved state)
-                 , configBaseDir     :: !BaseDir           -- ^ Base directories for ghosts, balloons, etc.
-                 , configSurfaceId   :: !Int               -- ^ Initial surface ID to display
-                 , configDataDir     :: !FilePath          -- ^ Data directory for config files
-                 }
+  = KokageConfig
+  { configGhostPath :: !(Maybe FilePath)  -- ^ Explicit ghost path (overrides lastGhost)
+  , configLastGhost :: !(Maybe FilePath)  -- ^ Last used ghost path (from saved state)
+  , configBaseDir   :: !BaseDir           -- ^ Base directories for ghosts, balloons, etc.
+  , configSurfaceId :: !Int               -- ^ Initial surface ID to display
+  , configDataDir   :: !FilePath          -- ^ Data directory for config files
+  }
   deriving ( Show, Eq )
 
 -- | Default configuration.
@@ -160,21 +202,21 @@ defaultConfig :: IO KokageConfig
 defaultConfig = do
   cwd <- getCurrentDirectory
   dataDir <- getXdgDirectory XdgData "kokage"
-  let baseDir = BaseDir
-        { bdGhost = cwd </> "ghost"
-        , bdBalloon = cwd </> "balloon"
-        , bdPlugin = cwd </> "plugin"
-        , bdHeadline = cwd </> "headline"
-        , bdCalendar = cwd </> "calendar"
-        , bdCalendarSkin = cwd </> "calendar" </> "skin"
-        }
-  return KokageConfig
-    { configGhostPath = Nothing
-    , configLastGhost = Nothing
-    , configBaseDir   = baseDir
-    , configSurfaceId = 0
-    , configDataDir   = dataDir
-    }
+  let baseDir
+        = BaseDir { bdGhost        = cwd </> "ghost"
+                  , bdBalloon      = cwd </> "balloon"
+                  , bdPlugin       = cwd </> "plugin"
+                  , bdHeadline     = cwd </> "headline"
+                  , bdCalendar     = cwd </> "calendar"
+                  , bdCalendarSkin = cwd </> "calendar" </> "skin"
+                  }
+  return
+    KokageConfig { configGhostPath = Nothing
+                 , configLastGhost = Nothing
+                 , configBaseDir   = baseDir
+                 , configSurfaceId = 0
+                 , configDataDir   = dataDir
+                 }
 
 -- | Get the default shell (first shell) from a ghost.
 getDefaultShell :: Ghost -> Maybe Shell
@@ -183,7 +225,7 @@ getDefaultShell ghost = listToMaybe (ghostShells ghost)
 -- | Get the primary monitor dimensions (width, height).
 -- Returns Nothing if no display or monitors are available.
 -- Returns (originX, originY, width, height) of the primary monitor.
-getScreenGeometry :: IO (Maybe (Int32, Int32, Int32, Int32))
+getScreenGeometry :: IO (Maybe ( Int32, Int32, Int32, Int32 ))
 getScreenGeometry = runMaybeT $ do
   display <- MaybeT Gdk.displayGetDefault
   monitors <- lift $ Gdk.displayGetMonitors display
@@ -201,27 +243,37 @@ getScreenGeometry = runMaybeT $ do
       y <- lift $ Gdk.getRectangleY rect
       w <- lift $ Gdk.getRectangleWidth rect
       h <- lift $ Gdk.getRectangleHeight rect
-      return (x, y, w, h)
+      return ( x, y, w, h )
 
 -- | Calculate initial position for a character based on descript settings and screen size.
 -- For sakura (scope 0): positioned at right side of screen (bottom-right by default)
 -- For kero (scope 1): positioned to the left of sakura
 -- Returns position in display coordinates (x, y).
 -- Takes monitor origin (monX, monY) to correctly offset positions in multi-monitor setups.
-calcInitialPosition :: GhostDescript -> Int -> (Int, Int) -> (Int32, Int32, Int32, Int32) -> (Int32, Int32)
-calcInitialPosition descript scopeId (surfW, surfH) (monX, monY, screenW, screenH) =
-  case scopeId of
-    0 -> -- Sakura: bottom-right of screen
-      let relX = maybe (screenW - fromIntegral surfW) fromIntegral (descriptSakuraDefaultLeft descript)
-          relY = maybe (screenH - fromIntegral surfH) fromIntegral (descriptSakuraDefaultTop descript)
-      in (monX + relX, monY + relY)
-    _ -> -- Kero and others: default to left of sakura position
-      let -- Default kero position: left of sakura, same bottom alignment
+calcInitialPosition
+  :: GhostDescript -> Int -> ( Int, Int ) -> ( Int32, Int32, Int32, Int32 ) -> ( Int32, Int32 )
+calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, screenH )
+  = case scopeId of
+    0    -- Sakura: bottom-right of screen
+      -> let
+          relX
+            = maybe
+              (screenW - fromIntegral surfW)
+              fromIntegral
+              (descriptSakuraDefaultLeft descript)
+          relY
+            = maybe (screenH - fromIntegral surfH) fromIntegral (descriptSakuraDefaultTop descript)
+        in 
+          ( monX + relX, monY + relY )
+    _    -- Kero and others: default to left of sakura position
+      -> let
+          -- Default kero position: left of sakura, same bottom alignment
           defaultX = screenW - fromIntegral surfW - 300  -- 300px left of sakura
           defaultY = screenH - fromIntegral surfH
-          relX = maybe defaultX fromIntegral (descriptKeroDefaultLeft descript)
-          relY = maybe defaultY fromIntegral (descriptKeroDefaultTop descript)
-      in (monX + relX, monY + relY)
+          relX     = maybe defaultX fromIntegral (descriptKeroDefaultLeft descript)
+          relY     = maybe defaultY fromIntegral (descriptKeroDefaultTop descript)
+        in 
+          ( monX + relX, monY + relY )
 
 --------------------------------------------------------------------------------
 -- Ghost Management
@@ -230,7 +282,7 @@ calcInitialPosition descript scopeId (surfW, surfH) (monX, monY, screenW, screen
 -- | Scan for available ghosts in the ghost directory.
 -- Returns a sorted list of ghost directory paths that contain valid ghost structure.
 -- A valid ghost has a 'ghost/master' subdirectory.
-scanGhosts :: BaseDir -> IO [FilePath]
+scanGhosts :: BaseDir -> IO [ FilePath ]
 scanGhosts baseDir = do
   let ghostDir = bdGhost baseDir
   exists <- doesDirectoryExist ghostDir
@@ -270,15 +322,15 @@ resolveGhost config = do
       if valid
         then return $ Just path
         else tryLastGhost
-    Nothing -> tryLastGhost
+    Nothing   -> tryLastGhost
   where
-    tryLastGhost = case configLastGhost config of
+    tryLastGhost  = case configLastGhost config of
       Just path -> do
         valid <- isValidGhostDir path
         if valid
           then return $ Just path
           else tryFirstGhost
-      Nothing -> tryFirstGhost
+      Nothing   -> tryFirstGhost
 
     tryFirstGhost = do
       ghosts <- scanGhosts (configBaseDir config)
@@ -287,7 +339,7 @@ resolveGhost config = do
 -- | Save the last used ghost path to persistent storage.
 saveLastGhost :: KokageConfig -> FilePath -> IO ()
 saveLastGhost config gPath = do
-  let dataDir = configDataDir config
+  let dataDir       = configDataDir config
       lastGhostFile = dataDir </> "last_ghost.txt"
   -- Ensure data directory exists
   createDirectoryIfMissing True dataDir
@@ -318,10 +370,9 @@ loadLastGhost config = do
 -- | Ghost history data stored in HISTORY file.
 -- This tracks cumulative time spent with the ghost.
 data GhostHistory
-  = GhostHistory
-  { ghTime          :: !Int   -- ^ Total runtime in hours (cumulative)
-  , ghVanishedCount :: !Int   -- ^ Number of times the ghost was "vanished"
-  }
+  = GhostHistory { ghTime          :: !Int   -- ^ Total runtime in hours (cumulative)
+                 , ghVanishedCount :: !Int   -- ^ Number of times the ghost was "vanished"
+                 }
   deriving ( Show, Eq )
 
 -- | Default history for a new ghost.
@@ -349,37 +400,37 @@ loadGhostHistory ghostPath = do
 
 -- | Parse HISTORY file content.
 parseHistory :: T.Text -> GhostHistory
-parseHistory content =
-  let ls = T.lines content
-      pairs = [ (key, val)
-              | l <- ls
-              , let stripped = T.strip l
-              , not (T.null stripped)
-              , (key, rest) <- [T.breakOn "," stripped]
-              , let val = T.strip $ T.drop 1 rest
-              ]
+parseHistory content
+  = let
+      ls = T.lines content
+      pairs
+        = [ ( key, val )
+          | l <- ls
+          , let stripped = T.strip l
+          , not (T.null stripped)
+          , ( key, rest ) <- [ T.breakOn "," stripped ]
+          , let val = T.strip $ T.drop 1 rest
+          ]
       lookupInt k def = case lookup (T.toLower $ T.strip k) pairs of
         Nothing -> def
         Just v  -> case reads (T.unpack v) of
-          [(n, "")] -> n
-          _         -> def
-  in GhostHistory
-    { ghTime          = lookupInt "time" 0
-    , ghVanishedCount = lookupInt "vanished_count" 0
-    }
+          [ ( n, "" ) ] -> n
+          _ -> def
+    in 
+      GhostHistory { ghTime = lookupInt "time" 0, ghVanishedCount = lookupInt "vanished_count" 0 }
 
 -- | Save ghost history to HISTORY file.
 saveGhostHistory :: FilePath -> GhostHistory -> IO ()
 saveGhostHistory ghostPath history = do
   let historyFile = historyFilePath ghostPath
-      content = T.unlines
-        [ "time, " <> T.pack (show (ghTime history))
-        , "vanished_count, " <> T.pack (show (ghVanishedCount history))
-        ]
+      content
+        = T.unlines
+          [ "time, " <> T.pack (show (ghTime history))
+          , "vanished_count, " <> T.pack (show (ghVanishedCount history))
+          ]
   result <- try $ TIO.writeFile historyFile content
   case result of
-    Left (e :: SomeException) ->
-      putStrLn $ "[HISTORY] Warning: Could not save history: " <> show e
+    Left (e :: SomeException) -> putStrLn $ "[HISTORY] Warning: Could not save history: " <> show e
     Right () -> return ()
 
 -- | Check if this is the first boot for a ghost.
@@ -428,10 +479,10 @@ findBalloonDir ghostPath baseDir = do
           let fullPaths = map (globalBalloonDir </>) entries
           validBalloons <- filterM isBalloonDir fullPaths
           case validBalloons of
-            [] -> do
+            []          -> do
               putStrLn "[Balloon] No valid balloons in global directory"
               return Nothing
-            (first:_) -> do
+            (first : _) -> do
               putStrLn $ "[Balloon] Using global balloon: " <> first
               return $ Just first
 
@@ -528,22 +579,21 @@ initializeShiori ghostMasterPath shioriName = do
 
       -- Determine which bridge to use based on DLL architecture
       -- For now, assume 32-bit DLLs (most ghosts use 32-bit)
-      let bridgeConfig = defaultWineBridgeConfig
-            { wbcBridgePath = "wine-helper" </> "shiori_bridge32.exe"
-            }
+      let bridgeConfig
+            = defaultWineBridgeConfig { wbcBridgePath = "wine-helper" </> "shiori_bridge32.exe" }
 
       -- Start the Wine bridge
       putStrLn "[SHIORI] Starting Wine bridge..."
       bridgeResult <- startWineBridge bridgeConfig
       case bridgeResult of
-        Left err -> do
+        Left err     -> do
           putStrLn $ "[SHIORI] Failed to start bridge: " <> err
           return Nothing
         Right shiori -> do
           putStrLn "[SHIORI] Bridge started, loading DLL..."
           loadResult <- loadShiori shiori dllPath ghostMasterPath
           case loadResult of
-            Left err -> do
+            Left err           -> do
               putStrLn $ "[SHIORI] Failed to load DLL: " <> err
               stopWineBridge shiori
               return Nothing
@@ -553,7 +603,7 @@ initializeShiori ghostMasterPath shioriName = do
 
 -- | Clean up SHIORI bridge on exit.
 cleanupShiori :: Maybe WineShiori -> IO ()
-cleanupShiori Nothing = return ()
+cleanupShiori Nothing       = return ()
 cleanupShiori (Just shiori) = do
   putStrLn "[SHIORI] Unloading DLL..."
   _ <- unloadShiori shiori
@@ -564,7 +614,15 @@ cleanupShiori (Just shiori) = do
 -- | Run the GTK application with the given shell.
 -- The shell contains surface definitions for dynamic surface switching.
 -- Now uses CharacterMap for multi-character support.
-runGtkApp :: Ghost -> Shell -> Int -> Maybe WineShiori -> FilePath -> Bool -> Int -> Maybe FilePath -> IO ()
+runGtkApp :: Ghost
+          -> Shell
+          -> Int
+          -> Maybe WineShiori
+          -> FilePath
+          -> Bool
+          -> Int
+          -> Maybe FilePath
+          -> IO ()
 runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCount mBalloonDir = do
   -- Get start time for uptime tracking
   startTime <- getCurrentTime
@@ -574,12 +632,12 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
   -- Create SHIORI config if we have a bridge
   let mShioriConfig = case mShiori of
         Nothing -> Nothing
-        Just ws -> Just $ ShioriConfig
-          { scShiori    = ws
-          , scSurfaceId = initialSurfaceId
-          , scStartTime = startTime
-          , scGhostPath = ghostPath'
-          }
+        Just ws -> Just
+          $ ShioriConfig { scShiori    = ws
+                         , scSurfaceId = initialSurfaceId
+                         , scStartTime = startTime
+                         , scGhostPath = ghostPath'
+                         }
 
   -- Initialize GTK application
   app <- new
@@ -601,12 +659,20 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
   Gio.actionMapAddAction app cancelAction
 
   -- Register placeholder actions
-  let dummyActions = 
-        [ "todo", "stick", "update", "vanish", "edit_preference"
-        , "open_console", "ghost_manager", "script_log", "scriptinputbox"
-        , "usage", "version", "close"
-        ]
-  
+  let dummyActions
+        = [ "todo"
+          , "stick"
+          , "update"
+          , "vanish"
+          , "edit_preference"
+          , "open_console"
+          , "ghost_manager"
+          , "script_log"
+          , "scriptinputbox"
+          , "usage"
+          , "version"
+          ]
+
   forM_ dummyActions $ \name -> do
     action <- Gio.simpleActionNew (T.pack name) Nothing
     _ <- on action #activate $ \_ -> do
@@ -622,10 +688,9 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     mKero <- createCharacter app shell ghostDesc 1 mBalloonDir
 
     -- Build character map from successfully created characters
-    let characters = Map.fromList $ concat
-          [ maybe [] (\c -> [(0, c)]) mSakura
-          , maybe [] (\c -> [(1, c)]) mKero
-          ]
+    let characters
+          = Map.fromList
+          $ concat [ maybe [] (\c -> [ ( 0, c ) ]) mSakura, maybe [] (\c -> [ ( 1, c ) ]) mKero ]
 
     when (Map.null characters) $ do
       putStrLn "Error: No characters could be created"
@@ -657,65 +722,78 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     let hideBalloonIfNoChoices :: IO ()
         hideBalloonIfNoChoices = do
           -- Check if any balloon has choices
-          anyHasChoices <- or <$> mapM (\cs -> hasChoices (getCharacterBalloon cs)) (Map.elems characters)
+          anyHasChoices <- or
+            <$> mapM (\cs -> hasChoices (getCharacterBalloon cs)) (Map.elems characters)
           unless anyHasChoices $ do
             -- wait for a short moment to ensure user sees the completed text
             _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
-             putStrLn "[Script] No pending choices, hiding balloons"
-             forM_ (Map.elems characters) $ \cs ->
-               hideBalloon (getCharacterBalloon cs)
-             return False
+              putStrLn "[Script] No pending choices, hiding balloons"
+              forM_ (Map.elems characters) $ \cs -> hideBalloon (getCharacterBalloon cs)
+              return False
             pure ()
 
     -- Create interpreter callbacks that interact with the balloon and surface
-    let interpreterCallbacks = defaultCallbacks
-          { cbAppendChar    = \c -> getCurrentBalloon >>= \b -> appendChar b c
-          , cbAppendText    = \t -> getCurrentBalloon >>= \b -> appendText b t
-          , cbNewline       = getCurrentBalloon >>= appendNewline
-          , cbClear         = getCurrentBalloon >>= clearBalloon
-          , cbSetScope      = \scope -> do
+    let interpreterCallbacks
+          = defaultCallbacks
+          { cbAppendChar   = \c -> getCurrentBalloon >>= \b -> appendChar b c
+          , cbAppendText   = \t -> getCurrentBalloon >>= \b -> appendText b t
+          , cbNewline      = getCurrentBalloon >>= appendNewline
+          , cbClear        = getCurrentBalloon >>= clearBalloon
+          , cbSetScope     = \scope -> do
               writeIORef currentScopeRef scope
               putStrLn $ "[Scope] Switched to scope " <> show scope
-          , cbSetSurface    = changeSurface
-          , cbAddChoice     = \choiceId text action -> do
+          , cbSetSurface   = changeSurface
+          , cbAddChoice    = \choiceId text action -> do
               b <- getCurrentBalloon
               addChoice b (BalloonChoice text choiceId action)
-          , cbClearChoices  = getCurrentBalloon >>= clearChoices
-          , cbOnComplete    = do
+          , cbClearChoices = getCurrentBalloon >>= clearChoices
+          , cbOnComplete   = do
               putStrLn "[Script] Execution complete"
               -- Hide balloons if no choices are pending
               hideBalloonIfNoChoices
-          , cbOnInterrupt   = do
+          , cbOnInterrupt  = do
               putStrLn "[Script] Execution interrupted"
               -- Hide balloons if no choices are pending
               hideBalloonIfNoChoices
           }
 
+    -- IORef to hold the current script's interrupt function
+    currentScriptInterruptRef <- newIORef (return () :: IO ())
+
     -- Helper to display script in balloon with character-by-character animation
     let displayScript :: Maybe T.Text -> IO ()
-        displayScript Nothing = return ()
+        displayScript Nothing           = return ()
         displayScript (Just scriptText) = do
+          -- Interrupt any currently running script first
+          currentInterrupt <- readIORef currentScriptInterruptRef
+          currentInterrupt
           -- Reset scope to sakura (0) at start of each new script
           writeIORef currentScopeRef 0
           -- Parse the SakuraScript
           case parseScript scriptText of
-            Left err -> putStrLn $ "[Balloon] Parse error: " <> show err
+            Left err     -> putStrLn $ "[Balloon] Parse error: " <> show err
             Right script -> do
               -- Clear all balloons before new script
-              forM_ (Map.elems characters) $ \cs ->
-                clearBalloon (getCharacterBalloon cs)
+              forM_ (Map.elems characters) $ \cs -> clearBalloon (getCharacterBalloon cs)
               -- Execute script asynchronously with animation
-              _ <- executeScriptAsync defaultInterpreterConfig interpreterCallbacks script
-              return ()
+              interruptAction
+                <- executeScriptAsync defaultInterpreterConfig interpreterCallbacks script
+              -- Save the interrupt function for this script
+              writeIORef currentScriptInterruptRef interruptAction
 
     -- Set up choice callback on sakura's balloon
     case Map.lookup 0 characters of
       Just sakura -> do
         let sakuraBalloon = getCharacterBalloon sakura
         setChoiceCallback sakuraBalloon $ \choice -> do
-          putStrLn $ "[Choice] Selected: " <> T.unpack (bcText choice)
-                  <> " (id=" <> T.unpack (bcId choice)
-                  <> ", action=" <> T.unpack (bcAction choice) <> ")"
+          putStrLn
+            $ "[Choice] Selected: "
+            <> T.unpack (bcText choice)
+            <> " (id="
+            <> T.unpack (bcId choice)
+            <> ", action="
+            <> T.unpack (bcAction choice)
+            <> ")"
           -- Clear all balloons and choices after selection
           forM_ (Map.elems characters) $ \cs -> do
             clearBalloon (getCharacterBalloon cs)
@@ -724,20 +802,44 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           let action = bcAction choice
           case T.stripPrefix "event:" action of
             Just _eventId -> do
-              let refs = Map.fromList [(0, bcId choice), (1, bcText choice)]
+              let refs = Map.fromList [ ( 0, bcId choice ), ( 1, bcText choice ) ]
               sendShioriWithCallback mShioriConfig OnChoiceSelect refs displayScript
-            Nothing -> case T.stripPrefix "script:" action of
+            Nothing       -> case T.stripPrefix "script:" action of
               Just scriptText -> displayScript (Just scriptText)
-              Nothing -> case T.stripPrefix "url:" action of
+              Nothing         -> case T.stripPrefix "url:" action of
                 Just _url -> putStrLn "[Choice] URL action not yet implemented"
-                Nothing -> case T.stripPrefix "anchor:" action of
+                Nothing   -> case T.stripPrefix "anchor:" action of
                   Just anchorId -> do
-                    let refs = Map.fromList [(0, anchorId), (1, bcText choice)]
+                    let refs = Map.fromList [ ( 0, anchorId ), ( 1, bcText choice ) ]
                     sendShioriWithCallback mShioriConfig OnAnchorSelect refs displayScript
-                  Nothing -> do
-                    let refs = Map.fromList [(0, bcId choice), (1, bcText choice)]
+                  Nothing       -> do
+                    let refs = Map.fromList [ ( 0, bcId choice ), ( 1, bcText choice ) ]
                     sendShioriWithCallback mShioriConfig OnChoiceSelect refs displayScript
-      Nothing -> return ()
+      Nothing     -> return ()
+
+    -- Register "app.close" action - sends OnClose event to SHIORI, then quits
+    closeAction <- Gio.simpleActionNew "close" Nothing
+    _ <- on closeAction #activate $ \_ -> do
+      putStrLn "[Menu] Close action triggered, sending OnClose event"
+      -- Send OnClose event to SHIORI with reason "user"
+      let refs = Map.fromList [ ( 0, "user" :: T.Text ) ]
+      sendShioriWithCallback mShioriConfig OnClose refs $ \mScript -> do
+        case mScript of
+          Just script -> do
+            -- Execute the goodbye script, then quit when done
+            putStrLn "[Close] Executing goodbye script..."
+            displayScript (Just script)
+            -- Wait a bit for the script to display, then quit
+            _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
+              putStrLn "[Close] Goodbye script finished, quitting..."
+              Gio.applicationQuit app
+              return False
+            return ()
+          Nothing     -> do
+            -- No script returned, just quit immediately
+            putStrLn "[Close] No goodbye script, quitting immediately"
+            Gio.applicationQuit app
+    Gio.actionMapAddAction app closeAction
 
     -- Create global timer event handlers
     ( secondTickHandler, fireSecondTick ) <- newAddHandler
@@ -765,24 +867,22 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- This drives the SERIKO animations
     _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 50 $ do
       -- Tick all characters
-      forM_ (Map.elems characters) $ \cs ->
-        tickCharacter cs shell 50
+      forM_ (Map.elems characters) $ \cs -> tickCharacter cs shell 50
       return True
 
     -- Set up global timer FRP network
-    let globalConfig = GlobalNetworkConfig
-          { gncTimers = TimerHandlers
-              { thSecondTick = secondTickHandler
-              , thMinuteTick = minuteTickHandler
-              }
-          , gncShiori = mShioriConfig
+    let globalConfig
+          = GlobalNetworkConfig
+          { gncTimers        = TimerHandlers
+              { thSecondTick = secondTickHandler, thMinuteTick = minuteTickHandler }
+          , gncShiori        = mShioriConfig
           , gncScriptHandler = displayScript
           }
     globalNetwork <- compile (setupGlobalNetwork globalConfig)
     actuate globalNetwork
 
     -- Set up FRP network for each character window
-    forM_ (Map.toList characters) $ \(scopeId, cs) -> do
+    forM_ (Map.toList characters) $ \( scopeId, cs ) -> do
       -- Create input handlers for this character's window
       ( dragBeginHandler, fireDragBegin ) <- newAddHandler
       ( dragUpdateHandler, fireDragUpdate ) <- newAddHandler
@@ -790,7 +890,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       ( motionHandler, fireMotion ) <- newAddHandler
       ( rightClickHandler, fireRightClick ) <- newAddHandler
 
-      let window = csWindow cs
+      let window  = csWindow cs
           picture = csPicture cs
 
       -- Create drag gesture (for left-click drag/move)
@@ -818,7 +918,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       -- Create DropTarget for NAR file drops (only on sakura)
       when (scopeId == 0) $ do
         gfileType <- glibType @Gio.File
-        dropTarget <- Gtk.dropTargetNew gfileType [Gdk.DragActionCopy]
+        dropTarget <- Gtk.dropTargetNew gfileType [ Gdk.DragActionCopy ]
         _ <- on dropTarget #drop $ \gvalue _x _y -> do
           mPath <- withManagedPtr gvalue $ \gvPtr -> do
             objPtr <- get_object gvPtr :: IO (Ptr Gio.File)
@@ -828,7 +928,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 file <- newObject Gio.File objPtr
                 Gio.fileGetPath file
           case mPath of
-            Nothing -> do
+            Nothing   -> do
               putStrLn "Drop: Could not get file path"
               return False
             Just path -> do
@@ -839,8 +939,8 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                   result <- installNar baseDir path
                   case result of
                     InstallSuccess name itype ipath _ -> do
-                      putStrLn $ "Installed " <> T.unpack name
-                              <> " (" <> show itype <> ") to " <> ipath
+                      putStrLn
+                        $ "Installed " <> T.unpack name <> " (" <> show itype <> ") to " <> ipath
                       return True
                     InstallFailure err -> do
                       putStrLn $ "Installation failed: " <> T.unpack err
@@ -852,7 +952,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
       -- Get collision regions from current surface
       currentSurfId <- readIORef (csCurrentSurface cs)
-      let surfaces = shellSurfaces shell
+      let surfaces   = shellSurfaces shell
           collisions = case findSurfaceById currentSurfId surfaces of
             Nothing -> []
             Just sd -> sdCollisions sd
@@ -863,10 +963,10 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
         then do
           let updatePosition :: Double -> Double -> IO ()
               updatePosition dx dy = do
-                (currentX, currentY) <- readIORef (csPosition cs)
+                ( currentX, currentY ) <- readIORef (csPosition cs)
                 let newX = currentX + round dx
                     newY = currentY + round dy
-                writeIORef (csPosition cs) (newX, newY)
+                writeIORef (csPosition cs) ( newX, newY )
                 _ <- setWindowPosition window newX newY
                 -- Update balloon position after character moves
                 updateBalloonPosition cs dx dy
@@ -883,21 +983,22 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           return $ MoveToplevel beginMove
 
       -- Build character network config
-      let charConfig = CharacterNetworkConfig
-            { cncWindow     = window
-            , cncInputs     = InputHandlers
+      let charConfig
+            = CharacterNetworkConfig
+            { cncWindow        = window
+            , cncInputs        = InputHandlers
                 { ihDragBegin  = dragBeginHandler
                 , ihDragUpdate = dragUpdateHandler
                 , ihDragEnd    = dragEndHandler
                 , ihMotion     = motionHandler
                 , ihRightClick = rightClickHandler
                 }
-            , cncCollisions = collisions
-            , cncMoveMode   = moveMode
-            , cncScopeId    = scopeId
-            , cncShiori     = mShioriConfig
+            , cncCollisions    = collisions
+            , cncMoveMode      = moveMode
+            , cncScopeId       = scopeId
+            , cncShiori        = mShioriConfig
             , cncScriptHandler = displayScript
-            , cncContextMenu = contextMenu
+            , cncContextMenu   = contextMenu
             }
 
       -- Compile and activate character network
@@ -933,10 +1034,10 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
         then do
           let updatePosition :: Double -> Double -> IO ()
               updatePosition dx dy = do
-                (currentX, currentY) <- readIORef (bsPosition bs)
+                ( currentX, currentY ) <- readIORef (bsPosition bs)
                 let newX = currentX + round dx
                     newY = currentY + round dy
-                writeIORef (bsPosition bs) (newX, newY)
+                writeIORef (bsPosition bs) ( newX, newY )
                 _ <- setWindowPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
                 return ()
           return $ BalloonMoveLayerShell updatePosition
@@ -952,15 +1053,16 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           return $ BalloonMoveToplevel beginBalloonMove
 
       -- Build balloon network config
-      let balloonConfig = BalloonNetworkConfig
-            { bncWindow      = bsWindow bs
-            , bncInputs      = InputHandlers
+      let balloonConfig
+            = BalloonNetworkConfig
+            { bncWindow   = bsWindow bs
+            , bncInputs   = InputHandlers
                 { ihDragBegin  = balloonDragBeginHandler
                 , ihDragUpdate = balloonDragUpdateHandler
                 , ihDragEnd    = balloonDragEndHandler
                 , ihMotion     = balloonMotionHandler
                 }
-            , bncMoveMode    = balloonMoveMode
+            , bncMoveMode = balloonMoveMode
             }
 
       -- Compile and activate balloon network
@@ -972,15 +1074,23 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- Set initial positions for characters based on descript and screen size
     mScreenGeom <- getScreenGeometry
     case mScreenGeom of
-      Just screenGeom@(monX, monY, monW, monH) -> do
-        putStrLn $ "[Position] Screen geometry: origin=(" <> show monX <> "," <> show monY <> ") size=" <> show monW <> "x" <> show monH
-        forM_ (Map.toList characters) $ \(scopeId, cs) -> do
+      Just screenGeom@( monX, monY, monW, monH ) -> do
+        putStrLn
+          $ "[Position] Screen geometry: origin=("
+          <> show monX
+          <> ","
+          <> show monY
+          <> ") size="
+          <> show monW
+          <> "x"
+          <> show monH
+        forM_ (Map.toList characters) $ \( scopeId, cs ) -> do
           surfSize <- readIORef (csSurfaceSize cs)
           let pos = calcInitialPosition ghostDesc scopeId surfSize screenGeom
           putStrLn $ "[Position] Character " <> show scopeId <> " initial position: " <> show pos
           setCharacterPosition cs (fst pos) (snd pos)
-      Nothing ->
-        putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
+      Nothing
+       -> putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
 
     -- Show all characters and set always-on-top
     forM_ (Map.elems characters) showCharacter
@@ -988,14 +1098,13 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- Position balloons relative to their characters
     -- This needs a small delay to ensure windows are realized
     _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 100 $ do
-      forM_ (Map.elems characters) $ \cs ->
-        initBalloonPosition cs shell
+      forM_ (Map.elems characters) $ \cs -> initBalloonPosition cs shell
       return False  -- Don't repeat
 
     -- Send OnBoot or OnFirstBoot event
     if firstBoot
       then do
-        let refs = Map.fromList [(0, T.pack $ show vanishedCount)]
+        let refs = Map.fromList [ ( 0, T.pack $ show vanishedCount ) ]
         sendShioriWithCallback mShioriConfig OnFirstBoot refs displayScript
         saveGhostHistory ghostPath' defaultGhostHistory
       else sendShioriWithCallback mShioriConfig OnBoot Map.empty displayScript
@@ -1009,11 +1118,11 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 getDefaultBaseDir :: IO BaseDir
 getDefaultBaseDir = do
   cwd <- getCurrentDirectory
-  return BaseDir
-    { bdGhost = cwd </> "ghost"
-    , bdBalloon = cwd </> "balloon"
-    , bdPlugin = cwd </> "plugin"
-    , bdHeadline = cwd </> "headline"
-    , bdCalendar = cwd </> "calendar"
-    , bdCalendarSkin = cwd </> "calendar" </> "skin"
-    }
+  return
+    BaseDir { bdGhost        = cwd </> "ghost"
+            , bdBalloon      = cwd </> "balloon"
+            , bdPlugin       = cwd </> "plugin"
+            , bdHeadline     = cwd </> "headline"
+            , bdCalendar     = cwd </> "calendar"
+            , bdCalendarSkin = cwd </> "calendar" </> "skin"
+            }
