@@ -135,6 +135,14 @@ import           Types.Ghost                ( CollisionRegion(..)
                                             )
 import           Types.Shiori               ( ShioriEvent(..) )
 import Control.Concurrent (threadDelay)
+data KokageError
+  = NoGhostsAvailable
+  | GhostLoadError FilePath
+  | NoShellsInGhost FilePath
+  | SurfaceCompositeError FilePath Int
+  deriving ( Show, Eq )
+
+instance Exception KokageError
 
 -- | Configuration for the Kokage application.
 data KokageConfig
@@ -440,82 +448,66 @@ findBalloonDir ghostPath baseDir = do
 -- and runs the GTK event loop.
 kokageMain :: KokageConfig -> IO ()
 kokageMain config = do
-  let surfId = configSurfaceId config
-
   -- Resolve which ghost to load
-  mGhostPath <- resolveGhost config
+  gPath <- justOrError NoGhostsAvailable =<< resolveGhost config
+  putStrLn $ "Loading ghost from: " <> gPath
+  mGhost <- loadGhost gPath
+  ghost <- justOrError (GhostLoadError gPath) mGhost
+  putStrLn $ "Loaded ghost: " <> gPath
+  -- Save this as the last used ghost
+  saveLastGhost config gPath
+  -- Get default shell
+  shell <- justOrError (NoShellsInGhost gPath) $ getDefaultShell ghost
+  putStrLn $ "Using shell: " <> shellPath shell
+  -- Find requested surface
+  let surfaces = shellSurfaces shell
+      surfId   = configSurfaceId config
+  case findSurfaceById surfId surfaces of
+    Nothing      -> putStrLn $ "Error: Surface " <> show surfId <> " not found"
+    Just surfDef -> do
+      putStrLn
+        $ "Found surface "
+        <> show surfId
+        <> " with "
+        <> show (length $ sdElements surfDef)
+        <> " elements, "
+        <> show (length $ sdCollisions surfDef)
+        <> " collision regions"
 
-  case mGhostPath of
-    Nothing -> do
-      putStrLn "Error: No ghosts available"
-      putStrLn $ "  Ghost directory: " <> bdGhost (configBaseDir config)
-      putStrLn "  Please install a ghost first (drag and drop a .nar file)"
+      -- Log collision regions for debugging
+      forM_ (sdCollisions surfDef) $ \cr -> putStrLn
+        $ "  - Collision " <> show (crIndex cr) <> ": " <> T.unpack (crName cr)
 
-    Just gPath -> do
-      putStrLn $ "Loading ghost from: " <> gPath
-      mGhost <- loadGhost gPath
+      -- Composite the surface
+      pixbuf <- justOrError (SurfaceCompositeError gPath surfId)
+        =<< compositeSurface (shellPath shell) surfDef
+      width <- Pixbuf.pixbufGetWidth pixbuf
+      height <- Pixbuf.pixbufGetHeight pixbuf
+      putStrLn $ "Composited surface: " <> show width <> "x" <> show height
 
-      case mGhost of
-        Nothing -> putStrLn $ "Error: Failed to load ghost from " <> gPath
-        Just ghost -> do
-          putStrLn $ "Loaded ghost: " <> gPath
+      -- Try to initialize SHIORI (optional - ghost can run without it)
+      -- Use the shiori path from ghost's descript.txt
+      let ghostMasterPath = gPath </> "ghost" </> "master"
+          shioriName      = descriptShiori (ghostDescript ghost)
+      mShiori <- initializeShiori ghostMasterPath shioriName
 
-          -- Save this as the last used ghost
-          saveLastGhost config gPath
+      -- Check if this is first boot (no HISTORY file)
+      firstBoot <- isFirstBoot gPath
+      mHistory <- loadGhostHistory gPath
+      let vanishedCount = maybe 0 ghVanishedCount mHistory
 
-          -- Get default shell
-          case getDefaultShell ghost of
-            Nothing -> putStrLn "Error: No shells found in ghost"
-            Just shell -> do
-              putStrLn $ "Using shell: " <> shellPath shell
+      when firstBoot $ putStrLn "[HISTORY] First boot detected"
 
-              -- Find requested surface
-              let surfaces = shellSurfaces shell
-              case findSurfaceById surfId surfaces of
-                Nothing -> putStrLn $ "Error: Surface " <> show surfId <> " not found"
-                Just surfDef -> do
-                  putStrLn
-                    $ "Found surface "
-                    <> show surfId
-                    <> " with "
-                    <> show (length $ sdElements surfDef)
-                    <> " elements, "
-                    <> show (length $ sdCollisions surfDef)
-                    <> " collision regions"
+      -- Find balloon directory for the ghost
+      mBalloonDir <- findBalloonDir gPath (configBaseDir config)
 
-                  -- Log collision regions for debugging
-                  forM_ (sdCollisions surfDef) $ \cr -> putStrLn
-                    $ "  - Collision " <> show (crIndex cr) <> ": " <> T.unpack (crName cr)
-
-                  -- Composite the surface
-                  mPixbuf <- compositeSurface (shellPath shell) surfDef
-
-                  case mPixbuf of
-                    Nothing -> putStrLn "Error: Failed to composite surface"
-                    Just pixbuf -> do
-                      width <- Pixbuf.pixbufGetWidth pixbuf
-                      height <- Pixbuf.pixbufGetHeight pixbuf
-                      putStrLn $ "Composited surface: " <> show width <> "x" <> show height
-
-                      -- Try to initialize SHIORI (optional - ghost can run without it)
-                      -- Use the shiori path from ghost's descript.txt
-                      let ghostMasterPath = gPath </> "ghost" </> "master"
-                          shioriName = descriptShiori (ghostDescript ghost)
-                      mShiori <- initializeShiori ghostMasterPath shioriName
-
-                      -- Check if this is first boot (no HISTORY file)
-                      firstBoot <- isFirstBoot gPath
-                      mHistory <- loadGhostHistory gPath
-                      let vanishedCount = maybe 0 ghVanishedCount mHistory
-
-                      when firstBoot $ putStrLn "[HISTORY] First boot detected"
-
-                      -- Find balloon directory for the ghost
-                      mBalloonDir <- findBalloonDir gPath (configBaseDir config)
-
-                      -- Run the GTK application with shell (for surface switching)
-                      runGtkApp ghost shell surfId mShiori gPath firstBoot vanishedCount mBalloonDir
-                        `finally` cleanupShiori mShiori
+      -- Run the GTK application with shell (for surface switching)
+      runGtkApp ghost shell surfId mShiori gPath firstBoot vanishedCount mBalloonDir
+        `finally` cleanupShiori mShiori
+  where
+    justOrError :: KokageError -> Maybe a -> IO a
+    justOrError err Nothing = throwIO err
+    justOrError _ (Just x)  = return x
 
 -- | Initialize SHIORI bridge and load the DLL.
 -- Returns Nothing if no DLL found or initialization fails.
