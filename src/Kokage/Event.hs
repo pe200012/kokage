@@ -47,7 +47,7 @@ import qualified GI.Gtk                     as Gtk
 import           Kokage.Collision           ( findCollisionAt )
 import           Kokage.Shiori.WineBridge   ( WineShiori, sendEvent )
 
-import           Reactive.Banana            ( (<@), (<@>), Behavior, filterE, stepper )
+import           Reactive.Banana            ( (<@), (<@>), Behavior, Event, filterE, stepper, unionWith )
 import           Reactive.Banana.Frameworks ( AddHandler, MomentIO, fromAddHandler, reactimate, liftIO )
 import           Reactive.Banana.GI.Gtk     ( signalE0R )
 
@@ -547,10 +547,20 @@ setupCharacterNetwork config = do
   -- Helper to check if offset exceeds threshold
   let exceedsThreshold ( ox, oy ) = isDragSignificant ox oy
 
-  -- Detect click vs drag
-  let dragEndWithStart = (,) <$> dragStartB <@> dragEndE
-      clickE           = fst <$> filterE (not . exceedsThreshold . snd) dragEndWithStart
-      suppressedE      = filterE (exceedsThreshold . snd) dragEndWithStart
+  -- Track whether drag has ever exceeded threshold during this gesture
+  -- Reset to False on dragBegin, set to True when any dragUpdate exceeds threshold
+  let resetToFalse   = const False <$> dragBeginE
+      exceedsUpdate  = filterE exceedsThreshold dragUpdateE
+      setToTrue      = const True <$> exceedsUpdate
+      dragExceededE  = unionWith (||) resetToFalse setToTrue
+  dragExceededB :: Behavior Bool <- stepper False dragExceededE
+
+  -- Detect click vs drag using the tracked exceeded state
+  -- Sample dragExceededB at dragEnd to check if drag ever exceeded threshold
+  let dragEndWithState = (,) <$> dragStartB <*> dragExceededB <@ dragEndE
+      -- clickE: start position when drag never exceeded threshold
+      clickE           = (\(start, _) -> start) <$> filterE (not . snd) dragEndWithState
+      suppressedE      = filterE snd dragEndWithState
 
   -- Process clicks against collision regions
   let hitE = handleClick collisions <$> clickE
