@@ -102,6 +102,7 @@ data InputHandlers
   , ihDragEnd    :: AddHandler ( Double, Double )  -- ^ Drag ended with offset (dx, dy)
   , ihMotion     :: AddHandler ( Double, Double )  -- ^ Mouse motion at (x, y)
   , ihRightClick :: AddHandler ( Double, Double )  -- ^ Right-click at (x, y)
+  , ihLeftClick  :: AddHandler ( Int, Double, Double )  -- ^ Left-click with (n_press, x, y)
   }
 
 -- | Timer event handlers.
@@ -563,26 +564,40 @@ setupCharacterNetwork config = do
   -- Detect click vs drag using the tracked exceeded state
   -- Sample dragExceededB at dragEnd to check if drag ever exceeded threshold
   let dragEndWithState = (,) <$> dragStartB <*> dragExceededB <@ dragEndE
-      -- clickE: start position when drag never exceeded threshold
+      -- clickE: start position when drag never exceeded threshold (legacy, for drag-based click)
       clickE           = (\(start, _) -> start) <$> filterE (not . snd) dragEndWithState
       suppressedE      = filterE snd dragEndWithState
 
-  -- Process clicks against collision regions
-  let hitE = handleClick collisions <$> clickE
+  -- Get left-click events from GestureClick (includes n_press for single/double click detection)
+  leftClickE <- fromAddHandler (ihLeftClick inputs)
 
-  -- Handle click with collision info and send to SHIORI
+  -- Filter click events: only process if drag hasn't exceeded threshold
+  -- Sample dragExceededB at click time to suppress clicks during drag
+  let leftClickWithDragState = (,) <$> dragExceededB <@> leftClickE
+      -- Only process clicks when not dragging
+      validClickE = snd <$> filterE (not . fst) leftClickWithDragState
+      -- Separate single and double clicks
+      singleClickE = (\(_, x, y) -> (x, y)) <$> filterE (\(n, _, _) -> n == 1) validClickE
+      doubleClickE = (\(_, x, y) -> (x, y)) <$> filterE (\(n, _, _) -> n == 2) validClickE
+
+  -- Process single clicks against collision regions
+  let singleHitE = handleClick collisions <$> singleClickE
+      doubleHitE = handleClick collisions <$> doubleClickE
+
+  -- Handle single click with collision info and send OnMouseClick to SHIORI
   let handleCollisionHit hit = do
         logCollisionHit hit
         case hit of
           HitRegion evt cr -> do
             let surfId = maybe 0 scSurfaceId mShiori
                 refs = Map.fromList
-                  [ (0, T.pack $ show $ clickX evt)
-                  , (1, T.pack $ show $ clickY evt)
-                  , (2, "0")                        -- Left button
-                  , (3, crName cr)
-                  , (4, T.pack $ show scopeId)      -- Character scope
-                  , (5, T.pack $ show surfId)
+                  [ (0, T.pack $ show $ clickX evt)   -- Reference0: x
+                  , (1, T.pack $ show $ clickY evt)   -- Reference1: y
+                  , (2, "0")                          -- Reference2: wheel (0 for click)
+                  , (3, T.pack $ show scopeId)        -- Reference3: side (scope id)
+                  , (4, crName cr)                    -- Reference4: part (collision name)
+                  , (5, "0")                          -- Reference5: button (0=left, 1=right, 2=middle)
+                  , (6, "mouse")                      -- Reference6: input type
                   ]
             sendShioriWithCallback mShiori OnMouseClick refs handler
           HitNothing evt -> do
@@ -591,13 +606,44 @@ setupCharacterNetwork config = do
                   [ (0, T.pack $ show $ clickX evt)
                   , (1, T.pack $ show $ clickY evt)
                   , (2, "0")
-                  , (3, "")
-                  , (4, T.pack $ show scopeId)
-                  , (5, T.pack $ show surfId)
+                  , (3, T.pack $ show scopeId)
+                  , (4, "")
+                  , (5, "0")
+                  , (6, "mouse")
                   ]
             sendShioriWithCallback mShiori OnMouseClick refs handler
 
-  reactimate $ handleCollisionHit <$> hitE
+  -- Handle double click and send OnMouseDoubleClick to SHIORI
+  let handleDoubleClickHit hit = do
+        putStrLn $ "[DoubleClick] " <> show hit
+        case hit of
+          HitRegion evt cr -> do
+            let surfId = maybe 0 scSurfaceId mShiori
+                refs = Map.fromList
+                  [ (0, T.pack $ show $ clickX evt)   -- Reference0: x
+                  , (1, T.pack $ show $ clickY evt)   -- Reference1: y
+                  , (2, "0")                          -- Reference2: wheel (0 for click)
+                  , (3, T.pack $ show scopeId)        -- Reference3: side (scope id)
+                  , (4, crName cr)                    -- Reference4: part (collision name)
+                  , (5, "0")                          -- Reference5: button (0=left)
+                  , (6, "mouse")                      -- Reference6: input type
+                  ]
+            sendShioriWithCallback mShiori OnMouseDoubleClick refs handler
+          HitNothing evt -> do
+            let surfId = maybe 0 scSurfaceId mShiori
+                refs = Map.fromList
+                  [ (0, T.pack $ show $ clickX evt)
+                  , (1, T.pack $ show $ clickY evt)
+                  , (2, "0")
+                  , (3, T.pack $ show scopeId)
+                  , (4, "")
+                  , (5, "0")
+                  , (6, "mouse")
+                  ]
+            sendShioriWithCallback mShiori OnMouseDoubleClick refs handler
+
+  reactimate $ handleCollisionHit <$> singleHitE
+  reactimate $ handleDoubleClickHit <$> doubleHitE
   reactimate $ (putStrLn "[Click] Suppressed (drag exceeded threshold)") <$ suppressedE
 
   -- Create DragEvents for logging

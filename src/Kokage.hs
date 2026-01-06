@@ -886,6 +886,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       ( dragEndHandler, fireDragEnd ) <- newAddHandler
       ( motionHandler, fireMotion ) <- newAddHandler
       ( rightClickHandler, fireRightClick ) <- newAddHandler
+      ( leftClickHandler, fireLeftClick ) <- newAddHandler
 
       -- Create input handlers for this character's balloon
       ( balloonDragBeginHandler, fireBalloonDragBegin ) <- newAddHandler
@@ -893,6 +894,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       ( balloonDragEndHandler, fireBalloonDragEnd ) <- newAddHandler
       ( balloonMotionHandler, fireBalloonMotion ) <- newAddHandler
       ( balloonRightClickHandler, _fireBalloonRightClick ) <- newAddHandler
+      ( balloonLeftClickHandler, fireBalloonLeftClick ) <- newAddHandler
 
       let window  = csWindow cs
           picture = csPicture cs
@@ -905,12 +907,24 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       _ <- on dragGesture #dragEnd $ \ox oy -> fireDragEnd ( ox, oy )
       Gtk.widgetAddController picture dragGesture
 
+      -- Create left-click gesture (Button 1) for click count detection (single/double click)
+      leftClickGesture <- new Gtk.GestureClick [ #button := 1 ]
+      _ <- on leftClickGesture #pressed $ \nPress x y -> do
+        fireLeftClick ( fromIntegral nPress, x, y )
+      Gtk.widgetAddController picture leftClickGesture
+
       -- Create drag gesture for balloon
       balloonDragGesture <- new Gtk.GestureDrag []
       _ <- on balloonDragGesture #dragBegin $ \x y -> fireBalloonDragBegin ( x, y )
       _ <- on balloonDragGesture #dragUpdate $ \ox oy -> fireBalloonDragUpdate ( ox, oy )
       _ <- on balloonDragGesture #dragEnd $ \ox oy -> fireBalloonDragEnd ( ox, oy )
       Gtk.widgetAddController (bsDrawArea bs) balloonDragGesture
+
+      -- Create left-click gesture for balloon
+      balloonLeftClickGesture <- new Gtk.GestureClick [ #button := 1 ]
+      _ <- on balloonLeftClickGesture #pressed $ \nPress x y -> do
+        fireBalloonLeftClick ( fromIntegral nPress, x, y )
+      Gtk.widgetAddController (bsDrawArea bs) balloonLeftClickGesture
 
       -- Create motion controller for balloon
       balloonMotionController <- new Gtk.EventControllerMotion []
@@ -1033,6 +1047,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 , ihDragEnd    = dragEndHandler
                 , ihMotion     = motionHandler
                 , ihRightClick = rightClickHandler
+                , ihLeftClick  = leftClickHandler
                 }
             , cncCollisions    = collisions
             , cncMoveMode      = moveMode
@@ -1048,6 +1063,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 , ihDragEnd    = balloonDragEndHandler
                 , ihMotion     = balloonMotionHandler
                 , ihRightClick = balloonRightClickHandler
+                , ihLeftClick  = balloonLeftClickHandler
                 }
             , cncBalloonMoveMode = balloonMoveMode
             }
