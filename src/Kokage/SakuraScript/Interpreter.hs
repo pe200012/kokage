@@ -23,8 +23,9 @@ module Kokage.SakuraScript.Interpreter
   , defaultCallbacks
   ) where
 
-import           Control.Concurrent         ( forkIO, threadDelay )
-import           Control.Monad              ( forM_, unless )
+import           Control.Concurrent         ( threadDelay, newEmptyMVar, putMVar, MVar, forkIO, takeMVar )
+import           Control.Concurrent.Async   ( race )
+import           Control.Monad              ( forM_, unless, void )
 import           Data.IORef                 ( IORef, newIORef, readIORef, writeIORef )
 import qualified Data.Text                  as T
 
@@ -130,14 +131,15 @@ executeScript config callbacks script = do
 executeScriptAsync :: InterpreterConfig -> InterpreterCallbacks -> Script -> IO (IO ())
 executeScriptAsync config callbacks script = do
   state <- newInterpreterState config callbacks
-  _ <- forkIO $ do
-    runScript state script
-    interrupted <- readIORef (esInterrupted state)
-    if interrupted
-      then cbOnInterrupt callbacks
-      else cbOnComplete callbacks
-  -- Return interrupt action
-  return $ writeIORef (esInterrupted state) True
+  interruptVar <- newEmptyMVar :: IO (MVar ())
+  -- Race between script execution and interrupt signal
+  void $ forkIO $ do
+    result <- race (takeMVar interruptVar) (runScript state script)
+    case result of
+      Left ()  -> cbOnInterrupt callbacks  -- Interrupted
+      Right () -> cbOnComplete callbacks   -- Completed normally
+  -- Return interrupt action that signals the MVar
+  return $ putMVar interruptVar ()
 
 -- | Run the script
 runScript :: InterpreterState -> Script -> IO ()
