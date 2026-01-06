@@ -521,13 +521,16 @@ setupCharacterNetwork config = do
 
   reactimate $ handleRightClick <$> rightClickE
 
-  -- Handle mouse motion events - send OnMouseMove to SHIORI
+  -- Handle mouse motion events - send OnMouseMove to SHIORI and update cursor
   let handleMotion ( x, y ) = do
         let ix = floor x :: Int
             iy = floor y :: Int
             surfId = maybe 0 scSurfaceId mShiori
         case findCollisionAt ix iy collisions of
           Just cr -> do
+            -- Set pointer cursor to indicate clickable area
+            mCursor <- Gdk.cursorNewFromName "pointer" (Nothing :: Maybe Gdk.Cursor)
+            Gtk.widgetSetCursor window mCursor
             let refs = Map.fromList
                   [ (0, T.pack $ show ix)           -- Reference0: x
                   , (1, T.pack $ show iy)           -- Reference1: y
@@ -537,7 +540,9 @@ setupCharacterNetwork config = do
                   , (5, T.pack $ show surfId)       -- Reference5: surface id
                   ]
             sendShioriWithCallback mShiori OnMouseMove refs handler
-          Nothing -> return ()
+          Nothing -> do
+            -- Reset to default cursor when not over collision area
+            Gtk.widgetSetCursor window (Nothing :: Maybe Gdk.Cursor)
 
   reactimate $ handleMotion <$> motionE
 
