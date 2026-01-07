@@ -465,10 +465,11 @@ pWaitBang
 pChoiceCmd :: Parser ChoiceCmd
 pChoiceCmd = choice [ pChoiceMarker, pChoiceEnd, pInputText, pInputCancel, pChoiceBasic, pChoiceScript, pChoiceNoTimeout, pAnchor ]
 
--- | Parse choice marker: \![*] - marks a choice item (just consume and ignore)
+-- | Parse choice marker: \![*] - marks a choice item (just consume and return marker)
 -- This is a visual marker for choices in SSP, equivalent to a bullet point
+-- It does NOT require \q to follow - it's just a standalone marker
 pChoiceMarker :: Parser ChoiceCmd
-pChoiceMarker = string "![*]" *> pChoiceBasic
+pChoiceMarker = string "![*]" *> pure ChoiceMarker
 
 -- | Parse choice end: \* - ends choice input mode
 pChoiceEnd :: Parser ChoiceCmd

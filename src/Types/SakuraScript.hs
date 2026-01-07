@@ -335,6 +335,7 @@ data ChoiceCmd
   | ChoiceScript !Text !Text                        -- ^ \__q[text,script] - Script choice
   | ChoiceNoTimeout !Text !ChoiceAction             -- ^ \_q[text,action] - No timeout choice
   | ChoiceTimeout !ChoiceTimeout                    -- ^ Choice with timeout
+  | ChoiceMarker                                    -- ^ \![*] - Visual bullet marker for choices
   | Anchor !Text !Text                              -- ^ \_a[id,text] - Named anchor
   | AnchorEnd                                       -- ^ Anchor end
   | ChoiceBlock ![ ( Text, ChoiceAction ) ]             -- ^ \* - Implicit choice block

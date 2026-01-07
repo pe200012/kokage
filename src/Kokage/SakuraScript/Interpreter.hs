@@ -764,6 +764,9 @@ handleChoice state choiceCmd = case choiceCmd of
     forM_ choices $ \(text, action) ->
       addChoiceWithAction state text text action
 
+  -- \![*] - Choice marker (visual bullet point, no action needed)
+  ChoiceMarker -> return ()
+
 -- | Helper to add a choice, converting ChoiceAction to action string
 addChoiceWithAction :: InterpreterState -> T.Text -> T.Text -> ChoiceAction -> IO ()
 addChoiceWithAction state choiceId text action = do
