@@ -14,15 +14,17 @@ module Kokage.Ghost
   , loadLastGhost
     -- * Balloon resolution
   , findBalloonDir
+  , listAvailableBalloons
     -- * Screen geometry
   , getScreenGeometry
   ) where
 
 import           Control.Exception          ( SomeException, try )
-import           Control.Monad              ( filterM )
+import           Control.Monad              ( filterM, forM )
 
 import           Data.List                  ( find, sortOn )
 import           Data.Maybe                 ( fromMaybe, listToMaybe )
+import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 import qualified Data.Text.IO               as TIO
 
@@ -170,3 +172,34 @@ findBalloonDir (BaseDir baseDir) _ghost = do
           if hasMaster
             then return (Just masterPath)
             else return (listToMaybe validBalloons)
+
+-- | List all available balloons with their names and paths.
+-- Returns list of (display name, path) pairs.
+listAvailableBalloons :: BaseDir -> IO [(Text, Text)]
+listAvailableBalloons (BaseDir baseDir) = do
+  let balloonBaseDir = baseDir </> "balloon"
+  exists <- doesDirectoryExist balloonBaseDir
+  if not exists
+    then return []
+    else do
+      entries <- listDirectory balloonBaseDir
+      let fullPaths = map (balloonBaseDir </>) entries
+      validPaths <- filterM doesDirectoryExist fullPaths
+      validBalloons <- filterM (\p -> doesFileExist (p </> "descript.txt")) validPaths
+      
+      forM validBalloons $ \path -> do
+        name <- getBalloonName path
+        return (name, T.pack path)
+
+-- | Get balloon display name from descript.txt or directory name.
+getBalloonName :: FilePath -> IO Text
+getBalloonName path = do
+  let descriptPath = path </> "descript.txt"
+  result <- try $ TIO.readFile descriptPath :: IO (Either SomeException T.Text)
+  case result of
+    Left _ -> return $ T.pack $ takeBaseName path
+    Right content -> do
+      let nameLines = filter (T.isPrefixOf "name,") (T.lines content)
+      case nameLines of
+        (line:_) -> return $ T.strip $ T.drop 5 line
+        [] -> return $ T.pack $ takeBaseName path

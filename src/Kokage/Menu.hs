@@ -7,6 +7,8 @@ module Kokage.Menu
   , MenuStyle(..)
   , emptyMenuStyle
   , menuStyleFromShellDescript
+  , MenuConfig(..)
+  , emptyMenuConfig
   , Gtk.PopoverMenu
   ) where
 
@@ -22,6 +24,25 @@ import qualified GI.Gtk                     as Gtk
 import           System.FilePath            ( (</>) )
 
 import           Types.Ghost                ( ShellDescript(..) )
+
+data MenuConfig
+  = MenuConfig
+  { mcShells          :: ![(Text, Text)]
+  , mcBalloons        :: ![(Text, Text)]
+  , mcCurrentShell    :: !Text
+  , mcCurrentBalloon  :: !Text
+  , mcIsSticky        :: !Bool
+  }
+  deriving ( Show, Eq )
+
+emptyMenuConfig :: MenuConfig
+emptyMenuConfig = MenuConfig
+  { mcShells = []
+  , mcBalloons = []
+  , mcCurrentShell = ""
+  , mcCurrentBalloon = ""
+  , mcIsSticky = False
+  }
 
 data MenuStyle
   = MenuStyle
@@ -92,8 +113,8 @@ menuStyleFromShellDescript shellPath desc
   , msFontHeight = shellDescriptMenuFontHeight desc
   }
 
-createMenuModel :: IO Gio.Menu
-createMenuModel = do
+createMenuModel :: MenuConfig -> IO Gio.Menu
+createMenuModel config = do
   menu <- Gio.menuNew
 
   recommendMenu <- Gio.menuNew
@@ -104,7 +125,8 @@ createMenuModel = do
   Gio.menuAppend portalMenu (Just "Placeholder") (Just "app.todo")
   Gio.menuAppendSubmenu menu (Just "Portal sites") portalMenu
 
-  Gio.menuAppend menu (Just "Stick") (Just "app.stick")
+  let stickyLabel = if mcIsSticky config then "Unstick" else "Stick"
+  Gio.menuAppend menu (Just stickyLabel) (Just "app.stick")
 
   optionsMenu <- Gio.menuNew
   Gio.menuAppend optionsMenu (Just "Network Update") (Just "app.update")
@@ -125,7 +147,7 @@ createMenuModel = do
   Gio.menuAppendSubmenu menu (Just "Call Ghost") summonMenu
 
   shellMenu <- Gio.menuNew
-  Gio.menuAppend shellMenu (Just "Placeholder") (Just "app.todo")
+  populateShellMenu shellMenu (mcShells config) (mcCurrentShell config)
   Gio.menuAppendSubmenu menu (Just "Change Shell") shellMenu
 
   costumeMenu <- Gio.menuNew
@@ -133,7 +155,7 @@ createMenuModel = do
   Gio.menuAppendSubmenu menu (Just "Costume") costumeMenu
 
   balloonMenu <- Gio.menuNew
-  Gio.menuAppend balloonMenu (Just "Placeholder") (Just "app.todo")
+  populateBalloonMenu balloonMenu (mcBalloons config) (mcCurrentBalloon config)
   Gio.menuAppendSubmenu menu (Just "Change Balloon") balloonMenu
 
   infoMenu <- Gio.menuNew
@@ -155,9 +177,35 @@ createMenuModel = do
 
   return menu
 
-createContextMenu :: Gtk.Window -> MenuStyle -> IO Gtk.PopoverMenu
-createContextMenu parentWindow style = do
-  menuModel <- createMenuModel
+populateShellMenu :: Gio.Menu -> [(Text, Text)] -> Text -> IO ()
+populateShellMenu menu shells currentShell = do
+  if null shells
+    then Gio.menuAppend menu (Just "(No shells available)") Nothing
+    else mapM_ addShellItem shells
+  where
+    addShellItem (name, path) = do
+      let label = if name == currentShell
+                  then T.concat ["● ", name]
+                  else T.concat ["  ", name]
+          action = T.concat ["app.change_shell::", path]
+      Gio.menuAppend menu (Just label) (Just action)
+
+populateBalloonMenu :: Gio.Menu -> [(Text, Text)] -> Text -> IO ()
+populateBalloonMenu menu balloons currentBalloon = do
+  if null balloons
+    then Gio.menuAppend menu (Just "(No balloons available)") Nothing
+    else mapM_ addBalloonItem balloons
+  where
+    addBalloonItem (name, path) = do
+      let label = if name == currentBalloon
+                  then T.concat ["● ", name]
+                  else T.concat ["  ", name]
+          action = T.concat ["app.change_balloon::", path]
+      Gio.menuAppend menu (Just label) (Just action)
+
+createContextMenu :: Gtk.Window -> MenuStyle -> MenuConfig -> IO Gtk.PopoverMenu
+createContextMenu parentWindow style config = do
+  menuModel <- createMenuModel config
   popover <- Gtk.popoverMenuNewFromModel (Just menuModel)
   Gtk.widgetSetParent popover parentWindow
   Gtk.popoverSetAutohide popover True
