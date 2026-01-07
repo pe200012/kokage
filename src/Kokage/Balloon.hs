@@ -19,6 +19,10 @@ module Kokage.Balloon
   , appendText
   , appendChar
   , appendNewline
+  , appendNewlineHalf
+  , appendNewlinePercent
+  , clearChars
+  , moveCursor
   , setBalloonSurface
   , loadAndSetBalloonSurface
   , setBalloonPosition
@@ -31,6 +35,18 @@ module Kokage.Balloon
   , scrollDown
   , setAutoScroll
   , getAutoScroll
+    -- * Font Operations
+  , setFontName
+  , setFontSize
+  , getFontSize
+  , setFontColor
+  , setFontBold
+  , setFontItalic
+  , setFontUnderline
+  , setFontStrike
+  , setFontSub
+  , setFontSup
+  , resetFont
     -- * Choice Support
   , BalloonChoice(..)
   , addChoice
@@ -96,6 +112,7 @@ data BalloonConfig
   , bcValidHeight   :: !Int        -- ^ Text area height (default: 130)
   , bcFontName      :: !T.Text     -- ^ Font name (default: "Sans")
   , bcFontSize      :: !Int        -- ^ Font size in pixels (default: 12)
+  , bcBaseFontSize  :: !Int        -- ^ Base font size for reset (default: 12)
   , bcTextColorR    :: !Double     -- ^ Text color R (0.0-1.0, default: 0.2)
   , bcTextColorG    :: !Double     -- ^ Text color G (0.0-1.0, default: 0.2)
   , bcTextColorB    :: !Double     -- ^ Text color B (0.0-1.0, default: 0.2)
@@ -108,6 +125,8 @@ data BalloonConfig
   , bcFontItalic  :: !Bool       -- ^ Italic text
   , bcFontUnderline :: !Bool     -- ^ Underline text
   , bcFontStrike  :: !Bool       -- ^ Strikethrough text
+  , bcFontSub     :: !Bool       -- ^ Subscript mode
+  , bcFontSup     :: !Bool       -- ^ Superscript mode
   , bcShadowStyle :: !ShadowStyle -- ^ Shadow style
   , bcShadowColorR :: !Double    -- ^ Shadow color R
   , bcShadowColorG :: !Double    -- ^ Shadow color G
@@ -124,6 +143,7 @@ defaultBalloonConfig = BalloonConfig
   , bcValidHeight = 130
   , bcFontName    = "Sans"
   , bcFontSize    = 12
+  , bcBaseFontSize = 12
   , bcTextColorR  = 0.2
   , bcTextColorG  = 0.2
   , bcTextColorB  = 0.2
@@ -136,6 +156,8 @@ defaultBalloonConfig = BalloonConfig
   , bcFontItalic  = False
   , bcFontUnderline = False
   , bcFontStrike  = False
+  , bcFontSub     = False
+  , bcFontSup     = False
   , bcShadowStyle = ShadowNone
   , bcShadowColorR = 0.8  -- Default shadow color often light gray if not specified
   , bcShadowColorG = 0.8
@@ -158,6 +180,7 @@ configFromDescript bd imgWidth imgHeight = BalloonConfig
   , bcValidHeight = validHeight
   , bcFontName    = fromMaybe "Sans" (fsName (bdFont bd))
   , bcFontSize    = fromMaybe 12 (fsHeight (bdFont bd))
+  , bcBaseFontSize = fromMaybe 12 (fsHeight (bdFont bd))
   , bcTextColorR  = maybe 0.2 (\v -> fromIntegral v / 255.0) (fsColorR (bdFont bd))
   , bcTextColorG  = maybe 0.2 (\v -> fromIntegral v / 255.0) (fsColorG (bdFont bd))
   , bcTextColorB  = maybe 0.2 (\v -> fromIntegral v / 255.0) (fsColorB (bdFont bd))
@@ -170,6 +193,8 @@ configFromDescript bd imgWidth imgHeight = BalloonConfig
   , bcFontItalic  = fromMaybe False (fsItalic (bdFont bd))
   , bcFontUnderline = fromMaybe False (fsUnderline (bdFont bd))
   , bcFontStrike  = fromMaybe False (fsStrike (bdFont bd))
+  , bcFontSub     = False
+  , bcFontSup     = False
   , bcShadowStyle = fromMaybe ShadowNone (fsShadowStyle (bdFont bd))
   , bcShadowColorR = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorR (bdFont bd))
   , bcShadowColorG = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorG (bdFont bd))
@@ -493,13 +518,22 @@ drawText config text scrollLine = do
 
   Cairo.liftIO $ Pango.layoutSetFontDescription layout (Just fontDesc)
 
-  -- Set attributes (Underline/Strike)
+  -- Set attributes (Underline/Strike/Sub/Sup)
   attrs <- Cairo.liftIO Pango.attrListNew
   when (bcFontUnderline config) $ do
     attr <- Cairo.liftIO $ Pango.attrUnderlineNew Pango.UnderlineSingle
     Cairo.liftIO $ Pango.attrListInsert attrs attr
   when (bcFontStrike config) $ do
     attr <- Cairo.liftIO $ Pango.attrStrikethroughNew True
+    Cairo.liftIO $ Pango.attrListInsert attrs attr
+  -- Subscript/Superscript using Pango rise attribute
+  when (bcFontSub config) $ do
+    -- Negative rise for subscript (move text down)
+    attr <- Cairo.liftIO $ Pango.attrRiseNew (fromIntegral $ -(bcFontSize config * fromIntegral Pango.SCALE `div` 3))
+    Cairo.liftIO $ Pango.attrListInsert attrs attr
+  when (bcFontSup config) $ do
+    -- Positive rise for superscript (move text up)
+    attr <- Cairo.liftIO $ Pango.attrRiseNew (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE `div` 2)
     Cairo.liftIO $ Pango.attrListInsert attrs attr
   Cairo.liftIO $ Pango.layoutSetAttributes layout (Just attrs)
 
@@ -729,6 +763,160 @@ appendChar bs c = appendText bs (T.singleton c)
 -- | Append a newline to the balloon.
 appendNewline :: BalloonState -> IO ()
 appendNewline bs = appendText bs "\n"
+
+-- | Append a half-height newline to the balloon.
+-- Uses a special Unicode line separator with reduced line spacing.
+appendNewlineHalf :: BalloonState -> IO ()
+appendNewlineHalf bs = do
+  -- Insert a special marker that drawText will recognize for half-height newline
+  -- We use Unicode LINE SEPARATOR (U+2028) which Pango treats as a soft break
+  -- Combined with temporary line spacing reduction
+  cfg <- readIORef (bsConfig bs)
+  let halfSpacing = max 1 (bcLineSpacing cfg `div` 2)
+  -- Temporarily reduce line spacing, add newline, restore
+  modifyIORef' (bsConfig bs) $ \c -> c { bcLineSpacing = halfSpacing }
+  appendText bs "\n"
+  modifyIORef' (bsConfig bs) $ \c -> c { bcLineSpacing = bcLineSpacing cfg }
+
+-- | Append a percentage-height newline to the balloon.
+-- The percentage affects the line height (100 = normal, 50 = half, etc.)
+appendNewlinePercent :: BalloonState -> Int -> IO ()
+appendNewlinePercent bs pct = do
+  cfg <- readIORef (bsConfig bs)
+  let adjustedSpacing = max 1 ((bcLineSpacing cfg * pct) `div` 100)
+  -- Temporarily adjust line spacing based on percentage
+  modifyIORef' (bsConfig bs) $ \c -> c { bcLineSpacing = adjustedSpacing }
+  appendText bs "\n"
+  modifyIORef' (bsConfig bs) $ \c -> c { bcLineSpacing = bcLineSpacing cfg }
+
+-- | Clear n characters from the end of the balloon text.
+clearChars :: BalloonState -> Int -> IO ()
+clearChars bs n = do
+  modifyIORef' (bsText bs) $ \t ->
+    T.take (max 0 (T.length t - n)) t
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Move cursor to specified position.
+-- This is used for \_l[x,y] command to position subsequent text.
+-- Implemented by padding with spaces/newlines to reach the target position.
+moveCursor :: BalloonState -> Int -> Int -> IO ()
+moveCursor bs targetX targetY = do
+  cfg <- readIORef (bsConfig bs)
+  currentText <- readIORef (bsText bs)
+  let lineHeight = bcFontSize cfg
+      charWidth = lineHeight `div` 2  -- Approximate monospace character width
+      currentLines = T.lines currentText
+      currentY = length currentLines * lineHeight
+      currentX = if null currentLines then 0 else T.length (last currentLines) * charWidth
+  
+  -- Add newlines to reach target Y if needed
+  let neededNewlines = max 0 ((targetY - currentY) `div` lineHeight)
+      newlinesText = T.replicate neededNewlines "\n"
+  
+  -- Add spaces to reach target X
+  let neededSpaces = max 0 ((targetX - if neededNewlines > 0 then 0 else currentX) `div` charWidth)
+      spacesText = T.replicate neededSpaces " "
+  
+  modifyIORef' (bsText bs) (<> newlinesText <> spacesText)
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font name.
+setFontName :: BalloonState -> T.Text -> IO ()
+setFontName bs name = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg { bcFontName = name }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font size.
+setFontSize :: BalloonState -> Int -> IO ()
+setFontSize bs size = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg { bcFontSize = size }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Get current font size.
+getFontSize :: BalloonState -> IO Int
+getFontSize bs = bcFontSize <$> readIORef (bsConfig bs)
+
+-- | Set font color (RGB, 0.0-1.0).
+setFontColor :: BalloonState -> Double -> Double -> Double -> IO ()
+setFontColor bs r g b = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg
+    { bcTextColorR = r
+    , bcTextColorG = g
+    , bcTextColorB = b
+    }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font bold.
+setFontBold :: BalloonState -> Bool -> IO ()
+setFontBold bs bold = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg { bcFontBold = bold }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font italic.
+setFontItalic :: BalloonState -> Bool -> IO ()
+setFontItalic bs italic = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg { bcFontItalic = italic }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font underline.
+setFontUnderline :: BalloonState -> Bool -> IO ()
+setFontUnderline bs underline = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg { bcFontUnderline = underline }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font strikethrough.
+setFontStrike :: BalloonState -> Bool -> IO ()
+setFontStrike bs strike = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg { bcFontStrike = strike }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font subscript mode.
+-- When enabled, text is rendered smaller and lower using Pango attributes.
+setFontSub :: BalloonState -> Bool -> IO ()
+setFontSub bs enabled = do
+  modifyIORef' (bsConfig bs) $ \cfg -> 
+    if enabled
+      then cfg { bcFontSub = True
+               , bcFontSup = False  -- Can't be both
+               , bcFontSize = (bcBaseFontSize cfg * 3) `div` 4  -- 75% size
+               }
+      else cfg { bcFontSub = False
+               , bcFontSize = bcBaseFontSize cfg  -- Restore base size
+               }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Set font superscript mode.
+-- When enabled, text is rendered smaller and higher using Pango attributes.
+setFontSup :: BalloonState -> Bool -> IO ()
+setFontSup bs enabled = do
+  modifyIORef' (bsConfig bs) $ \cfg ->
+    if enabled
+      then cfg { bcFontSup = True
+               , bcFontSub = False  -- Can't be both
+               , bcFontSize = (bcBaseFontSize cfg * 3) `div` 4  -- 75% size
+               }
+      else cfg { bcFontSup = False
+               , bcFontSize = bcBaseFontSize cfg  -- Restore base size
+               }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
+
+-- | Reset font to default settings.
+resetFont :: BalloonState -> IO ()
+resetFont bs = do
+  modifyIORef' (bsConfig bs) $ \cfg -> cfg
+    { bcFontName = bcFontName defaultBalloonConfig
+    , bcFontSize = bcBaseFontSize cfg  -- Use saved base size, not default
+    , bcTextColorR = bcTextColorR defaultBalloonConfig
+    , bcTextColorG = bcTextColorG defaultBalloonConfig
+    , bcTextColorB = bcTextColorB defaultBalloonConfig
+    , bcFontBold = False
+    , bcFontItalic = False
+    , bcFontUnderline = False
+    , bcFontStrike = False
+    , bcFontSub = False
+    , bcFontSup = False
+    }
+  Gtk.widgetQueueDraw (bsDrawArea bs)
 
 -- | Set the balloon surface image.
 -- This converts the Pixbuf to a Cairo Surface for efficient drawing.
