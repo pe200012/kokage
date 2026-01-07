@@ -41,8 +41,9 @@ logShioriResponse event result = case result of
     Just val -> do
       putStrLn $ "[SHIORI] " <> show event <> " -> script:"
       -- Print first 200 chars of script for debugging
-      let preview = T.take 200 val
-      putStrLn $ "  " <> T.unpack preview <> if T.length val > 200 then "..." else ""
+      -- let preview = T.take 200 val
+      -- putStrLn $ "  " <> T.unpack preview <> if T.length val > 200 then "..." else ""
+      putStrLn $ T.unpack val
 
 -- | Send a SHIORI event and log the response.
 -- Does nothing if SHIORI is not configured.

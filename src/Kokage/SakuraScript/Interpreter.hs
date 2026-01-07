@@ -53,7 +53,7 @@ data InterpreterConfig = InterpreterConfig
 -- | Default interpreter configuration
 defaultInterpreterConfig :: InterpreterConfig
 defaultInterpreterConfig = InterpreterConfig
-  { ecCharDelay   = 50    -- 50ms per character = 20 chars/second
+  { ecCharDelay   = 100    -- 100ms per character = 10 chars/second
   , ecDefaultWait = 50    -- \w[1] = 50ms
   , ecQuickMode   = False
   }
@@ -315,7 +315,7 @@ displayChar state c = do
   quick <- readIORef (esQuickMode state)
   unless quick $ do
     let delayMs = ecCharDelay (esConfig state)
-    threadDelay (delayMs * 1500)
+    threadDelay (delayMs * 1000)  -- Convert ms to μs (threadDelay takes microseconds)
 
 --------------------------------------------------------------------------------
 -- Scope Handling
