@@ -123,7 +123,19 @@ pScopeCmd
 
 -- | Parse surface commands
 pSurfaceCmd :: Parser SurfaceCmd
-pSurfaceCmd = choice [ pSurfaceChange, pSurfaceAnim, pSurfaceBang ]
+pSurfaceCmd = choice [ pSurfaceChange, pSurfaceAnim, pSurfaceMove4, pSurfaceMove5, pSurfaceBang ]
+
+-- | Parse \4 - move to screen center
+pSurfaceMove4 :: Parser SurfaceCmd
+pSurfaceMove4 = char '4' *> pure (SurfaceMove defaultMoveSpec { moveBase = MoveBaseDesktop })
+  where
+    defaultMoveSpec = MoveSpec PosUnchanged PosUnchanged Nothing MoveBaseCurrent False
+
+-- | Parse \5 - move to random position
+pSurfaceMove5 :: Parser SurfaceCmd
+pSurfaceMove5 = char '5' *> pure (SurfaceMove defaultMoveSpec { moveBase = MoveBaseDesktop })
+  where
+    defaultMoveSpec = MoveSpec PosUnchanged PosUnchanged Nothing MoveBaseCurrent False
 
 -- | Parse surface change: \s[n] or \s[alias]
 pSurfaceChange :: Parser SurfaceCmd
@@ -153,11 +165,23 @@ pAnimAction
     , AnimResume <$ string "resume"
     ]
 
--- | Parse surface bang commands: \![surface,...]
+-- | Parse surface bang commands: \![surface,...], \![move,...], \![moveasync,...], \![anim,...], \![bind,...]
 pSurfaceBang :: Parser SurfaceCmd
 pSurfaceBang
   = string "!["
-  *> string "surface"
+  *> choice
+    [ pSurfaceBangSurface
+    , pSurfaceBangMove
+    , pSurfaceBangMoveAsync
+    , pSurfaceBangAnim
+    , pSurfaceBangBind
+    ]
+  <* char ']'
+
+-- | Parse \![surface,...] commands
+pSurfaceBangSurface :: Parser SurfaceCmd
+pSurfaceBangSurface
+  = string "surface"
   *> pComma
   *> choice
     [ SurfaceLockRepaint True <$ string "lock,repaint"
@@ -165,7 +189,86 @@ pSurfaceBang
     , pSurfaceAlignment
     , pSurfaceAlpha
     ]
-  <* char ']'
+
+-- | Parse \![move,...] - synchronous move
+pSurfaceBangMove :: Parser SurfaceCmd
+pSurfaceBangMove = string "move" *> pComma *> (SurfaceMove <$> pMoveSpec False)
+
+-- | Parse \![moveasync,...] - asynchronous move
+pSurfaceBangMoveAsync :: Parser SurfaceCmd
+pSurfaceBangMoveAsync = string "moveasync" *> pComma *> (SurfaceMove <$> pMoveSpec True)
+
+-- | Parse move specification
+pMoveSpec :: Bool -> Parser MoveSpec
+pMoveSpec async = do
+  x <- pCursorPos
+  _ <- pComma
+  y <- pCursorPos
+  mTime <- optional (pComma *> pInt)
+  mBase <- optional (pComma *> pMoveBase)
+  pure $ MoveSpec x y mTime (maybe MoveBaseCurrent id mBase) async
+
+-- | Parse move base
+pMoveBase :: Parser MoveBase
+pMoveBase = choice
+  [ MoveBaseDesktop <$ string "desktop"
+  , MoveBasePrimary <$ string "primary"
+  , MoveBaseOwner <$ string "owner"
+  , MoveBaseCurrent <$ string "current"
+  ]
+
+-- | Parse \![anim,...] - animation control
+pSurfaceBangAnim :: Parser SurfaceCmd
+pSurfaceBangAnim = string "anim" *> pComma *> choice
+  [ pAnimStart
+  , pAnimStop
+  , pAnimWait
+  , pAnimClear
+  , pAnimPause
+  , pAnimResume
+  , pAnimOffset
+  ]
+  where
+    pAnimStart = string "start" *> pComma *> do
+      animId <- pInt
+      pure $ SurfaceAnim animId AnimStart
+    
+    pAnimStop = string "stop" *> pComma *> do
+      animId <- pInt
+      pure $ SurfaceAnim animId AnimStop
+    
+    pAnimWait = string "wait" *> pComma *> (SurfaceAnimWait <$> pInt)
+    
+    pAnimClear = string "clear" *> option (SurfaceAnimClear Nothing) (pComma *> (SurfaceAnimClear . Just <$> pInt))
+    
+    pAnimPause = string "pause" *> option (SurfaceAnimPause Nothing) (pComma *> (SurfaceAnimPause . Just <$> pInt))
+    
+    pAnimResume = string "resume" *> option (SurfaceAnimResume Nothing) (pComma *> (SurfaceAnimResume . Just <$> pInt))
+    
+    pAnimOffset = string "offset" *> pComma *> do
+      animId <- pInt
+      _ <- pComma
+      x <- pInt
+      _ <- pComma
+      y <- pInt
+      pure $ SurfaceAnimOffset animId x y
+
+-- | Parse \![bind,...] - bind control (着せ替え)
+pSurfaceBangBind :: Parser SurfaceCmd
+pSurfaceBangBind = string "bind" *> pComma *> do
+  category <- pBindCategory
+  _ <- pComma
+  part <- pIdentifier
+  _ <- pComma
+  enabled <- pBool
+  pure $ SurfaceBind category part enabled
+
+pBindCategory :: Parser BindCategory
+pBindCategory = choice
+  [ BindClothes <$ string "clothes"
+  , BindAccessory <$ string "accessory"
+  , BindOther <$> pIdentifier
+  ]
 
 -- | Parse surface alignment
 pSurfaceAlignment :: Parser SurfaceCmd
@@ -208,8 +311,23 @@ pBalloonCmd
     , pCursorMove
     , pBalloonHideOrImage
     , pSyncSection
+    , pNoUserBreak
+    , pUserBreakQuestion
+    , pVerbatimMode
     , pBalloonBang
     ]
+
+-- | Parse no user break: \_! - disable/enable user break
+pNoUserBreak :: Parser BalloonCmd
+pNoUserBreak = string "_!" *> pure NoUserBreakStart
+
+-- | Parse user break question: \_? - conditional user break
+pUserBreakQuestion :: Parser BalloonCmd
+pUserBreakQuestion = string "_?" *> pure NoUserBreakEnd
+
+-- | Parse verbatim mode: \__v - raw text mode
+pVerbatimMode :: Parser BalloonCmd
+pVerbatimMode = string "__v" *> pure VerbatimStart
 
 -- | Parse sync section: \_s or \_s[id1,id2,...]
 pSyncSection :: Parser BalloonCmd
@@ -345,7 +463,29 @@ pWaitBang
 
 -- | Parse choice commands
 pChoiceCmd :: Parser ChoiceCmd
-pChoiceCmd = choice [ pChoiceBasic, pChoiceScript, pChoiceNoTimeout, pAnchor ]
+pChoiceCmd = choice [ pChoiceMarker, pChoiceEnd, pInputText, pInputCancel, pChoiceBasic, pChoiceScript, pChoiceNoTimeout, pAnchor ]
+
+-- | Parse choice marker: \![*] - marks a choice item (just consume and ignore)
+-- This is a visual marker for choices in SSP, equivalent to a bullet point
+pChoiceMarker :: Parser ChoiceCmd
+pChoiceMarker = string "![*]" *> pChoiceBasic
+
+-- | Parse choice end: \* - ends choice input mode
+pChoiceEnd :: Parser ChoiceCmd
+pChoiceEnd = char '*' *> pure AnchorEnd
+
+-- | Parse input text: \__t - text input field
+pInputText :: Parser ChoiceCmd
+pInputText = string "__t" *> pBracketed pInputTextArgs
+  where
+    pInputTextArgs = do
+      eventId <- pIdentifier
+      opts <- many (pComma *> pIdentifier)
+      pure $ ChoiceScript eventId (T.intercalate "," opts)
+
+-- | Parse input cancel: \__c - cancel input
+pInputCancel :: Parser ChoiceCmd
+pInputCancel = string "__c" *> pure AnchorEnd
 
 -- | Parse basic choice: \q[text,action]
 pChoiceBasic :: Parser ChoiceCmd
@@ -419,6 +559,8 @@ pFontArg
     , pFontItalic
     , pFontStrike
     , pFontUnderline
+    , pFontSub
+    , pFontSup
     , pFontDefault
     ]
 
@@ -473,6 +615,12 @@ pFontStrike = string "strike" *> pComma *> (FontStrike <$> pFontToggle)
 pFontUnderline :: Parser FontCmd
 pFontUnderline = string "underline" *> pComma *> (FontUnderline <$> pFontToggle)
 
+pFontSub :: Parser FontCmd
+pFontSub = string "sub" *> pComma *> (FontSub <$> pFontToggle)
+
+pFontSup :: Parser FontCmd
+pFontSup = string "sup" *> pComma *> (FontSup <$> pFontToggle)
+
 pFontDefault :: Parser FontCmd
 pFontDefault = FontDefault <$ string "default"
 
@@ -490,11 +638,40 @@ pFontToggle
 
 -- | Parse event commands
 pEventCmd :: Parser EventCmd
-pEventCmd = choice [ EventExit <$ char 'e', pEventChain, pEventBang ]
+pEventCmd = choice 
+  [ EventExit <$ char 'e'
+  , pEventChain
+  , pGhostChange
+  , pGhostChangeSilent
+  , pEventCommunicate
+  , pEventSync6
+  , pEventSync7
+  , pEventBang 
+  ]
 
 -- | Parse event chain: \-
 pEventChain :: Parser EventCmd
 pEventChain = char '-' *> pure (EventScript "" "")
+
+-- | Parse ghost change: \+ - change ghost with confirmation
+pGhostChange :: Parser EventCmd
+pGhostChange = char '+' *> pBracketed (EventGhostChange <$> pIdentifier)
+
+-- | Parse silent ghost change: \_+ - change ghost without confirmation
+pGhostChangeSilent :: Parser EventCmd
+pGhostChangeSilent = string "_+" *> pBracketed (EventGhostChange <$> pIdentifier)
+
+-- | Parse communicate: \a - exclusive communication
+pEventCommunicate :: Parser EventCmd
+pEventCommunicate = char 'a' *> pBracketed (EventGhostChange <$> pIdentifier)
+
+-- | Parse sync: \6 - synchronize with other ghost
+pEventSync6 :: Parser EventCmd
+pEventSync6 = char '6' *> pure (EventScript "" "")
+
+-- | Parse sync end: \7 - end synchronization
+pEventSync7 :: Parser EventCmd
+pEventSync7 = char '7' *> pure (EventScript "" "")
 
 -- | Parse event bang commands
 pEventBang :: Parser EventCmd
@@ -544,11 +721,15 @@ pUpdate
 
 -- | Parse sound commands
 pSoundCmd :: Parser SoundCmd
-pSoundCmd = choice [ pSoundPlay, SoundStop <$ string "_V", pSoundBang ]
+pSoundCmd = choice [ pSoundPlay, pSoundPlay8, SoundStop <$ string "_V", pSoundBang ]
 
 -- | Parse sound play: \_v[file]
 pSoundPlay :: Parser SoundCmd
 pSoundPlay = string "_v" *> pBracketed (SoundPlay <$> pQuotedStringOrId)
+
+-- | Parse sound play: \8[file] - legacy syntax
+pSoundPlay8 :: Parser SoundCmd
+pSoundPlay8 = char '8' *> pBracketed (SoundPlay <$> pQuotedStringOrId)
 
 -- | Parse sound bang commands
 pSoundBang :: Parser SoundCmd
