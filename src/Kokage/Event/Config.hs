@@ -49,6 +49,7 @@ data TimerHandlers
   = TimerHandlers
   { thSecondTick :: AddHandler LocalTime  -- ^ Fires every second with current time
   , thMinuteTick :: AddHandler LocalTime  -- ^ Fires every minute with current time
+  , thMotionTick :: AddHandler ()         -- ^ Fires every 100ms for mouse motion sampling
   }
 
 -- | Window move mode.
@@ -108,6 +109,7 @@ data CharacterNetworkConfig
   , cncShiori     :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
   , cncScriptHandler :: !ScriptHandler          -- ^ Handler for SHIORI scripts
   , cncContextMenu :: !Gtk.PopoverMenu          -- ^ Context menu for right-click
+  , cncMotionTick :: !(AddHandler ())           -- ^ Motion tick for throttled mouse events
   -- Balloon integration (one balloon per character)
   , cncBalloonWindow   :: !Gtk.Window           -- ^ The balloon window
   , cncBalloonInputs   :: !InputHandlers        -- ^ Input event handlers for balloon

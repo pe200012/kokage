@@ -841,6 +841,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- Create global timer event handlers
     ( secondTickHandler, fireSecondTick ) <- newAddHandler
     ( minuteTickHandler, fireMinuteTick ) <- newAddHandler
+    ( motionTickHandler, fireMotionTick ) <- newAddHandler
 
     -- Helper to get current local time
     let getLocalTime' = do
@@ -860,6 +861,11 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       fireMinuteTick lt
       return True
 
+    -- Set up motion tick timer (fires every 100ms for mouse motion sampling)
+    _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 100 $ do
+      fireMotionTick ()
+      return True
+
     -- Set up animation timer (fires every 50ms = 20fps)
     -- This drives the SERIKO animations
     _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 50 $ do
@@ -871,7 +877,10 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     let globalConfig
           = GlobalNetworkConfig
           { gncTimers        = TimerHandlers
-              { thSecondTick = secondTickHandler, thMinuteTick = minuteTickHandler }
+              { thSecondTick = secondTickHandler
+              , thMinuteTick = minuteTickHandler
+              , thMotionTick = motionTickHandler
+              }
           , gncShiori        = mShioriConfig
           , gncScriptHandler = displayScript
           }
@@ -1055,6 +1064,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
             , cncShiori        = mShioriConfig
             , cncScriptHandler = displayScript
             , cncContextMenu   = contextMenu
+            , cncMotionTick    = motionTickHandler
             -- Balloon integration
             , cncBalloonWindow   = bsWindow bs
             , cncBalloonInputs   = InputHandlers
