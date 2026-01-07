@@ -46,7 +46,8 @@ import qualified GI.GdkPixbuf               as Pixbuf
 import qualified GI.GLib                    as GLib
 import qualified GI.Gtk                     as Gtk
 
-import           Kokage.Animation           ( AnimationState(..), newAnimationState, tickAnimations, compositeAnimation, ImageCache )
+import           Kokage.Animation           ( AnimationState(..), newAnimationState, tickAnimations, compositeAnimation, ImageCache
+                                            , invokeRunonce, invokeAlways, clearAnimations )
 import           Kokage.Balloon             ( BalloonState, BalloonDirection(..)
                                             , newBalloonState
                                             , newBalloonStateWithSurface
@@ -260,10 +261,15 @@ setCharacterSurface cs shell newSurfId = do
             h <- Pixbuf.pixbufGetHeight pixbuf
 
             -- Update animation state
-            -- Reset animations for the new surface
+            -- Clear and reinitialize animations for the new surface
             let animState = csAnimState cs
-            writeIORef (asActiveAnims animState) []
+            clearAnimations animState
             writeIORef (asBasePixbuf animState) (Just pixbuf)
+            
+            -- Invoke runonce and always animations for this surface
+            activeAnims0 <- invokeRunonce surfDef []
+            activeAnims1 <- invokeAlways surfDef activeAnims0
+            writeIORef (asActiveAnims animState) activeAnims1
 
             -- Schedule GTK operations on main thread
             _ <- GLib.idleAdd GLib.PRIORITY_HIGH $ do
@@ -299,7 +305,7 @@ tickCharacter cs shell delta = do
         currentTimers <- readIORef (asPeriodicState animState)
 
         -- Tick animations
-        (newAnims, newTimers, needsRedraw) <- tickAnimations shell surfDef activeAnims currentTimers delta
+        (newAnims, newTimers, needsRedraw) <- tickAnimations animState shell surfDef activeAnims currentTimers delta
         writeIORef (asActiveAnims animState) newAnims
         writeIORef (asPeriodicState animState) newTimers
 
