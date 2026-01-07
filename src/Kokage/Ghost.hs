@@ -41,6 +41,7 @@ import qualified GI.Gdk                     as Gdk
 import qualified GI.Gio                     as Gio
 
 import           Kokage.Config              ( BaseDir(..) )
+import qualified Kokage.Install             as Install
 import           Types.Ghost                ( Ghost(..), Shell(..)
                                             , shellDescriptName, shellDescript
                                             )
@@ -175,9 +176,9 @@ findBalloonDir (BaseDir baseDir) _ghost = do
 
 -- | List all available balloons with their names and paths.
 -- Returns list of (display name, path) pairs.
-listAvailableBalloons :: BaseDir -> IO [(Text, Text)]
-listAvailableBalloons (BaseDir baseDir) = do
-  let balloonBaseDir = baseDir </> "balloon"
+listAvailableBalloons :: Install.BaseDir -> IO [(Text, Text)]
+listAvailableBalloons installBaseDir = do
+  let balloonBaseDir = Install.bdBalloon installBaseDir
   exists <- doesDirectoryExist balloonBaseDir
   if not exists
     then return []

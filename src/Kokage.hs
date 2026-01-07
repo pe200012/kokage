@@ -153,8 +153,13 @@ import           Kokage.Event                    ( BalloonMoveMode(..)
                                                  , setupCharacterNetwork
                                                  , setupGlobalNetwork
                                                  )
-import           Kokage.Install                  ( BaseDir(..), InstallResult(..), installNar )
-import           Kokage.Menu                     ( createContextMenu, menuStyleFromShellDescript )
+import           Kokage.Install                  ( InstallResult(..), installNar )
+import qualified Kokage.Install                  as Install
+import           Kokage.Ghost                    ( listAvailableBalloons )
+import           Kokage.Config                   ( BaseDir(..) )
+import           Kokage.Menu                     ( createContextMenu, menuStyleFromShellDescript
+                                                 , MenuConfig(..), emptyMenuConfig
+                                                 )
 import           Kokage.Platform                 ( Edge(..)
                                                  , Layer(..)
                                                  , getWindowPosition
@@ -206,11 +211,17 @@ import           System.Directory                ( XdgDirectory(..)
 import           System.FilePath                 ( (</>), takeExtension )
 
 import           Types.Ghost                     ( CollisionRegion(..)
+                                                 , DrawMethod(..)
+                                                 , Element(..)
                                                  , Ghost(..)
                                                  , GhostDescript(..)
                                                  , Shell(..)
+                                                 , ShellDescript(..)
                                                  , SurfaceDefinition(..)
+                                                 , Surfaces(..)
+                                                 , ghostShells
                                                  , loadGhost
+                                                 , shellDescriptName
                                                  )
 import           Types.Shiori                    ( ShioriEvent(..) )
 
@@ -240,18 +251,10 @@ defaultConfig :: IO KokageConfig
 defaultConfig = do
   cwd <- getCurrentDirectory
   dataDir <- getXdgDirectory XdgData "kokage"
-  let baseDir
-        = BaseDir { bdGhost        = cwd </> "ghost"
-                  , bdBalloon      = cwd </> "balloon"
-                  , bdPlugin       = cwd </> "plugin"
-                  , bdHeadline     = cwd </> "headline"
-                  , bdCalendar     = cwd </> "calendar"
-                  , bdCalendarSkin = cwd </> "calendar" </> "skin"
-                  }
   return
     KokageConfig { configGhostPath = Nothing
                  , configLastGhost = Nothing
-                 , configBaseDir   = baseDir
+                 , configBaseDir   = BaseDir cwd
                  , configSurfaceId = 0
                  , configDataDir   = dataDir
                  }
@@ -321,8 +324,8 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
 -- Returns a sorted list of ghost directory paths that contain valid ghost structure.
 -- A valid ghost has a 'ghost/master' subdirectory.
 scanGhosts :: BaseDir -> IO [ FilePath ]
-scanGhosts baseDir = do
-  let ghostDir = bdGhost baseDir
+scanGhosts (BaseDir baseDirPath) = do
+  let ghostDir = baseDirPath </> "ghost"
   exists <- doesDirectoryExist ghostDir
   if not exists
     then return []
@@ -489,7 +492,7 @@ isFirstBoot ghostPath = do
 --   2. First available balloon in global balloon directory (bdBalloon baseDir)
 --   3. Nothing if no balloons found
 findBalloonDir :: FilePath -> BaseDir -> IO (Maybe FilePath)
-findBalloonDir ghostPath baseDir = do
+findBalloonDir ghostPath (BaseDir baseDirPath) = do
   -- Check for bundled balloon first
   let bundledBalloon = ghostPath </> "balloon"
   hasBundled <- doesDirectoryExist bundledBalloon
@@ -505,7 +508,7 @@ findBalloonDir ghostPath baseDir = do
     else tryGlobalBalloon
   where
     tryGlobalBalloon = do
-      let globalBalloonDir = bdBalloon baseDir
+      let globalBalloonDir = baseDirPath </> "balloon"
       exists <- doesDirectoryExist globalBalloonDir
       if not exists
         then do
@@ -590,8 +593,19 @@ kokageMain config = do
       -- Find balloon directory for the ghost
       mBalloonDir <- findBalloonDir gPath (configBaseDir config)
 
+      -- Create Install.BaseDir from config's base directory
+      let configDir = unBaseDir (configBaseDir config)
+          installDir = Install.BaseDir
+            { Install.bdGhost        = configDir </> "ghost"
+            , Install.bdBalloon      = configDir </> "balloon"
+            , Install.bdPlugin       = configDir </> "plugin"
+            , Install.bdHeadline     = configDir </> "headline"
+            , Install.bdCalendar     = configDir </> "calendar"
+            , Install.bdCalendarSkin = configDir </> "calendar" </> "skin"
+            }
+
       -- Run the GTK application with shell (for surface switching)
-      runGtkApp ghost shell surfId mShiori gPath firstBoot vanishedCount mBalloonDir
+      runGtkApp ghost shell surfId mShiori gPath firstBoot vanishedCount mBalloonDir installDir
         `finally` cleanupShiori mShiori
   where
     justOrError :: KokageError -> Maybe a -> IO a
@@ -660,8 +674,9 @@ runGtkApp :: Ghost
           -> Bool
           -> Int
           -> Maybe FilePath
+          -> Install.BaseDir
           -> IO ()
-runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCount mBalloonDir = do
+runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCount mBalloonDir installBaseDir = do
   -- Get start time for uptime tracking
   startTime <- getCurrentTime
 
@@ -696,10 +711,35 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     putStrLn "[Menu] Cancel action triggered (menu closed)"
   Gio.actionMapAddAction app cancelAction
 
+  -- "app.stick" action - toggle always-on-top for all windows
+  stickyRef <- newIORef False
+  stickAction <- Gio.simpleActionNew "stick" Nothing
+  _ <- on stickAction #activate $ \_ -> do
+    isSticky <- readIORef stickyRef
+    let newSticky = not isSticky
+    writeIORef stickyRef newSticky
+    putStrLn $ "[Menu] Stick action triggered: " <> show newSticky
+    -- Get all windows and set keep-above
+    windows <- Gtk.applicationGetWindows app
+    forM_ windows $ \win -> do
+      Gtk.windowSetDeletable win (not newSticky)
+      -- Note: GTK4 doesn't have setKeepAbove directly, we use the Platform module
+      -- For now, just log the state change
+      putStrLn $ "[Menu] Window sticky state: " <> show newSticky
+  Gio.actionMapAddAction app stickAction
+
+  -- "app.close" action - close the current ghost
+  closeAction <- Gio.simpleActionNew "close" Nothing
+  _ <- on closeAction #activate $ \_ -> do
+    putStrLn "[Menu] Close action triggered"
+    -- For now, close all windows (single ghost mode)
+    windows <- Gtk.applicationGetWindows app
+    forM_ windows Gtk.windowClose
+  Gio.actionMapAddAction app closeAction
+
   -- Register placeholder actions
   let dummyActions
         = [ "todo"
-          , "stick"
           , "update"
           , "vanish"
           , "edit_preference"
@@ -1373,7 +1413,16 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
       -- Create context menu for this character's window
       let menuStyle = menuStyleFromShellDescript (shellPath shell) (shellDescript shell)
-      contextMenu <- createContextMenu window menuStyle
+          shellList = map (\s -> (shellDescriptName (shellDescript s), T.pack (shellPath s)))
+                          (ghostShells ghost)
+          currentShellName = shellDescriptName (shellDescript shell)
+      balloonList <- listAvailableBalloons installBaseDir
+      let menuConfig = emptyMenuConfig
+            { mcShells = shellList
+            , mcCurrentShell = currentShellName
+            , mcBalloons = balloonList
+            }
+      contextMenu <- createContextMenu window menuStyle menuConfig
 
       -- Create motion controller
       motionController <- new Gtk.EventControllerMotion []
@@ -1553,16 +1602,16 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
 -- | Get the default base directories for NAR installation
 -- Uses XDG data directory (~/.local/share/kokage/)
-getDefaultBaseDir :: IO BaseDir
+getDefaultBaseDir :: IO Install.BaseDir
 getDefaultBaseDir = do
   cwd <- getCurrentDirectory
   return
-    BaseDir { bdGhost        = cwd </> "ghost"
-            , bdBalloon      = cwd </> "balloon"
-            , bdPlugin       = cwd </> "plugin"
-            , bdHeadline     = cwd </> "headline"
-            , bdCalendar     = cwd </> "calendar"
-            , bdCalendarSkin = cwd </> "calendar" </> "skin"
+    Install.BaseDir { Install.bdGhost        = cwd </> "ghost"
+            , Install.bdBalloon      = cwd </> "balloon"
+            , Install.bdPlugin       = cwd </> "plugin"
+            , Install.bdHeadline     = cwd </> "headline"
+            , Install.bdCalendar     = cwd </> "calendar"
+            , Install.bdCalendarSkin = cwd </> "calendar" </> "skin"
             }
 
 -- | Parse a hex color string like "#FF0000" or "FF0000" to RGB values (0.0-1.0)
