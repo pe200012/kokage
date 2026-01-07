@@ -85,6 +85,7 @@ setupNetwork config = do
   -- Get timer events
   secondTickE <- fromAddHandler (thSecondTick timers)
   minuteTickE <- fromAddHandler (thMinuteTick timers)
+  hourTickE <- fromAddHandler (thHourTick timers)
   motionTickE <- fromAddHandler (thMotionTick timers)
 
   -- Handle timer events
@@ -112,8 +113,21 @@ setupNetwork config = do
               ]
         sendShioriAndLog mShiori OnMinuteChange refs
 
+  let handleHourTick lt = do
+        logHourTick lt
+        now <- getCurrentTime
+        let uptime = case mShiori of
+              Just sc -> getUptimeHours (scStartTime sc) now
+              Nothing -> 0
+            refs = Map.fromList
+              [ (0, T.pack $ show uptime)
+              , (1, "0"), (2, "0"), (3, "1")
+              ]
+        sendShioriAndLog mShiori OnHourTimeSignal refs
+
   reactimate $ handleSecondTick <$> secondTickE
   reactimate $ handleMinuteTick <$> minuteTickE
+  reactimate $ handleHourTick <$> hourTickE
 
   -- Handle mouse motion events with throttling via Behavior + sampling
   -- Instead of sending OnMouseMove on every motion event, we:
@@ -395,6 +409,7 @@ setupGlobalNetwork config = do
 
   secondTickE <- fromAddHandler (thSecondTick timers)
   minuteTickE <- fromAddHandler (thMinuteTick timers)
+  hourTickE <- fromAddHandler (thHourTick timers)
 
   let handleSecondTick lt = do
         logSecondTick lt
@@ -418,7 +433,20 @@ setupGlobalNetwork config = do
               [ (0, T.pack $ show uptime)
               , (1, "0"), (2, "0"), (3, "1")
               ]
-        sendShioriWithCallback mShiori OnMinuteChange refs handler
+        sendShioriAndLog mShiori OnMinuteChange refs
+
+  let handleHourTick lt = do
+        logHourTick lt
+        now <- getCurrentTime
+        let uptime = case mShiori of
+              Just sc -> getUptimeHours (scStartTime sc) now
+              Nothing -> 0
+            refs = Map.fromList
+              [ (0, T.pack $ show uptime)
+              , (1, "0"), (2, "0"), (3, "1")
+              ]
+        sendShioriAndLog mShiori OnHourTimeSignal refs
 
   reactimate $ handleSecondTick <$> secondTickE
   reactimate $ handleMinuteTick <$> minuteTickE
+  reactimate $ handleHourTick <$> hourTickE

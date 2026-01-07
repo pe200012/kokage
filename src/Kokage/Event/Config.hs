@@ -49,6 +49,7 @@ data TimerHandlers
   = TimerHandlers
   { thSecondTick :: AddHandler LocalTime  -- ^ Fires every second with current time
   , thMinuteTick :: AddHandler LocalTime  -- ^ Fires every minute with current time
+  , thHourTick   :: AddHandler LocalTime  -- ^ Fires every hour with current time
   , thMotionTick :: AddHandler ()         -- ^ Fires every 100ms for mouse motion sampling
   }
 

@@ -14,6 +14,8 @@ description: ukagaka baseware for Linux
 
 dependencies:
   - base >= 4.7 && < 5
+  - aeson # JSON serialization for preferences
+  - async
   - text
   - containers
   - bytestring

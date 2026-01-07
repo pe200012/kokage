@@ -1258,6 +1258,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- Create global timer event handlers
     ( secondTickHandler, fireSecondTick ) <- newAddHandler
     ( minuteTickHandler, fireMinuteTick ) <- newAddHandler
+    ( hourTickHandler, fireHourTick ) <- newAddHandler
     ( motionTickHandler, fireMotionTick ) <- newAddHandler
 
     -- Helper to get current local time
@@ -1278,6 +1279,12 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       fireMinuteTick lt
       return True
 
+    -- Set up hour timer (fires every 3600000ms = 1 hour)
+    _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3600000 $ do
+      lt <- getLocalTime'
+      fireHourTick lt
+      return True
+
     -- Set up motion tick timer (fires every 100ms for mouse motion sampling)
     _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 100 $ do
       fireMotionTick ()
@@ -1296,6 +1303,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           { gncTimers        = TimerHandlers
               { thSecondTick = secondTickHandler
               , thMinuteTick = minuteTickHandler
+              , thHourTick   = hourTickHandler
               , thMotionTick = motionTickHandler
               }
           , gncShiori        = mShioriConfig

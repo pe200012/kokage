@@ -15,6 +15,7 @@ module Kokage.Event.Shiori
   , logDragEvent
   , logSecondTick
   , logMinuteTick
+  , logHourTick
     -- * Time utilities
   , formatTime
   , getUptimeHours
@@ -130,6 +131,11 @@ logSecondTick lt
 logMinuteTick :: LocalTime -> IO ()
 logMinuteTick lt
   = putStrLn $ "[Timer] Minute tick: " <> formatTime (localTimeOfDay lt)
+
+-- | Log an hour timer event.
+logHourTick :: LocalTime -> IO ()
+logHourTick lt
+  = putStrLn $ "[Timer] Hour tick: " <> formatTime (localTimeOfDay lt)
 
 -- | Build SHIORI Reference map for mouse click events.
 -- Reference format:

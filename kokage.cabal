@@ -28,26 +28,41 @@ library
       Kokage
       Kokage.Animation
       Kokage.Balloon
+      Kokage.Balloon.Render
       Kokage.Balloon.Surface
+      Kokage.Balloon.Types
       Kokage.Character
       Kokage.Collision
+      Kokage.Config
       Kokage.Event
+      Kokage.Event.Config
+      Kokage.Event.Shiori
+      Kokage.Event.Types
+      Kokage.Ghost
       Kokage.ImageCache
+      Kokage.Init
       Kokage.InputRegion
       Kokage.Install
       Kokage.Menu
       Kokage.Platform
+      Kokage.Preferences
       Kokage.SakuraScript.Interpreter
       Kokage.SakuraScript.Parser
       Kokage.Shiori.WineBridge
+      Kokage.Sound
       Kokage.Surface
       Kokage.Transparency
       Types.Balloon
       Types.Ghost
+      Types.Ghost.Descript
+      Types.Ghost.Shell
+      Types.Ghost.Surface
       Types.Install
       Types.Plugin
       Types.SakuraScript
       Types.Shiori
+      Utils.Charset
+      Utils.Text
   other-modules:
       Paths_kokage
   autogen-modules:
@@ -57,6 +72,8 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0
   build-depends:
       X11
+    , aeson
+    , async
     , base >=4.7 && <5
     , base64-bytestring
     , bytestring
@@ -102,6 +119,8 @@ executable animation-test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       X11
+    , aeson
+    , async
     , base >=4.7 && <5
     , base64-bytestring
     , bytestring
@@ -148,6 +167,8 @@ executable kokage
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       X11
+    , aeson
+    , async
     , base >=4.7 && <5
     , base64-bytestring
     , bytestring
@@ -195,6 +216,8 @@ executable shiori-test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       X11
+    , aeson
+    , async
     , base >=4.7 && <5
     , base64-bytestring
     , bytestring
@@ -251,6 +274,8 @@ test-suite kokage-test
       hspec-discover:hspec-discover
   build-depends:
       X11
+    , aeson
+    , async
     , base >=4.7 && <5
     , base64-bytestring
     , bytestring
