@@ -28,7 +28,7 @@ import           Data.Time.Clock          ( UTCTime, diffUTCTime )
 import           Data.Time.LocalTime      ( LocalTime(..), TimeOfDay(..) )
 
 import           Kokage.Event.Config      ( ShioriConfig(..) )
-import           Kokage.Event.Types       ( ClickEvent(..), CollisionHit(..), DragEvent(..) )
+import           Types.Event              ( ClickEvent(..), CollisionHit(..), DragEvent(..) )
 import           Kokage.Shiori.WineBridge ( sendEvent )
 
 import           Types.Ghost              ( CollisionRegion(..) )

@@ -7,12 +7,12 @@
 --
 -- This module re-exports types from submodules for convenience:
 --
--- * "Kokage.Event.Types" - Event types (ClickEvent, DragEvent, etc.)
+-- * "Types.Event" - Event types (ClickEvent, DragEvent, etc.)
 -- * "Kokage.Event.Config" - Configuration types (NetworkConfig, ShioriConfig, etc.)
 -- * "Kokage.Event.Shiori" - SHIORI dispatch helpers
 module Kokage.Event
   ( -- * Re-exports
-    module Kokage.Event.Types
+    module Types.Event
   , module Kokage.Event.Config
   , module Kokage.Event.Shiori
     -- * Network Setup
@@ -37,7 +37,7 @@ import           Kokage.Collision           ( findCollisionAt )
 import           Kokage.Event.Config
 import           Kokage.Event.Shiori
 -- Re-export submodules
-import           Kokage.Event.Types
+import           Types.Event
 
 import           Reactive.Banana            ( (<@)
                                             , (<@>)

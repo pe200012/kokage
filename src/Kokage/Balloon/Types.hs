@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StrictData #-}
 
--- | Balloon type definitions.
+-- | Balloon runtime type definitions.
 module Kokage.Balloon.Types
   ( -- * Choice types
     BalloonChoice(..)

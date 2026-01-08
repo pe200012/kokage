@@ -1,7 +1,7 @@
 {-# LANGUAGE StrictData #-}
 
 -- | Event types for Kokage FRP network.
-module Kokage.Event.Types
+module Types.Event
   ( -- * Click events
     ClickEvent(..)
   , CollisionHit(..)
