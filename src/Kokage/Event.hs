@@ -212,7 +212,7 @@ setupNetwork config = do
             sendShioriAndLog mShiori OnMouseClick refs
 
   reactimate $ handleCollisionHit <$> hitE
-  reactimate $ (putStrLn "[Click] Suppressed (drag exceeded threshold)") <$ suppressedE
+  reactimate $ putStrLn "[Click] Suppressed (drag exceeded threshold)" <$ suppressedE
 
   -- Drag event logging
   let mkDragStart ( x, y ) = DragEvent DragStart x y 0 0
@@ -330,9 +330,9 @@ setupCharacterNetwork config = do
   dragStartB :: Behavior ( Double, Double ) <- stepper ( 0, 0 ) dragBeginE
 
   let exceedsThreshold ( ox, oy ) = isDragSignificant ox oy
-      resetToFalse = const False <$> dragBeginE
+      resetToFalse = False <$ dragBeginE
       exceedsUpdate = filterE exceedsThreshold dragUpdateE
-      setToTrue = const True <$> exceedsUpdate
+      setToTrue = True <$ exceedsUpdate
       dragExceededE = unionWith (||) resetToFalse setToTrue
 
   dragExceededB :: Behavior Bool <- stepper False dragExceededE
@@ -353,7 +353,7 @@ setupCharacterNetwork config = do
   -- Unified click handlers using handleMouseClick from Event.Shiori
   reactimate $ (\hit -> handleMouseClick mShiori OnMouseClick scopeId hit handler) <$> singleHitE
   reactimate $ (\hit -> handleMouseClick mShiori OnMouseDoubleClick scopeId hit handler) <$> doubleHitE
-  reactimate $ (putStrLn "[Click] Suppressed (drag exceeded threshold)") <$ suppressedE
+  reactimate $ putStrLn "[Click] Suppressed (drag exceeded threshold)" <$ suppressedE
 
   -- Drag logging
   let mkDragStart ( x, y ) = DragEvent DragStart x y 0 0
@@ -384,7 +384,7 @@ setupCharacterNetwork config = do
       balloonMoveMode = cncBalloonMoveMode config
 
   balloonCloseE <- signalE0R balloonWindow #closeRequest True
-  reactimate $ (putStrLn "[Balloon] Close request (hidden)") <$ balloonCloseE
+  reactimate $ putStrLn "[Balloon] Close request (hidden)" <$ balloonCloseE
 
   balloonDragBeginE <- fromAddHandler (ihDragBegin balloonInputs)
   balloonDragUpdateE <- fromAddHandler (ihDragUpdate balloonInputs)

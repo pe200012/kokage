@@ -43,6 +43,7 @@ import           Types.Install              ( InstallType(..)
 import           Types.Ghost                ( detectCharsetFromBytes
                                             , convertToUtf8
                                             )
+import Data.Char (isAsciiUpper)
 
 --------------------------------------------------------------------------------
 -- Types
@@ -178,7 +179,7 @@ findEntry name entries =
   in find (\e -> map toLower (eRelativePath e) == nameLower) entries
   where
     toLower c
-      | c >= 'A' && c <= 'Z' = toEnum (fromEnum c + 32)
+      | isAsciiUpper c = toEnum (fromEnum c + 32)
       | otherwise = c
     find _ [] = Nothing
     find p (x:xs)
@@ -298,7 +299,7 @@ extractArchive targetDir archive = do
         BL.writeFile fullPath content
   where
     toLower c
-      | c >= 'A' && c <= 'Z' = toEnum (fromEnum c + 32)
+      | isAsciiUpper c = toEnum (fromEnum c + 32)
       | otherwise = c
     isDirectoryPath p = not (null p) && last p `elem` ['/', '\\']
     normalizePathSeparators = map (\c -> if c == '\\' then '/' else c)
@@ -360,7 +361,7 @@ installBundledContent base archive inst = do
     isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
 
     toLower c
-      | c >= 'A' && c <= 'Z' = toEnum (fromEnum c + 32)
+      | isAsciiUpper c = toEnum (fromEnum c + 32)
       | otherwise = c
 
     isDirectoryPath p = not (null p) && last p `elem` ['/', '\\']

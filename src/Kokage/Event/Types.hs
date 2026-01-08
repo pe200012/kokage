@@ -53,8 +53,8 @@ data DragEvent
   deriving ( Show, Eq )
 
 -- | A timer event with the current local time.
-data TimerEvent
-  = TimerEvent { teTime :: !LocalTime  -- ^ Current local time when timer fired
+newtype TimerEvent
+  = TimerEvent { teTime :: LocalTime  -- ^ Current local time when timer fired
                }
   deriving ( Show, Eq )
 

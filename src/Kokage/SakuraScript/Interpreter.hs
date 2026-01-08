@@ -365,9 +365,7 @@ handleSurface state surfaceCmd = do
         Nothing  -> cbAnimClear (esCallbacks state) scope Nothing
 
     SurfaceAnimResume mAnimId ->
-      case mAnimId of
-        Just aid -> cbAnimStart (esCallbacks state) scope aid
-        Nothing  -> return ()
+      forM_ mAnimId (cbAnimStart (esCallbacks state) scope)
 
     SurfaceAnimOffset _animId _x _y ->
       -- Animation offset is handled at rendering level
@@ -630,8 +628,8 @@ handleEvent state eventCmd = case eventCmd of
 
 -- | Handle font commands
 handleFont :: InterpreterState -> FontCmd -> IO ()
-handleFont state fontCmd =
-  cbSetFont (esCallbacks state) fontCmd
+handleFont state =
+  cbSetFont (esCallbacks state)
 
 --------------------------------------------------------------------------------
 -- Sound Handling

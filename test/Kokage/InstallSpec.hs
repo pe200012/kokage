@@ -228,7 +228,7 @@ mkBaseDir tmpDir = BaseDir
 
 -- | Create a test NAR archive with given files
 createTestNar :: [(FilePath, String)] -> Archive
-createTestNar files = foldr addFile emptyArchive files
+createTestNar = foldr addFile emptyArchive
   where
     addFile (path, content) arch =
       let entry = toEntry path 0 (BL.fromStrict $ TE.encodeUtf8 $ T.pack content)

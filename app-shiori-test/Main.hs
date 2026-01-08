@@ -264,7 +264,7 @@ logResponse response = do
   let status = srsStatus response
   case status of
     Status200 -> do
-      logSuccess $ "  Status: 200 OK"
+      logSuccess "  Status: 200 OK"
       case srsValue response of
         Nothing  -> logInfo "  Value: (empty)"
         Just val -> do
@@ -296,7 +296,7 @@ logResponse response = do
 --------------------------------------------------------------------------------
 
 logInfo :: Text -> IO ()
-logInfo msg = TIO.putStrLn msg
+logInfo = TIO.putStrLn
 
 logSuccess :: Text -> IO ()
 logSuccess msg = TIO.putStrLn $ "[OK] " <> msg

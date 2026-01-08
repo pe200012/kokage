@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -31,7 +30,7 @@ module Kokage.Animation
   , ImageCache
   ) where
 
-import           Control.Monad              ( foldM, when )
+import           Control.Monad              ( foldM, when, foldM_, unless )
 import           Data.Int                   ( Int32 )
 import           Data.IORef                 ( IORef, newIORef, readIORef, writeIORef, modifyIORef' )
 import           Data.List                  ( sortBy )
@@ -127,7 +126,7 @@ tickAnimations animState _shell surfDef activeAnims currentTimers delta = do
   case mExcl of
     Just exclId -> do
       let stillRunning = any (\a -> animId (aaDef a) == exclId) updatedAnims
-      when (not stillRunning) $
+      unless stillRunning $
         writeIORef (asExclusiveAnim animState) Nothing
     Nothing -> return ()
 
@@ -232,7 +231,7 @@ isBindInterval _ = False
 
 -- | Execute animation commands (start/stop other animations).
 executeCommands :: SurfaceDefinition -> [ActiveAnim] -> [AnimCommand] -> IO [ActiveAnim]
-executeCommands surfDef anims cmds = foldM execCmd anims cmds
+executeCommands surfDef = foldM execCmd
   where
     execCmd acc cmd = case cmd of
       CmdStart aid -> do
@@ -419,9 +418,6 @@ compositeAnimation shell cache basePixbuf anims = do
                 1.0
                 Pixbuf.InterpTypeBilinear
                 255
-
-    foldM_ :: Monad m => (a -> b -> m a) -> a -> [b] -> m ()
-    foldM_ f a xs = foldM f a xs >> return ()
 
 -- | Start a single animation by ID. Returns the new active animation if started.
 startAnimation :: Animation -> Bool -> IO (Maybe ActiveAnim)

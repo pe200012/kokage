@@ -212,7 +212,7 @@ lastGhostPersistenceSpec = describe "lastGhost persistence" $ do
 
 -- | Create a BaseDir in a temp directory
 mkBaseDir :: FilePath -> BaseDir
-mkBaseDir tmpDir = BaseDir tmpDir
+mkBaseDir = BaseDir
 
 -- | Get the ghost directory path where ghosts should be created
 ghostDir :: BaseDir -> FilePath

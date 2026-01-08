@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Pure collision detection functions.
 -- No IO, no GTK dependencies - just geometry.
 module Kokage.Collision ( hitTestShape, findCollisionAt, pointInPolygon ) where
@@ -69,4 +67,4 @@ findCollisionAt x y regions
   = let
       sorted = sortBy (comparing crIndex) regions
     in 
-      find (\cr -> hitTestShape x y (crShape cr)) sorted
+      find (hitTestShape x y . crShape) sorted

@@ -35,11 +35,12 @@ module Kokage.Character
   , cancelSurfaceLifeTimer
   ) where
 
-import           Control.Monad              ( void, when )
+import           Control.Monad              ( unless, void, when )
 import           Data.Int                   ( Int32 )
 import           Data.IORef                 ( IORef, newIORef, readIORef, writeIORef )
 import           Data.Map.Strict            ( Map )
 import qualified Data.Text                  as T
+import           Data.Maybe                 ( fromMaybe )
 import           Data.Word                  ( Word32 )
 
 import           Data.GI.Base               ( AttrOp((:=)), new )
@@ -49,8 +50,8 @@ import qualified GI.GdkPixbuf               as Pixbuf
 import qualified GI.GLib                    as GLib
 import qualified GI.Gtk                     as Gtk
 
-import           Kokage.Animation           ( AnimationState(..), newAnimationState, tickAnimations, compositeAnimation, ImageCache
-                                            , invokeRunonce, invokeAlways, clearAnimations )
+import           Kokage.Animation           ( AnimationState(..), newAnimationState, tickAnimations, compositeAnimation
+                                             , invokeRunonce, invokeAlways, clearAnimations )
 import           Kokage.Balloon             ( BalloonState, BalloonDirection(..)
                                             , newBalloonState
                                             , newBalloonStateWithSurface
@@ -219,7 +220,7 @@ destroyCharacter cs = do
 showCharacter :: CharacterState -> IO ()
 showCharacter cs = do
   visible <- readIORef (csVisible cs)
-  when (not visible) $ do
+  unless visible $ do
     isLayerShell <- readIORef (csLayerShell cs)
     if isLayerShell
       then do
@@ -249,11 +250,11 @@ isCharacterVisible = readIORef . csVisible
 -- This is thread-safe and schedules GTK operations on the main thread.
 setCharacterSurface :: CharacterState -> Shell -> Int -> IO ()
 setCharacterSurface cs shell newSurfId = do
-  currentId <- readIORef (csCurrentSurface cs)
+  _currentId <- readIORef (csCurrentSurface cs)
   -- Allow reloading same surface to reset animations if needed (e.g., runonce)
   -- But for optimization we check if ID is different OR if forced refresh is desired.
   -- For now, always reload to support surface-specific animations correctly.
-  when (True) $ do
+  do
     let surfaces = shellSurfaces shell
     case findSurfaceById newSurfId surfaces of
       Nothing -> putStrLn $ "[Character " <> show (csScopeId cs)
@@ -575,13 +576,13 @@ getBalloonOffset shell scopeId surfId dir =
         Just x  -> x
         Nothing -> case fst charOffset of
           Just x  -> x
-          Nothing -> maybe 0 id (fst genericOffset)
+          Nothing -> fromMaybe 0 (fst genericOffset)
 
       resolveY = case snd surfOffset of
         Just y  -> y
         Nothing -> case snd charOffset of
           Just y  -> y
-          Nothing -> maybe 0 id (snd genericOffset)
+          Nothing -> fromMaybe 0 (snd genericOffset)
 
   in (resolveX, resolveY)
 

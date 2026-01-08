@@ -415,11 +415,9 @@ parseSurfaceIds txt
   = let
       stripped = T.strip txt
       ( isAppend, numPart )
-        = if "surface.append" `T.isPrefixOf` stripped
-          then ( True, T.drop 14 stripped )  -- "surface.append" is 14 chars
-          else if "surface" `T.isPrefixOf` stripped
-            then ( False, T.drop 7 stripped )  -- "surface" is 7 chars
-            else ( False, stripped )
+        | "surface.append" `T.isPrefixOf` stripped = ( True, T.drop 14 stripped )
+        | "surface" `T.isPrefixOf` stripped = ( False, T.drop 7 stripped )
+        | otherwise = ( False, stripped )
     in
       ( isAppend, parseIdSpec numPart )
   where

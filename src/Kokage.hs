@@ -772,7 +772,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- Build character map from successfully created characters
     let characters
           = Map.fromList
-          $ concat [ maybe [] (\c -> [ ( 0, c ) ]) mSakura, maybe [] (\c -> [ ( 1, c ) ]) mKero ]
+          $ maybe [] (\c -> [ ( 0, c ) ]) mSakura ++ maybe [] (\c -> [ ( 1, c ) ]) mKero
 
     when (Map.null characters) $ do
       putStrLn "Error: No characters could be created"
@@ -826,7 +826,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
         hideBalloonIfNoChoices = do
           -- Check if any balloon has choices
           anyHasChoices <- or
-            <$> mapM (\cs -> hasChoices (getCharacterBalloon cs)) (Map.elems characters)
+            <$> mapM (hasChoices . getCharacterBalloon) (Map.elems characters)
           unless anyHasChoices $ do
             -- wait for a short moment to ensure user sees the completed text
             _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
@@ -999,7 +999,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 FontChoiceNormal _ -> return ()  -- Choice styling stored in balloon state
                 FontChoiceHover _  -> return ()  -- Choice hover styling
           -- Sound callbacks
-          , cbPlaySound    = \file -> playSound soundState file
+          , cbPlaySound    = playSound soundState
           , cbStopSound    = stopSound soundState
           , cbSoundAction  = \action file -> do
               case action of
@@ -1330,8 +1330,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- Helper to get current local time
     let getLocalTime' = do
           tz <- getCurrentTimeZone
-          utc <- getCurrentTime
-          return $ utcToLocalTime tz utc
+          utcToLocalTime tz <$> getCurrentTime
 
     -- Set up second timer (fires every 1000ms = 1 second)
     _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 1000 $ do
@@ -1402,22 +1401,22 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
       -- Create drag gesture (for left-click drag/move)
       dragGesture <- new Gtk.GestureDrag []
-      _ <- on dragGesture #dragBegin $ \x y -> fireDragBegin ( x, y )
-      _ <- on dragGesture #dragUpdate $ \ox oy -> fireDragUpdate ( ox, oy )
-      _ <- on dragGesture #dragEnd $ \ox oy -> fireDragEnd ( ox, oy )
+      _ <- on dragGesture #dragBegin $ curry fireDragBegin
+      _ <- on dragGesture #dragUpdate $ curry fireDragUpdate
+      _ <- on dragGesture #dragEnd $ curry fireDragEnd
       Gtk.widgetAddController picture dragGesture
 
       -- Create left-click gesture (Button 1) for click count detection (single/double click)
       leftClickGesture <- new Gtk.GestureClick [ #button := 1 ]
-      _ <- on leftClickGesture #pressed $ \nPress x y -> do
+      _ <- on leftClickGesture #pressed $ \nPress x y ->
         fireLeftClick ( fromIntegral nPress, x, y )
       Gtk.widgetAddController picture leftClickGesture
 
       -- Create drag gesture for balloon
       balloonDragGesture <- new Gtk.GestureDrag []
-      _ <- on balloonDragGesture #dragBegin $ \x y -> fireBalloonDragBegin ( x, y )
-      _ <- on balloonDragGesture #dragUpdate $ \ox oy -> fireBalloonDragUpdate ( ox, oy )
-      _ <- on balloonDragGesture #dragEnd $ \ox oy -> fireBalloonDragEnd ( ox, oy )
+      _ <- on balloonDragGesture #dragBegin $ curry fireBalloonDragBegin
+      _ <- on balloonDragGesture #dragUpdate $ curry fireBalloonDragUpdate
+      _ <- on balloonDragGesture #dragEnd $ curry fireBalloonDragEnd
       Gtk.widgetAddController (bsDrawArea bs) balloonDragGesture
 
       -- Create left-click gesture for balloon
@@ -1428,7 +1427,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
       -- Create motion controller for balloon
       balloonMotionController <- new Gtk.EventControllerMotion []
-      _ <- on balloonMotionController #motion $ \x y -> fireBalloonMotion ( x, y )
+      _ <- on balloonMotionController #motion $ curry fireBalloonMotion
       Gtk.widgetAddController (bsDrawArea bs) balloonMotionController
 
       -- Create right-click gesture (Button 3) for context menu
@@ -1452,7 +1451,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
       -- Create motion controller
       motionController <- new Gtk.EventControllerMotion []
-      _ <- on motionController #motion $ \x y -> fireMotion ( x, y )
+      _ <- on motionController #motion $ curry fireMotion
       Gtk.widgetAddController picture motionController
 
       -- Create DropTarget for NAR file drops (only on sakura)
@@ -1493,9 +1492,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       -- Get collision regions from current surface
       currentSurfId <- readIORef (csCurrentSurface cs)
       let surfaces   = shellSurfaces shell
-          collisions = case findSurfaceById currentSurfId surfaces of
-            Nothing -> []
-            Just sd -> sdCollisions sd
+          collisions = maybe [] sdCollisions (findSurfaceById currentSurfId surfaces)
 
       -- Create move mode based on layer-shell status
       isLayerShell <- readIORef (csLayerShell cs)
@@ -1507,7 +1504,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 let newX = currentX + round dx
                     newY = currentY + round dy
                 writeIORef (csPosition cs) ( newX, newY )
-                _ <- setWindowPosition window newX newY
+                void $ setWindowPosition window newX newY
                 -- Update balloon position after character moves
                 updateBalloonPosition cs dx dy
           return $ MoveLayerShell updatePosition
@@ -1532,8 +1529,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 let newX = currentX + round dx
                     newY = currentY + round dy
                 writeIORef (bsPosition bs) ( newX, newY )
-                _ <- setWindowPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
-                return ()
+                void $ setWindowPosition (bsWindow bs) (fromIntegral newX) (fromIntegral newY)
           return $ BalloonMoveLayerShell updateBalloonPos
         else do
           let beginBalloonMove :: Double -> Double -> IO ()
@@ -1543,7 +1539,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 disp <- MaybeT Gdk.displayGetDefault
                 seat <- MaybeT $ Gdk.displayGetDefaultSeat disp
                 device <- MaybeT $ Gdk.seatGetPointer seat
-                MaybeT $ pure <$> Gdk.toplevelBeginMove toplevel device 0 x y 0
+                lift $ void $ Gdk.toplevelBeginMove toplevel device 0 x y 0
           return $ BalloonMoveToplevel beginBalloonMove
 
       -- Build unified character+balloon network config
@@ -1601,9 +1597,9 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           surfSize <- readIORef (csSurfaceSize cs)
           let pos = calcInitialPosition ghostDesc scopeId surfSize screenGeom
           putStrLn $ "[Position] Character " <> show scopeId <> " initial position: " <> show pos
-          setCharacterPosition cs (fst pos) (snd pos)
+          uncurry (setCharacterPosition cs) pos
       Nothing
-       -> putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
+        -> putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
 
     -- Show all characters and set always-on-top
     forM_ (Map.elems characters) showCharacter

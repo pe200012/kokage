@@ -44,6 +44,7 @@ import           Control.Exception          ( SomeException
                                             , try
                                             )
 import           Control.Monad              ( void, when )
+import           Data.Maybe                 ( isNothing )
 
 import qualified Data.ByteString.Base64     as B64
 import qualified Data.ByteString.Char8      as BS8
@@ -277,7 +278,7 @@ unloadShiori ws = do
 sendRequest :: WineShiori -> ShioriRequest -> IO (Either String ShioriResponse)
 sendRequest ws req = do
   -- Check if SHIORI is loaded
-  when (wsDllPath ws == Nothing) $
+  when (isNothing (wsDllPath ws)) $
     return ()  -- Will fail at bridge level
   
   -- Serialize and Base64 encode

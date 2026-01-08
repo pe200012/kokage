@@ -710,7 +710,7 @@ initBalloonAlwaysOnTop bs = do
 showBalloon :: BalloonState -> IO ()
 showBalloon bs = do
   visible <- readIORef (bsVisible bs)
-  when (not visible) $ do
+  unless visible $ do
     -- Schedule GTK operations on main thread
     _ <- GLib.idleAdd GLib.PRIORITY_HIGH $ do
       Gtk.windowPresent (bsWindow bs)
@@ -718,7 +718,7 @@ showBalloon bs = do
       -- Apply always-on-top if not using layer-shell
       -- This needs to be done after the window is realized/shown
       isLayerShell <- readIORef (bsLayerShell bs)
-      when (not isLayerShell) $ do
+      unless isLayerShell $ do
         x11Success <- setWindowAlwaysOnTop (bsWindow bs) True
         when x11Success $
           putStrLn "[Balloon] Window set to always-on-top (X11)"
@@ -1152,7 +1152,7 @@ scrollDown bs = do
 -- When enabled (default), the balloon automatically scrolls to show the last
 -- line of text when new text is added that would overflow the visible area.
 setAutoScroll :: BalloonState -> Bool -> IO ()
-setAutoScroll bs flag = writeIORef (bsAutoScroll bs) flag
+setAutoScroll bs = writeIORef (bsAutoScroll bs)
 
 -- | Get current auto-scroll setting.
 getAutoScroll :: BalloonState -> IO Bool

@@ -37,6 +37,8 @@ import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
 import           Types.SakuraScript
+import Data.Functor (($>))
+import Data.Maybe (fromMaybe)
 
 --------------------------------------------------------------------------------
 -- Parser type
@@ -127,13 +129,13 @@ pSurfaceCmd = choice [ pSurfaceChange, pSurfaceAnim, pSurfaceMove4, pSurfaceMove
 
 -- | Parse \4 - move to screen center
 pSurfaceMove4 :: Parser SurfaceCmd
-pSurfaceMove4 = char '4' *> pure (SurfaceMove defaultMoveSpec { moveBase = MoveBaseDesktop })
+pSurfaceMove4 = char '4' $> SurfaceMove defaultMoveSpec { moveBase = MoveBaseDesktop }
   where
     defaultMoveSpec = MoveSpec PosUnchanged PosUnchanged Nothing MoveBaseCurrent False
 
 -- | Parse \5 - move to random position
 pSurfaceMove5 :: Parser SurfaceCmd
-pSurfaceMove5 = char '5' *> pure (SurfaceMove defaultMoveSpec { moveBase = MoveBaseDesktop })
+pSurfaceMove5 = char '5' $> SurfaceMove defaultMoveSpec { moveBase = MoveBaseDesktop }
   where
     defaultMoveSpec = MoveSpec PosUnchanged PosUnchanged Nothing MoveBaseCurrent False
 
@@ -206,7 +208,7 @@ pMoveSpec async = do
   y <- pCursorPos
   mTime <- optional (pComma *> pInt)
   mBase <- optional (pComma *> pMoveBase)
-  pure $ MoveSpec x y mTime (maybe MoveBaseCurrent id mBase) async
+  pure $ MoveSpec x y mTime (fromMaybe MoveBaseCurrent mBase) async
 
 -- | Parse move base
 pMoveBase :: Parser MoveBase
@@ -232,26 +234,25 @@ pSurfaceBangAnim = string "anim" *> pComma *> choice
     pAnimStart = string "start" *> pComma *> do
       animId <- pInt
       pure $ SurfaceAnim animId AnimStart
-    
+
     pAnimStop = string "stop" *> pComma *> do
       animId <- pInt
       pure $ SurfaceAnim animId AnimStop
-    
+
     pAnimWait = string "wait" *> pComma *> (SurfaceAnimWait <$> pInt)
-    
+
     pAnimClear = string "clear" *> option (SurfaceAnimClear Nothing) (pComma *> (SurfaceAnimClear . Just <$> pInt))
-    
+
     pAnimPause = string "pause" *> option (SurfaceAnimPause Nothing) (pComma *> (SurfaceAnimPause . Just <$> pInt))
-    
+
     pAnimResume = string "resume" *> option (SurfaceAnimResume Nothing) (pComma *> (SurfaceAnimResume . Just <$> pInt))
-    
+
     pAnimOffset = string "offset" *> pComma *> do
       animId <- pInt
       _ <- pComma
       x <- pInt
       _ <- pComma
-      y <- pInt
-      pure $ SurfaceAnimOffset animId x y
+      SurfaceAnimOffset animId x <$> pInt
 
 -- | Parse \![bind,...] - bind control (着せ替え)
 pSurfaceBangBind :: Parser SurfaceCmd
@@ -260,8 +261,7 @@ pSurfaceBangBind = string "bind" *> pComma *> do
   _ <- pComma
   part <- pIdentifier
   _ <- pComma
-  enabled <- pBool
-  pure $ SurfaceBind category part enabled
+  SurfaceBind category part <$> pBool
 
 pBindCategory :: Parser BindCategory
 pBindCategory = choice
@@ -275,8 +275,7 @@ pSurfaceAlignment :: Parser SurfaceCmd
 pSurfaceAlignment = string "set,align" *> pComma *> do
   target <- pAlignTarget
   _ <- pComma
-  align <- pDesktopAlign
-  pure $ SurfaceAlignment target align
+  SurfaceAlignment target <$> pDesktopAlign
 
 pAlignTarget :: Parser AlignTarget
 pAlignTarget = choice [ AlignDesktop <$ string "desktop", AlignOwner <$ string "owner" ]
@@ -319,15 +318,15 @@ pBalloonCmd
 
 -- | Parse no user break: \_! - disable/enable user break
 pNoUserBreak :: Parser BalloonCmd
-pNoUserBreak = string "_!" *> pure NoUserBreakStart
+pNoUserBreak = string "_!" $> NoUserBreakStart
 
 -- | Parse user break question: \_? - conditional user break
 pUserBreakQuestion :: Parser BalloonCmd
-pUserBreakQuestion = string "_?" *> pure NoUserBreakEnd
+pUserBreakQuestion = string "_?" $> NoUserBreakEnd
 
 -- | Parse verbatim mode: \__v - raw text mode
 pVerbatimMode :: Parser BalloonCmd
-pVerbatimMode = string "__v" *> pure VerbatimStart
+pVerbatimMode = string "__v" $> VerbatimStart
 
 -- | Parse sync section: \_s or \_s[id1,id2,...]
 pSyncSection :: Parser BalloonCmd
@@ -365,8 +364,7 @@ pCursorMove = string "_l" *> pBracketed pCursorMoveArgs
     pCursorMoveArgs = do
       x <- pCursorPos
       _ <- pComma
-      y <- pCursorPos
-      pure $ CursorMove x y
+      CursorMove x <$> pCursorPos
 
 -- | Parse balloon hide or image: \_b or \_b[...]
 pBalloonHideOrImage :: Parser BalloonCmd
@@ -413,8 +411,7 @@ pBalloonOffset :: Parser BalloonCmd
 pBalloonOffset = string "set,offset" *> pComma *> do
   x <- pInt
   _ <- pComma
-  y <- pInt
-  pure $ BalloonOffset x y
+  BalloonOffset x <$> pInt
 
 pBalloonTimeout :: Parser BalloonCmd
 pBalloonTimeout = string "set,timeout" *> pComma *> (BalloonTimeout . Just <$> pInt)
@@ -469,11 +466,11 @@ pChoiceCmd = choice [ pChoiceMarker, pChoiceEnd, pInputText, pInputCancel, pChoi
 -- This is a visual marker for choices in SSP, equivalent to a bullet point
 -- It does NOT require \q to follow - it's just a standalone marker
 pChoiceMarker :: Parser ChoiceCmd
-pChoiceMarker = string "![*]" *> pure ChoiceMarker
+pChoiceMarker = string "![*]" $> ChoiceMarker
 
 -- | Parse choice end: \* - ends choice input mode
 pChoiceEnd :: Parser ChoiceCmd
-pChoiceEnd = char '*' *> pure AnchorEnd
+pChoiceEnd = char '*' $> AnchorEnd
 
 -- | Parse input text: \__t - text input field
 pInputText :: Parser ChoiceCmd
@@ -486,7 +483,7 @@ pInputText = string "__t" *> pBracketed pInputTextArgs
 
 -- | Parse input cancel: \__c - cancel input
 pInputCancel :: Parser ChoiceCmd
-pInputCancel = string "__c" *> pure AnchorEnd
+pInputCancel = string "__c" $> AnchorEnd
 
 -- | Parse basic choice: \q[text,action]
 pChoiceBasic :: Parser ChoiceCmd
@@ -495,8 +492,7 @@ pChoiceBasic = char 'q' *> pBracketed pChoiceArgs
     pChoiceArgs = do
       text <- pChoiceText
       _ <- pComma
-      action <- pChoiceAction
-      pure $ Choice text action
+      Choice text <$> pChoiceAction
 
 -- | Parse script choice: \__q[text,script]
 pChoiceScript :: Parser ChoiceCmd
@@ -505,8 +501,7 @@ pChoiceScript = string "__q" *> pBracketed pChoiceScriptArgs
     pChoiceScriptArgs = do
       text <- pChoiceText
       _ <- pComma
-      script <- pChoiceText
-      pure $ ChoiceScript text script
+      ChoiceScript text <$> pChoiceText
 
 -- | Parse no-timeout choice: \_q[text,action]
 pChoiceNoTimeout :: Parser ChoiceCmd
@@ -515,22 +510,21 @@ pChoiceNoTimeout = string "_q" *> pBracketed pChoiceArgs
     pChoiceArgs = do
       text <- pChoiceText
       _ <- pComma
-      action <- pChoiceAction
-      pure $ ChoiceNoTimeout text action
+      ChoiceNoTimeout text <$> pChoiceAction
 
 -- | Parse anchor: \_a[id,text] or \_a[id] (start marker) or \_a (end marker)
 pAnchor :: Parser ChoiceCmd
 pAnchor = string "_a" *> choice
   [ try pAnchorInline   -- \_a[id,text] format
   , try pAnchorStart    -- \_a[id] format (start marker only)
+  , pure AnchorEnd      -- \_a without brackets = end marker
   ]
   where
     -- Inline format: \_a[id,text]
     pAnchorInline = pBracketed $ do
       anchorId <- pURLText
       _ <- pComma
-      text <- pChoiceText
-      pure $ Anchor anchorId text
+      Anchor anchorId <$> pChoiceText
     -- Start marker format: \_a[id]text\_a
     pAnchorStart = do
       anchorId <- pBracketed pURLText
@@ -602,8 +596,7 @@ pFontSize
   where
     pFontSizeRelative = do
       sign <- (id <$ char '+') <|> (negate <$ char '-')
-      n <- pInt
-      pure $ FontSizeRelative (sign n)
+      FontSizeRelative . sign <$> pInt
 
     pFontSizePercent  = do
       n <- pInt
@@ -648,7 +641,7 @@ pFontToggle
 
 -- | Parse event commands
 pEventCmd :: Parser EventCmd
-pEventCmd = choice 
+pEventCmd = choice
   [ EventExit <$ char 'e'
   , pEventChain
   , pGhostChange
@@ -656,12 +649,12 @@ pEventCmd = choice
   , pEventCommunicate
   , pEventSync6
   , pEventSync7
-  , pEventBang 
+  , pEventBang
   ]
 
 -- | Parse event chain: \-
 pEventChain :: Parser EventCmd
-pEventChain = char '-' *> pure (EventScript "" "")
+pEventChain = char '-' $> EventScript "" ""
 
 -- | Parse ghost change: \+ - change ghost with confirmation
 pGhostChange :: Parser EventCmd
@@ -677,11 +670,11 @@ pEventCommunicate = char 'a' *> pBracketed (EventGhostChange <$> pIdentifier)
 
 -- | Parse sync: \6 - synchronize with other ghost
 pEventSync6 :: Parser EventCmd
-pEventSync6 = char '6' *> pure (EventScript "" "")
+pEventSync6 = char '6' $> EventScript "" ""
 
 -- | Parse sync end: \7 - end synchronization
 pEventSync7 :: Parser EventCmd
-pEventSync7 = char '7' *> pure (EventScript "" "")
+pEventSync7 = char '7' $> EventScript "" ""
 
 -- | Parse event bang commands
 pEventBang :: Parser EventCmd
@@ -820,8 +813,7 @@ pOpenDialog :: Parser OpenCmd
 pOpenDialog = string "dialog" *> pComma *> do
   eventId <- pIdentifier
   _ <- pComma
-  opt <- pDialogOpt
-  pure $ OpenDialog eventId opt
+  OpenDialog eventId <$> pDialogOpt
   where
     pDialogOpt
       = choice
@@ -866,8 +858,7 @@ pSetProperty
     pGenericSet = do
       name <- pIdentifier
       _ <- pComma
-      value <- pIdentifier
-      pure $ SetProperty' name value
+      SetProperty' name <$> pIdentifier
 
 pMetaGet :: Parser MetaCmd
 pMetaGet = string "get" *> pComma *> (MetaGet <$> pGetProperty)
@@ -909,8 +900,7 @@ pExecuteCmd = choice [ pExecuteHttpGet, pExecuteHttpPost, pExecuteFile ]
     pExecuteHttpPost = string "http-post" *> pComma *> do
       url <- pURLText
       _ <- pComma
-      body <- pQuotedStringOrId
-      pure $ ExecuteHTTPPost url body
+      ExecuteHTTPPost url <$> pQuotedStringOrId
 
     pExecuteFile     = string "file" *> pComma *> (ExecuteFile <$> pQuotedStringOrId)
 
@@ -1043,8 +1033,7 @@ pColorRGBBare = do
   _ <- pComma
   g <- pInt
   _ <- pComma
-  b <- pInt
-  pure $ ColorRGB r g b
+  ColorRGB r g <$> pInt
 
 -- | Parse cursor position
 pCursorPos :: Parser CursorPos
@@ -1059,8 +1048,7 @@ pCursorPos
   where
     pPosRelative = do
       sign <- (id <$ char '+') <|> (negate <$ char '-')
-      n <- pInt
-      pure $ PosRelative (sign n)
+      PosRelative . sign <$> pInt
 
     pPosEm       = do
       n <- pDouble

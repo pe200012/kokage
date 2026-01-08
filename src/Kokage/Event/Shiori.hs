@@ -32,6 +32,7 @@ import           Kokage.Shiori.WineBridge   ( sendEvent )
 
 import           Types.Ghost                ( CollisionRegion(..) )
 import           Types.Shiori               ( ShioriEvent, ShioriResponse(..), srsValue )
+import Data.Maybe (fromMaybe)
 
 -- | Log a SHIORI response for debugging.
 logShioriResponse :: ShioriEvent -> Either String ShioriResponse -> IO ()
@@ -152,7 +153,7 @@ buildMouseClickRefs evt scopeId mCollisionName button = Map.fromList
   , (1, T.pack $ show $ clickY evt)
   , (2, "0")  -- wheel
   , (3, T.pack $ show scopeId)
-  , (4, maybe "" id mCollisionName)
+  , (4, fromMaybe "" mCollisionName)
   , (5, T.pack $ show button)
   , (6, "mouse")
   ]

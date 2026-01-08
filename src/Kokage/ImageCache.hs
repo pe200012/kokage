@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Simple LRU cache for loaded pixbufs.
 -- Avoids repeated disk I/O for animation overlays.
 module Kokage.ImageCache
