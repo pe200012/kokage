@@ -214,19 +214,15 @@ tickAnimations animState _shell surfDef activeAnims currentTimers delta = do
       if shouldStart
         then do
           -- Create new active animation
-          let patterns = animPatterns anim
-          if null patterns
-            then return ( accAnims, newTimers, started )
-            else do
-              let firstPat  = head patterns
-                  -- Initial wait for first pattern
-                  wait      = apWait firstPat
-                  -- Check if this is a looping animation (Always)
-                  isLooping = animInterval anim == IntervalAlways
+          case animPatterns anim of
+            [] -> return ( accAnims, newTimers, started )
+            ( firstPat : _ ) -> do
+              let isLooping = animInterval anim == IntervalAlways
+                  baseWait  = apWait firstPat
 
               actualWait <- case apWaitMax firstPat of
-                Just maxW -> randomRIO ( wait, maxW )
-                Nothing   -> return wait
+                Just maxW -> randomRIO ( baseWait, maxW )
+                Nothing   -> return baseWait
 
               let newAnim
                     = ActiveAnim { aaDef       = anim
@@ -298,7 +294,7 @@ updateActiveAnims anims delta = do
               patCmds    = extractCommands (apMethod currentPat)
 
           if nextIndex >= length patterns
-            then 
+            then
               -- Animation finished - check if looping
               if aaLooping anim && not (null patterns)
                 then do
@@ -314,7 +310,7 @@ updateActiveAnims anims delta = do
                                , aaVisual    = apSurfaceId firstPat >= 0
                                }
                   return ( acc ++ [ loopedAnim ], True, cmds ++ patCmds )
-                else 
+                else
                   -- Animation finished, remove it
                   return ( acc, changed || aaVisual anim, cmds ++ patCmds )
             else do

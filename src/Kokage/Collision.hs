@@ -63,8 +63,6 @@ pointInPolygon px py vertices = odd $ length $ filter crossesRay edges
 -- | Find the first collision region that contains the given point.
 -- Collision regions are checked in order of their index (lower index = higher priority).
 findCollisionAt :: Int -> Int -> [ CollisionRegion ] -> Maybe CollisionRegion
-findCollisionAt x y regions
-  = let
-      sorted = sortBy (comparing crIndex) regions
-    in 
-      find (hitTestShape x y . crShape) sorted
+findCollisionAt x y regions = find (hitTestShape x y . crShape) sorted
+  where
+    sorted = sortBy (comparing crIndex) regions

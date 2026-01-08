@@ -230,77 +230,75 @@ applyMenuStyle popover style = do
         Just d  -> Gtk.styleContextAddProviderForDisplay d provider 800
 
 generateMenuCss :: MenuStyle -> Text
-generateMenuCss style
-  = let
-      shellPath    = msShellPath style
+generateMenuCss style = T.concat [ baseCss, hoverCss ]
+  where
+    shellPath    = msShellPath style
 
-      bgImageCss   = case ( shellPath, msBackgroundBitmapFile style ) of
-        ( Just sp, Just bf ) -> let
-            fullPath = T.pack (sp </> T.unpack bf)
-            alignCss = alignmentToCss (msBackgroundAlignment style)
-          in 
-            T.concat
-              [ "background-image: url('file://"
-              , fullPath
-              , "');\n"
-              , "background-repeat: repeat-y;\n"
-              , "background-position: "
-              , alignCss
-              , ";\n"
-              ]
+    bgImageCss   = case ( shellPath, msBackgroundBitmapFile style ) of
+      ( Just sp, Just bf ) -> let
+          fullPath = T.pack (sp </> T.unpack bf)
+          alignCss = alignmentToCss (msBackgroundAlignment style)
+        in 
+          T.concat
+            [ "background-image: url('file://"
+            , fullPath
+            , "');\n"
+            , "background-repeat: repeat-y;\n"
+            , "background-position: "
+            , alignCss
+            , ";\n"
+            ]
+      _ -> ""
+
+    fontColorCss
+      = case ( msBackgroundFontColorR style
+             , msBackgroundFontColorG style
+             , msBackgroundFontColorB style
+             ) of
+        ( Just r, Just g, Just b )
+          -> T.concat [ "color: rgb(", T.show r, ",", T.show g, ",", T.show b, ");\n" ]
         _ -> ""
 
-      fontColorCss
-        = case ( msBackgroundFontColorR style
-               , msBackgroundFontColorG style
-               , msBackgroundFontColorB style
-               ) of
-          ( Just r, Just g, Just b )
-            -> T.concat [ "color: rgb(", showT r, ",", showT g, ",", showT b, ");\n" ]
-          _ -> ""
+    fontCss      = case msFontName style of
+      Just name -> T.concat
+        [ "font-family: '"
+        , name
+        , "';\n"
+        , maybe "" (\h -> T.concat [ "font-size: ", T.show h, "px;\n" ]) (msFontHeight style)
+        ]
+      Nothing   -> ""
 
-      fontCss      = case msFontName style of
-        Just name -> T.concat
-          [ "font-family: '"
-          , name
-          , "';\n"
-          , maybe "" (\h -> T.concat [ "font-size: ", showT h, "px;\n" ]) (msFontHeight style)
-          ]
-        Nothing   -> ""
+    hoverCss     = case ( shellPath, msForegroundBitmapFile style ) of
+      ( Just sp, Just ff ) -> let
+          fullPath = T.pack (sp </> T.unpack ff)
+          alignCss = alignmentToCss (msForegroundAlignment style)
+          fgColor
+            = case ( msForegroundFontColorR style
+                   , msForegroundFontColorG style
+                   , msForegroundFontColorB style
+                   ) of
+              ( Just r, Just g, Just b )
+                -> T.concat [ "color: rgb(", T.show r, ",", T.show g, ",", T.show b, ");\n" ]
+              _ -> ""
+        in 
+          T.concat
+            [ "popover.menu contents modelbutton:hover {\n"
+            , "  background-image: url('file://"
+            , fullPath
+            , "');\n"
+            , "  background-repeat: repeat-y;\n"
+            , "  background-position: "
+            , alignCss
+            , ";\n"
+            , fgColor
+            , "}\n"
+            ]
+      _ -> ""
 
-      hoverCss     = case ( shellPath, msForegroundBitmapFile style ) of
-        ( Just sp, Just ff ) -> let
-            fullPath = T.pack (sp </> T.unpack ff)
-            alignCss = alignmentToCss (msForegroundAlignment style)
-            fgColor
-              = case ( msForegroundFontColorR style
-                     , msForegroundFontColorG style
-                     , msForegroundFontColorB style
-                     ) of
-                ( Just r, Just g, Just b )
-                  -> T.concat [ "color: rgb(", showT r, ",", showT g, ",", showT b, ");\n" ]
-                _ -> ""
-          in 
-            T.concat
-              [ "popover.menu contents modelbutton:hover {\n"
-              , "  background-image: url('file://"
-              , fullPath
-              , "');\n"
-              , "  background-repeat: repeat-y;\n"
-              , "  background-position: "
-              , alignCss
-              , ";\n"
-              , fgColor
-              , "}\n"
-              ]
-        _ -> ""
-
-      baseCss
-        = if T.null bgImageCss && T.null fontColorCss && T.null fontCss
-          then ""
-          else T.concat [ "popover.menu contents {\n", bgImageCss, fontColorCss, fontCss, "}\n" ]
-    in 
-      T.concat [ baseCss, hoverCss ]
+    baseCss
+      = if T.null bgImageCss && T.null fontColorCss && T.null fontCss
+        then ""
+        else T.concat [ "popover.menu contents {\n", bgImageCss, fontColorCss, fontCss, "}\n" ]
 
 alignmentToCss :: Text -> Text
 alignmentToCss align = case T.toLower align of
@@ -313,6 +311,3 @@ alignmentToCss align = case T.toLower align of
   "top" -> "left top"
   "bottom" -> "left bottom"
   _ -> "left top"
-
-showT :: Show a => a -> Text
-showT = T.pack . show

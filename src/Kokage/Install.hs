@@ -25,7 +25,7 @@ import           Control.Exception    ( SomeException, catch )
 import           Control.Monad        ( forM_, unless, when )
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Char            ( isAsciiUpper )
+import           Data.Char            ( toLower )
 import           Data.Text            ( Text )
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
@@ -171,16 +171,8 @@ needsDirectory _ = True
 
 -- | Find an entry by name in the archive (case-insensitive)
 findEntry :: FilePath -> [ Entry ] -> Maybe Entry
-findEntry name entries
-  = let
-      nameLower = map toLower name
-    in 
-      find (\e -> map toLower (eRelativePath e) == nameLower) entries
+findEntry name = find (\e -> map toLower (eRelativePath e) == map toLower name)
   where
-    toLower c
-      | isAsciiUpper c = toEnum (fromEnum c + 32)
-      | otherwise = c
-
     find _ []       = Nothing
     find p (x : xs)
       | p x = Just x
@@ -219,7 +211,7 @@ parseInstallContent content = do
         | not (T.null rest) -> let
             key = T.toLower (T.strip rawKey)
             val = T.strip (T.drop 1 rest)
-          in 
+          in
             parseKey inst key val
       _ -> inst
 
@@ -260,7 +252,7 @@ parseDeleteContent :: Text -> DeleteList
 parseDeleteContent content
   = let
       normalize = T.replace "\\" "/"
-    in 
+    in
       filter (not . T.null) $ map (normalize . T.strip) (T.lines content)
 
 -- | Process delete list - remove files/directories
@@ -302,10 +294,6 @@ extractArchive targetDir archive = do
         let content = fromEntry entry
         BL.writeFile fullPath content
   where
-    toLower c
-      | isAsciiUpper c = toEnum (fromEnum c + 32)
-      | otherwise = c
-
     isDirectoryPath p = not (null p) && last p `elem` [ '/', '\\' ]
 
     normalizePathSeparators = map (\c -> if c == '\\'
@@ -371,14 +359,14 @@ installBundledContent base archive inst = do
       = let
           prefixLower = map toLower prefix
           pathLower   = map toLower path
-        in 
+        in
           prefixLower `isPrefixOf` pathLower || (prefixLower ++ "/") `isPrefixOf` pathLower
 
     stripPrefix prefix path
       = let
           prefixLen = length prefix
           stripped  = drop prefixLen path
-        in 
+        in
           case stripped of
             (c : rest)
               | c `elem` [ '/', '\\' ] -> rest
@@ -387,10 +375,6 @@ installBundledContent base archive inst = do
     isPrefixOf [] _ = True
     isPrefixOf _ [] = False
     isPrefixOf (x : xs) (y : ys) = x == y && isPrefixOf xs ys
-
-    toLower c
-      | isAsciiUpper c = toEnum (fromEnum c + 32)
-      | otherwise = c
 
     isDirectoryPath p = not (null p) && last p `elem` [ '/', '\\' ]
 

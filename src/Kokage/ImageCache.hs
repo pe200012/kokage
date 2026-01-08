@@ -15,6 +15,11 @@ data CacheEntry
   = CacheEntry { cePixbuf     :: !Pixbuf.Pixbuf
                , ceAccessTime :: !Int  -- Logical timestamp (increments on each access)
                }
+  deriving ( Eq )
+
+-- Ord instance for efficient sorting by access time.
+instance Ord CacheEntry where
+  compare a b = compare (ceAccessTime a) (ceAccessTime b)
 
 -- | LRU image cache
 data ImageCache
@@ -72,13 +77,7 @@ getCachedImage cache path loader = do
 evictLRU :: Map FilePath CacheEntry -> Map FilePath CacheEntry
 evictLRU entries
   | Map.null entries = entries
-  | otherwise
-    = let
-        sorted = sortBy (comparing (ceAccessTime . snd)) (Map.toList entries)
-      in 
-        case sorted of
-          [] -> entries
-          (( k, _ ) : _) -> Map.delete k entries
+  | otherwise = Map.deleteMax entries
 
 -- | Clear all entries from the cache
 clearCache :: ImageCache -> IO ()

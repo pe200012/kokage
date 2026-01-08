@@ -60,8 +60,4 @@ newtype TimerEvent
 
 -- | Check if a drag offset exceeds the threshold.
 isDragSignificant :: Double -> Double -> Bool
-isDragSignificant ox oy
-  = let
-      dist = sqrt (ox * ox + oy * oy)
-    in 
-      dist >= dragThreshold
+isDragSignificant ox oy = sqrt (ox * ox + oy * oy) >= dragThreshold
