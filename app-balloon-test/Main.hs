@@ -140,16 +140,29 @@ runBalloonTest app _mBalloonPath = do
     appendText balloon "Italic text, "
     setFontItalic balloon False
     setFontUnderline balloon True
-    appendText balloon "Underlined text"
+    appendText balloon "Underlined text, "
+    setFontUnderline balloon False
+    setFontBold balloon True
+    setFontItalic balloon True
+    appendText balloon "Bold+Italic"
     resetFont balloon
     appendNewline balloon
     appendNewline balloon
+    -- Strikethrough
+    appendText balloon "Normal, "
+    setFontBold balloon True
+    setFontUnderline balloon True
+    appendText balloon "Bold+Underline, "
+    resetFont balloon
+    appendNewline balloon
+    appendNewline balloon
+    -- Font sizes
     setFontSize balloon 24
-    appendText balloon "Large text"
+    appendText balloon "Large"
     resetFont balloon
-    appendText balloon " and "
+    appendText balloon " Normal "
     setFontSize balloon 10
-    appendText balloon "small text"
+    appendText balloon "Small"
     resetFont balloon
   Gtk.boxAppend vbox btnFontStyles
   
