@@ -518,14 +518,23 @@ pChoiceNoTimeout = string "_q" *> pBracketed pChoiceArgs
       action <- pChoiceAction
       pure $ ChoiceNoTimeout text action
 
--- | Parse anchor: \_a[id,text]
+-- | Parse anchor: \_a[id,text] or \_a[id] (start marker) or \_a (end marker)
 pAnchor :: Parser ChoiceCmd
-pAnchor = string "_a" *> pBracketed pAnchorArgs
+pAnchor = string "_a" *> choice
+  [ try pAnchorInline   -- \_a[id,text] format
+  , try pAnchorStart    -- \_a[id] format (start marker only)
+  ]
   where
-    pAnchorArgs = do
-      anchorId <- pIdentifier
+    -- Inline format: \_a[id,text]
+    pAnchorInline = pBracketed $ do
+      anchorId <- pURLText
       _ <- pComma
       text <- pChoiceText
+      pure $ Anchor anchorId text
+    -- Start marker format: \_a[id]text\_a
+    pAnchorStart = do
+      anchorId <- pBracketed pURLText
+      text <- T.pack <$> manyTill anySingle (string "\\_a")
       pure $ Anchor anchorId text
 
 -- | Parse choice text (up to comma or bracket)
