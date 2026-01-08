@@ -7,6 +7,8 @@ module Kokage.Balloon.Types
     BalloonChoice(..)
     -- * Direction
   , BalloonDirection(..)
+    -- * Text segments
+  , TextSegment(..)
     -- * Configuration
   , BalloonConfig(..)
   , defaultBalloonConfig
@@ -39,6 +41,25 @@ data BalloonChoice
 data BalloonDirection
   = BalloonLeft   -- ^ Balloon appears to the left of the character
   | BalloonRight  -- ^ Balloon appears to the right of the character
+  deriving ( Show, Eq )
+
+-- | A text segment with its style at the time of addition.
+-- This allows different parts of the text to have different styles.
+data TextSegment
+  = TextSegment
+  { tsText      :: !T.Text     -- ^ The text content
+  , tsBold      :: !Bool       -- ^ Bold style
+  , tsItalic    :: !Bool       -- ^ Italic style
+  , tsUnderline :: !Bool       -- ^ Underline style
+  , tsStrike    :: !Bool       -- ^ Strikethrough style
+  , tsSub       :: !Bool       -- ^ Subscript mode
+  , tsSup       :: !Bool       -- ^ Superscript mode
+  , tsFontSize  :: !Int        -- ^ Font size
+  , tsFontName  :: !T.Text     -- ^ Font name
+  , tsColorR    :: !Double     -- ^ Text color R
+  , tsColorG    :: !Double     -- ^ Text color G
+  , tsColorB    :: !Double     -- ^ Text color B
+  }
   deriving ( Show, Eq )
 
 -- | Configuration for balloon rendering.
@@ -154,7 +175,7 @@ data BalloonState
   { bsWindow         :: !Gtk.Window                                              -- ^ The balloon window
   , bsDrawArea       :: !Gtk.DrawingArea                                         -- ^ Drawing area for balloon content
   , bsConfig         :: !(IORef BalloonConfig)                                   -- ^ Balloon configuration
-  , bsText           :: !(IORef T.Text)                                          -- ^ Current text content
+  , bsText           :: !(IORef [TextSegment])                                   -- ^ Current text segments with styles
   , bsScrollLine     :: !(IORef Int)                                             -- ^ Current scroll line (0 = top)
   , bsSurface        :: !(IORef (Maybe Pixbuf.Pixbuf))                           -- ^ Current balloon surface image
   , bsCairoSurface   :: !(IORef (Maybe Cairo.Surface))                           -- ^ Cached Cairo surface for drawing

@@ -63,6 +63,7 @@ import           Data.IORef                 ( IORef, newIORef, readIORef, writeI
 import           Data.Int                   ( Int32 )
 import           Data.Maybe                 ( fromMaybe )
 import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as TE
 import           Data.Word                  ( Word8 )
 import           Foreign.Ptr                ( castPtr )
 import           System.FilePath            ( (</>) )
@@ -100,6 +101,25 @@ data BalloonChoice
 data BalloonDirection
   = BalloonLeft   -- ^ Balloon appears to the left of the character
   | BalloonRight  -- ^ Balloon appears to the right of the character
+  deriving ( Show, Eq )
+
+-- | A text segment with its style at the time of addition.
+-- This allows different parts of the text to have different styles.
+data TextSegment
+  = TextSegment
+  { tsText      :: !T.Text     -- ^ The text content
+  , tsBold      :: !Bool       -- ^ Bold style
+  , tsItalic    :: !Bool       -- ^ Italic style
+  , tsUnderline :: !Bool       -- ^ Underline style
+  , tsStrike    :: !Bool       -- ^ Strikethrough style
+  , tsSub       :: !Bool       -- ^ Subscript mode
+  , tsSup       :: !Bool       -- ^ Superscript mode
+  , tsFontSize  :: !Int        -- ^ Font size
+  , tsFontName  :: !T.Text     -- ^ Font name
+  , tsColorR    :: !Double     -- ^ Text color R
+  , tsColorG    :: !Double     -- ^ Text color G
+  , tsColorB    :: !Double     -- ^ Text color B
+  }
   deriving ( Show, Eq )
 
 -- | Configuration for balloon rendering.
@@ -240,7 +260,7 @@ data BalloonState
   { bsWindow        :: !Gtk.Window            -- ^ The balloon window
   , bsDrawArea      :: !Gtk.DrawingArea       -- ^ Drawing area for balloon content
   , bsConfig        :: !(IORef BalloonConfig) -- ^ Balloon configuration
-  , bsText          :: !(IORef T.Text)        -- ^ Current text content
+  , bsText          :: !(IORef [TextSegment]) -- ^ Current text segments with styles
   , bsScrollLine    :: !(IORef Int)           -- ^ Current scroll line (0 = top)
   , bsSurface       :: !(IORef (Maybe Pixbuf.Pixbuf))  -- ^ Current balloon surface image
   , bsCairoSurface  :: !(IORef (Maybe Cairo.Surface)) -- ^ Cached Cairo surface for drawing
@@ -268,7 +288,7 @@ newBalloonStateWithConfig :: Gtk.Application -> BalloonConfig -> IO BalloonState
 newBalloonStateWithConfig app config = do
   -- Initialize state refs
   configRef <- newIORef config
-  textRef <- newIORef ""
+  textRef <- newIORef []
   scrollLineRef <- newIORef 0
   surfaceRef <- newIORef Nothing
   cairoSurfaceRef <- newIORef Nothing
@@ -434,12 +454,12 @@ newBalloonStateWithSurface app balloonDir charType = do
 -- | Cairo drawing implementation.
 -- Returns the list of choice rectangles for click detection.
 drawBalloonCairo :: BalloonConfig
-                 -> T.Text
+                 -> [TextSegment]
                  -> Int
                  -> Maybe Cairo.Surface
                  -> [BalloonChoice]
                  -> Cairo.Render [(BalloonChoice, Double, Double, Double, Double)]
-drawBalloonCairo config text scrollLine mSurface choices = do
+drawBalloonCairo config segments scrollLine mSurface choices = do
   -- Draw background
   case mSurface of
     Just surface -> do
@@ -452,7 +472,7 @@ drawBalloonCairo config text scrollLine mSurface choices = do
 
   -- Draw text using PangoCairo (with clipping and scrolling)
   -- Returns the Y position after text for choice drawing
-  textEndY <- drawText config text scrollLine
+  textEndY <- drawText config segments scrollLine
 
   -- Draw choices below the text
   drawChoices config choices textEndY scrollLine
@@ -494,47 +514,29 @@ drawSolidBackground config = do
 
 -- | Draw text using PangoCairo with clipping and scroll support.
 -- Returns the Y position after the text (for choice rendering).
-drawText :: BalloonConfig -> T.Text -> Int -> Cairo.Render Double
-drawText config text scrollLine = do
+-- Now supports styled text segments - each segment can have different styles.
+drawText :: BalloonConfig -> [TextSegment] -> Int -> Cairo.Render Double
+drawText config segments scrollLine = do
   -- Get the underlying Cairo context for PangoCairo functions
   ctx <- Cairo.getContext
 
   -- Create Pango layout using PangoCairo
   layout <- Cairo.liftIO $ PangoCairo.createLayout ctx
 
+  -- Concatenate all text segments
+  let fullText = T.concat (map tsText segments)
+  
   -- Set text
-  Cairo.liftIO $ Pango.layoutSetText layout text (-1)
+  Cairo.liftIO $ Pango.layoutSetText layout fullText (-1)
 
-  -- Set font
+  -- Set base font (will be overridden by attributes per segment)
   fontDesc <- Cairo.liftIO Pango.fontDescriptionNew
   Cairo.liftIO $ Pango.fontDescriptionSetFamily fontDesc (bcFontName config)
   Cairo.liftIO $ Pango.fontDescriptionSetSize fontDesc (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
-
-  -- Set style (Bold/Italic)
-  when (bcFontBold config) $
-    Cairo.liftIO $ Pango.fontDescriptionSetWeight fontDesc Pango.WeightBold
-  when (bcFontItalic config) $
-    Cairo.liftIO $ Pango.fontDescriptionSetStyle fontDesc Pango.StyleItalic
-
   Cairo.liftIO $ Pango.layoutSetFontDescription layout (Just fontDesc)
 
-  -- Set attributes (Underline/Strike/Sub/Sup)
-  attrs <- Cairo.liftIO Pango.attrListNew
-  when (bcFontUnderline config) $ do
-    attr <- Cairo.liftIO $ Pango.attrUnderlineNew Pango.UnderlineSingle
-    Cairo.liftIO $ Pango.attrListInsert attrs attr
-  when (bcFontStrike config) $ do
-    attr <- Cairo.liftIO $ Pango.attrStrikethroughNew True
-    Cairo.liftIO $ Pango.attrListInsert attrs attr
-  -- Subscript/Superscript using Pango rise attribute
-  when (bcFontSub config) $ do
-    -- Negative rise for subscript (move text down)
-    attr <- Cairo.liftIO $ Pango.attrRiseNew (fromIntegral $ -(bcFontSize config * fromIntegral Pango.SCALE `div` 3))
-    Cairo.liftIO $ Pango.attrListInsert attrs attr
-  when (bcFontSup config) $ do
-    -- Positive rise for superscript (move text up)
-    attr <- Cairo.liftIO $ Pango.attrRiseNew (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE `div` 2)
-    Cairo.liftIO $ Pango.attrListInsert attrs attr
+  -- Build attribute list from segments
+  attrs <- Cairo.liftIO $ buildAttributeList segments
   Cairo.liftIO $ Pango.layoutSetAttributes layout (Just attrs)
 
   -- Set wrapping - use CHAR mode for Japanese text support
@@ -545,7 +547,6 @@ drawText config text scrollLine = do
   Cairo.liftIO $ Pango.layoutSetSpacing layout (fromIntegral $ bcLineSpacing config * fromIntegral Pango.SCALE)
 
   -- Calculate line height for scrolling
-  -- Use the font metrics to get a consistent line height
   lineHeight <- Cairo.liftIO $ do
     pangoCtx <- Pango.layoutGetContext layout
     metrics <- Pango.contextGetMetrics pangoCtx (Just fontDesc) Nothing
@@ -574,21 +575,19 @@ drawText config text scrollLine = do
     ShadowOffset -> do
       Cairo.save
       Cairo.setSourceRGB (bcShadowColorR config) (bcShadowColorG config) (bcShadowColorB config)
-      -- Draw offset by 1 pixel (standard for ShadowOffset)
       Cairo.moveTo
         (fromIntegral (bcOriginX config) + 1)
         (fromIntegral (bcOriginY config) - scrollOffset + 1)
       Cairo.liftIO $ PangoCairo.showLayout ctx layout
       Cairo.restore
     ShadowOutline -> do
-      -- Outline shadow: stroke the path
       Cairo.save
       Cairo.setSourceRGB (bcShadowColorR config) (bcShadowColorG config) (bcShadowColorB config)
       Cairo.moveTo
         (fromIntegral (bcOriginX config))
         (fromIntegral (bcOriginY config) - scrollOffset)
       Cairo.liftIO $ PangoCairo.layoutPath ctx layout
-      Cairo.setLineWidth 2.0 -- 1px border on each side effectively
+      Cairo.setLineWidth 2.0
       Cairo.stroke
       Cairo.restore
 
@@ -597,7 +596,7 @@ drawText config text scrollLine = do
     (fromIntegral $ bcOriginX config)
     (fromIntegral (bcOriginY config) - scrollOffset)
 
-  -- Set text color
+  -- Set default text color (segments with custom colors override via attributes)
   Cairo.setSourceRGB
     (bcTextColorR config)
     (bcTextColorG config)
@@ -611,6 +610,86 @@ drawText config text scrollLine = do
 
   -- Return the Y position after the text (accounting for scroll)
   return $ fromIntegral (bcOriginY config) + fromIntegral textHeight - scrollOffset + fromIntegral (bcLineSpacing config)
+
+-- | Build Pango attribute list from text segments.
+-- Each segment can have different font styles (bold, italic, etc.)
+-- IMPORTANT: Pango uses BYTE indices, not character indices.
+-- For UTF-8 text (like Japanese), we must use byte length.
+buildAttributeList :: [TextSegment] -> IO Pango.AttrList
+buildAttributeList segments = do
+  attrs <- Pango.attrListNew
+  let go _ [] = return ()
+      go startIdx (seg:rest) = do
+        -- Use byte length for UTF-8 text (Japanese characters are 3 bytes each)
+        let segByteLen = fromIntegral $ BS.length (TE.encodeUtf8 (tsText seg))
+            endIdx = startIdx + segByteLen
+        
+        -- Font family attribute
+        fontAttr <- Pango.attrFamilyNew (tsFontName seg)
+        Pango.setAttributeStartIndex fontAttr startIdx
+        Pango.setAttributeEndIndex fontAttr endIdx
+        Pango.attrListInsert attrs fontAttr
+        
+        -- Font size attribute
+        sizeAttr <- Pango.attrSizeNew (fromIntegral $ tsFontSize seg * fromIntegral Pango.SCALE)
+        Pango.setAttributeStartIndex sizeAttr startIdx
+        Pango.setAttributeEndIndex sizeAttr endIdx
+        Pango.attrListInsert attrs sizeAttr
+        
+        -- Bold attribute
+        when (tsBold seg) $ do
+          weightAttr <- Pango.attrWeightNew Pango.WeightBold
+          Pango.setAttributeStartIndex weightAttr startIdx
+          Pango.setAttributeEndIndex weightAttr endIdx
+          Pango.attrListInsert attrs weightAttr
+        
+        -- Italic attribute
+        when (tsItalic seg) $ do
+          styleAttr <- Pango.attrStyleNew Pango.StyleItalic
+          Pango.setAttributeStartIndex styleAttr startIdx
+          Pango.setAttributeEndIndex styleAttr endIdx
+          Pango.attrListInsert attrs styleAttr
+        
+        -- Underline attribute
+        when (tsUnderline seg) $ do
+          ulAttr <- Pango.attrUnderlineNew Pango.UnderlineSingle
+          Pango.setAttributeStartIndex ulAttr startIdx
+          Pango.setAttributeEndIndex ulAttr endIdx
+          Pango.attrListInsert attrs ulAttr
+        
+        -- Strikethrough attribute
+        when (tsStrike seg) $ do
+          stAttr <- Pango.attrStrikethroughNew True
+          Pango.setAttributeStartIndex stAttr startIdx
+          Pango.setAttributeEndIndex stAttr endIdx
+          Pango.attrListInsert attrs stAttr
+        
+        -- Subscript (negative rise)
+        when (tsSub seg) $ do
+          riseAttr <- Pango.attrRiseNew (fromIntegral $ -(tsFontSize seg * fromIntegral Pango.SCALE `div` 3))
+          Pango.setAttributeStartIndex riseAttr startIdx
+          Pango.setAttributeEndIndex riseAttr endIdx
+          Pango.attrListInsert attrs riseAttr
+        
+        -- Superscript (positive rise)
+        when (tsSup seg) $ do
+          riseAttr <- Pango.attrRiseNew (fromIntegral $ tsFontSize seg * fromIntegral Pango.SCALE `div` 2)
+          Pango.setAttributeStartIndex riseAttr startIdx
+          Pango.setAttributeEndIndex riseAttr endIdx
+          Pango.attrListInsert attrs riseAttr
+        
+        -- Color attribute (convert 0.0-1.0 to 0-65535)
+        let r16 = round (tsColorR seg * 65535)
+            g16 = round (tsColorG seg * 65535)
+            b16 = round (tsColorB seg * 65535)
+        colorAttr <- Pango.attrForegroundNew r16 g16 b16
+        Pango.setAttributeStartIndex colorAttr startIdx
+        Pango.setAttributeEndIndex colorAttr endIdx
+        Pango.attrListInsert attrs colorAttr
+        
+        go endIdx rest
+  go 0 segments
+  return attrs
 
 -- | Draw choices below the text.
 -- Returns list of choice rectangles for hit testing.
@@ -736,7 +815,7 @@ hideBalloon bs = void $ GLib.idleAdd GLib.PRIORITY_HIGH $ do
 -- | Clear all text and choices from the balloon.
 clearBalloon :: BalloonState -> IO ()
 clearBalloon bs = do
-  writeIORef (bsText bs) ""
+  writeIORef (bsText bs) []
   writeIORef (bsScrollLine bs) 0
   writeIORef (bsChoices bs) []
   writeIORef (bsChoiceRects bs) []
@@ -744,10 +823,26 @@ clearBalloon bs = do
 
 -- | Append text to the balloon.
 -- This is the main function called when processing SakuraScript text.
+-- Captures the current font style and stores it with the text segment.
 -- If auto-scroll is enabled, automatically scrolls to show the last line.
 appendText :: BalloonState -> T.Text -> IO ()
 appendText bs txt = do
-  modifyIORef' (bsText bs) (<> txt)
+  cfg <- readIORef (bsConfig bs)
+  let segment = TextSegment
+        { tsText      = txt
+        , tsBold      = bcFontBold cfg
+        , tsItalic    = bcFontItalic cfg
+        , tsUnderline = bcFontUnderline cfg
+        , tsStrike    = bcFontStrike cfg
+        , tsSub       = bcFontSub cfg
+        , tsSup       = bcFontSup cfg
+        , tsFontSize  = bcFontSize cfg
+        , tsFontName  = bcFontName cfg
+        , tsColorR    = bcTextColorR cfg
+        , tsColorG    = bcTextColorG cfg
+        , tsColorB    = bcTextColorB cfg
+        }
+  modifyIORef' (bsText bs) (<> [segment])
   -- Perform auto-scroll if enabled
   autoScroll <- readIORef (bsAutoScroll bs)
   when autoScroll $ autoScrollToLastLine bs
@@ -792,9 +887,23 @@ appendNewlinePercent bs pct = do
 -- | Clear n characters from the end of the balloon text.
 clearChars :: BalloonState -> Int -> IO ()
 clearChars bs n = do
-  modifyIORef' (bsText bs) $ \t ->
-    T.take (max 0 (T.length t - n)) t
+  modifyIORef' (bsText bs) $ \segments ->
+    let totalText = T.concat (map tsText segments)
+        newLen = max 0 (T.length totalText - n)
+        newText = T.take newLen totalText
+    in  rebuildSegments segments newText
   Gtk.widgetQueueDraw (bsDrawArea bs)
+  where
+    -- Rebuild segments keeping styles but truncating to new total length
+    rebuildSegments :: [TextSegment] -> T.Text -> [TextSegment]
+    rebuildSegments [] _ = []
+    rebuildSegments _ remaining | T.null remaining = []
+    rebuildSegments (seg:rest) remaining =
+      let segLen = T.length (tsText seg)
+          remainingLen = T.length remaining
+      in  if remainingLen <= segLen
+          then [seg { tsText = remaining }]
+          else seg : rebuildSegments rest (T.drop segLen remaining)
 
 -- | Move cursor to specified position.
 -- This is used for \_l[x,y] command to position subsequent text.
@@ -802,10 +911,11 @@ clearChars bs n = do
 moveCursor :: BalloonState -> Int -> Int -> IO ()
 moveCursor bs targetX targetY = do
   cfg <- readIORef (bsConfig bs)
-  currentText <- readIORef (bsText bs)
-  let lineHeight = bcFontSize cfg
+  segments <- readIORef (bsText bs)
+  let fullText = T.concat (map tsText segments)
+      lineHeight = bcFontSize cfg
       charWidth = lineHeight `div` 2  -- Approximate monospace character width
-      currentLines = T.lines currentText
+      currentLines = T.lines fullText
       currentY = length currentLines * lineHeight
       currentX = if null currentLines then 0 else T.length (last currentLines) * charWidth
   
@@ -816,8 +926,26 @@ moveCursor bs targetX targetY = do
   -- Add spaces to reach target X
   let neededSpaces = max 0 ((targetX - if neededNewlines > 0 then 0 else currentX) `div` charWidth)
       spacesText = T.replicate neededSpaces " "
+      combinedText = newlinesText <> spacesText
   
-  modifyIORef' (bsText bs) (<> newlinesText <> spacesText)
+  -- Add as segment with current style
+  cfg <- readIORef (bsConfig bs)
+  unless (T.null combinedText) $ do
+    let segment = TextSegment
+          { tsText      = combinedText
+          , tsBold      = bcFontBold cfg
+          , tsItalic    = bcFontItalic cfg
+          , tsUnderline = bcFontUnderline cfg
+          , tsStrike    = bcFontStrike cfg
+          , tsSub       = bcFontSub cfg
+          , tsSup       = bcFontSup cfg
+          , tsFontSize  = bcFontSize cfg
+          , tsFontName  = bcFontName cfg
+          , tsColorR    = bcTextColorR cfg
+          , tsColorG    = bcTextColorG cfg
+          , tsColorB    = bcTextColorB cfg
+          }
+    modifyIORef' (bsText bs) (<> [segment])
   Gtk.widgetQueueDraw (bsDrawArea bs)
 
 -- | Set font name.
@@ -1165,16 +1293,17 @@ getAutoScroll bs = readIORef (bsAutoScroll bs)
 autoScrollToLastLine :: BalloonState -> IO ()
 autoScrollToLastLine bs = do
   config <- readIORef (bsConfig bs)
-  text <- readIORef (bsText bs)
+  segments <- readIORef (bsText bs)
+  let fullText = T.concat (map tsText segments)
 
   -- Early return if no text
-  unless (T.null text) $ do
+  unless (T.null fullText) $ do
     -- Get a Pango context from the drawing area widget
     pangoCtx <- Gtk.widgetGetPangoContext (bsDrawArea bs)
     layout <- Pango.layoutNew pangoCtx
 
     -- Set up layout same as in drawText
-    Pango.layoutSetText layout text (-1)
+    Pango.layoutSetText layout fullText (-1)
 
     fontDesc <- Pango.fontDescriptionNew
     Pango.fontDescriptionSetFamily fontDesc (bcFontName config)

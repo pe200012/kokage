@@ -235,6 +235,14 @@ runBalloonTest app _mBalloonPath = do
     clearChoices balloon
   Gtk.boxAppend vbox btnClear
   
+  -- Button: Quit
+  btnQuit <- new Gtk.Button [ #label := "Quit" ]
+  _ <- on btnQuit #clicked $ do
+    putStrLn "[Action] Quit"
+    hFlush stdout
+    Gio.applicationQuit app
+  Gtk.boxAppend vbox btnQuit
+  
   -- Add separator
   separator <- new Gtk.Separator [ #orientation := Gtk.OrientationHorizontal ]
   Gtk.boxAppend vbox separator
