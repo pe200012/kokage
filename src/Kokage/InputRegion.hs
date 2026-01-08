@@ -1,5 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Input region calculation for click-through on transparent areas.
 --
@@ -22,27 +22,25 @@ module Kokage.InputRegion
   , clearInputRegion
   ) where
 
-import           Control.Monad.IO.Class     ( MonadIO, liftIO )
-import           Data.Int                   ( Int32 )
-import           Data.Word                  ( Word8 )
-import           Foreign.Ptr                ( Ptr, castPtr )
+import           Control.Monad.IO.Class    ( MonadIO, liftIO )
 
-import qualified GI.Cairo.Structs.Region    as CairoRegion
-import qualified GI.Cairo.Structs.Surface   as CairoSurface
-import qualified GI.Gdk                     as Gdk
-import qualified GI.GdkPixbuf               as Pixbuf
+import           Data.GI.Base.ManagedPtr   ( wrapBoxed )
+import           Data.Int                  ( Int32 )
 
-import qualified GI.Cairo.Render            as Cairo
-import           GI.Cairo.Render.Connector  ( getContext )
-import           GI.Cairo.Render.Types      ( withSurface )
-import           Data.GI.Base.ManagedPtr    ( wrapBoxed )
+import           Foreign.Ptr               ( Ptr, castPtr )
+
+import qualified GI.Cairo.Render           as Cairo
+import           GI.Cairo.Render.Connector ( getContext )
+import           GI.Cairo.Render.Types     ( withSurface )
+import qualified GI.Cairo.Structs.Region   as CairoRegion
+import qualified GI.Cairo.Structs.Surface  as CairoSurface
+import qualified GI.Gdk                    as Gdk
+import qualified GI.GdkPixbuf              as Pixbuf
 
 -- | FFI import for cairo_surface_reference to increment reference count.
 -- This is needed because we're sharing the surface pointer between
 -- gi-cairo-render and gi-cairo, and both will try to free it.
-foreign import ccall "cairo_surface_reference"
-  cairo_surface_reference :: Ptr () -> IO (Ptr ())
-
+foreign import ccall "cairo_surface_reference" cairo_surface_reference :: Ptr () -> IO (Ptr ())
 
 -- This function renders the pixbuf to a Cairo ImageSurface and uses
 -- 'gdk_cairo_region_create_from_surface' to create a region from pixels
@@ -65,9 +63,7 @@ pixbufToInputRegion = pixbufToInputRegionWithThreshold
 -- behavior of 'gdk_cairo_region_create_from_surface' which includes all pixels
 -- with alpha > 0. For custom thresholds, a more complex implementation would
 -- be needed to pre-process the alpha values.
-pixbufToInputRegionWithThreshold :: MonadIO m
-                                  => Pixbuf.Pixbuf
-                                  -> m (Maybe CairoRegion.Region)
+pixbufToInputRegionWithThreshold :: MonadIO m => Pixbuf.Pixbuf -> m (Maybe CairoRegion.Region)
 pixbufToInputRegionWithThreshold pixbuf = liftIO $ do
   hasAlpha <- Pixbuf.pixbufGetHasAlpha pixbuf
   if not hasAlpha
@@ -78,8 +74,7 @@ pixbufToInputRegionWithThreshold pixbuf = liftIO $ do
 
       -- Create an ImageSurface and render the pixbuf to it
       -- The surface will have alpha from the pixbuf
-      cairoSurface <- Cairo.createImageSurface Cairo.FormatARGB32
-                        (fromIntegral w) (fromIntegral h)
+      cairoSurface <- Cairo.createImageSurface Cairo.FormatARGB32 (fromIntegral w) (fromIntegral h)
 
       Cairo.renderWith cairoSurface $ do
         -- Get the GI.Cairo.Context from within the Render monad
@@ -118,21 +113,15 @@ renderSurfaceToGiSurface renderSurface = liftIO $ do
 --
 -- Returns True if the input region was set, False if the pixbuf has no alpha
 -- (in which case the default full-surface input region is used).
-setInputRegionFromPixbuf :: MonadIO m
-                          => Gdk.Surface
-                          -> Pixbuf.Pixbuf
-                          -> m Bool
+setInputRegionFromPixbuf :: MonadIO m => Gdk.Surface -> Pixbuf.Pixbuf -> m Bool
 setInputRegionFromPixbuf = setInputRegionFromPixbufWithThreshold
 
 -- | Set the input region with a custom alpha threshold.
-setInputRegionFromPixbufWithThreshold :: MonadIO m
-                                       => Gdk.Surface
-                                       -> Pixbuf.Pixbuf
-                                       -> m Bool
+setInputRegionFromPixbufWithThreshold :: MonadIO m => Gdk.Surface -> Pixbuf.Pixbuf -> m Bool
 setInputRegionFromPixbufWithThreshold surface pixbuf = do
   mRegion <- pixbufToInputRegionWithThreshold pixbuf
   case mRegion of
-    Nothing -> return False
+    Nothing     -> return False
     Just region -> do
       Gdk.surfaceSetInputRegion surface region
       return True
@@ -142,8 +131,8 @@ setInputRegionFromPixbufWithThreshold surface pixbuf = do
 clearInputRegion :: MonadIO m => Gdk.Surface -> Int32 -> Int32 -> m ()
 clearInputRegion surface width height = liftIO $ do
   -- Create a fully opaque surface of the given size
-  cairoSurface <- Cairo.createImageSurface Cairo.FormatARGB32
-                    (fromIntegral width) (fromIntegral height)
+  cairoSurface
+    <- Cairo.createImageSurface Cairo.FormatARGB32 (fromIntegral width) (fromIntegral height)
 
   Cairo.renderWith cairoSurface $ do
     -- Fill with fully opaque black (any opaque color works)

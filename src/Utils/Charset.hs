@@ -34,15 +34,16 @@ isValidUtf8 bs = go (BL.unpack bs)
     go []         = True
     go (b : rest)
       -- ASCII (0x00-0x7F)
-      | b <= 0x7F = go rest
-      -- 2-byte sequence (0xC0-0xDF followed by 0x80-0xBF)
-      | b >= 0xC2 && b <= 0xDF = check1Continuation rest
-      -- 3-byte sequence (0xE0-0xEF followed by 2 continuation bytes)
-      | b >= 0xE0 && b <= 0xEF = check2Continuations b rest
-      -- 4-byte sequence (0xF0-0xF4 followed by 3 continuation bytes)
-      | b >= 0xF0 && b <= 0xF4 = check3Continuations b rest
-      -- Invalid leading byte
-      | otherwise = False
+
+        | b <= 0x7F = go rest
+        -- 2-byte sequence (0xC0-0xDF followed by 0x80-0xBF)
+        | b >= 0xC2 && b <= 0xDF = check1Continuation rest
+        -- 3-byte sequence (0xE0-0xEF followed by 2 continuation bytes)
+        | b >= 0xE0 && b <= 0xEF = check2Continuations b rest
+        -- 4-byte sequence (0xF0-0xF4 followed by 3 continuation bytes)
+        | b >= 0xF0 && b <= 0xF4 = check3Continuations b rest
+        -- Invalid leading byte
+        | otherwise = False
 
     check1Continuation :: [ Word8 ] -> Bool
     check1Continuation (c : rest)
@@ -82,13 +83,14 @@ hasUtf8Bom bs = BL.take 3 bs == BL.pack [ 0xEF, 0xBB, 0xBF ]
 guessCharset :: BL.ByteString -> EncodingName
 guessCharset bytes
   -- UTF-8 BOM present
-  | hasUtf8Bom bytes = "UTF-8"
-  -- Check for explicit charset declaration
-  | Just charset <- findCharsetDeclaration (BL8.lines bytes) = charset
-  -- Check if it's valid UTF-8 with non-ASCII characters
-  | hasNonAscii bytes && isValidUtf8 bytes = "UTF-8"
-  -- Default to CP932 (Shift_JIS) - most common for older Japanese files
-  | otherwise = "CP932"
+
+    | hasUtf8Bom bytes = "UTF-8"
+    -- Check for explicit charset declaration
+    | Just charset <- findCharsetDeclaration (BL8.lines bytes) = charset
+    -- Check if it's valid UTF-8 with non-ASCII characters
+    | hasNonAscii bytes && isValidUtf8 bytes = "UTF-8"
+    -- Default to CP932 (Shift_JIS) - most common for older Japanese files
+    | otherwise = "CP932"
   where
     hasNonAscii :: BL.ByteString -> Bool
     hasNonAscii = BL.any (> 0x7F)
@@ -98,7 +100,7 @@ findCharsetDeclaration :: [ BL.ByteString ] -> Maybe EncodingName
 findCharsetDeclaration lns = case filter (BL8.isPrefixOf (BL8.pack "charset,")) lns of
   (l : _) -> let
       charset = map toLower . cleanStr . BL8.unpack . BL8.drop 8 $ l
-    in
+    in 
       Just $ normalizeCharset charset
   []      -> Nothing
 

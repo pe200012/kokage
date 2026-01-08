@@ -19,17 +19,14 @@ module Types.Install
   , readDeveloperOptions
   ) where
 
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
-import qualified Data.ByteString.Lazy       as BL
-import qualified Data.Map.Strict            as Map
-import           Data.Map.Strict            ( Map )
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Map.Strict      as Map
+import           Data.Map.Strict      ( Map )
+import           Data.Text            ( Text )
+import qualified Data.Text            as T
+import qualified Data.Text.Encoding   as TE
 
-import           Types.Ghost                ( detectCharsetFromBytes
-                                            , convertToUtf8
-                                            , clean
-                                            )
+import           Types.Ghost          ( clean, convertToUtf8, detectCharsetFromBytes )
 
 --------------------------------------------------------------------------------
 -- Data Types
@@ -60,7 +57,7 @@ data InstallDescript
     -- Optional fields
   , idAccept :: Maybe Text                     -- ^ Target ghost name (for shell/supplement)
   , idRefresh :: Bool                          -- ^ Clear directory before install (default: False)
-  , idRefreshUndeleteMask :: [Text]            -- ^ Files to keep during refresh
+  , idRefreshUndeleteMask :: [ Text ]            -- ^ Files to keep during refresh
     -- Bundled content directories
   , idBalloonDirectory :: Maybe Text           -- ^ Bundled balloon directory
   , idBalloonSourceDirectory :: Maybe Text     -- ^ Source dir in archive for balloon
@@ -78,7 +75,7 @@ data InstallDescript
   deriving ( Show, Eq )
 
 -- | List of files/directories to delete on network update
-type DeleteList = [Text]
+type DeleteList = [ Text ]
 
 -- | Developer option flags for archive generation
 data DeveloperOption
@@ -87,7 +84,7 @@ data DeveloperOption
   deriving ( Show, Eq )
 
 -- | Developer options mapping paths to their options
-type DeveloperOptions = Map Text [DeveloperOption]
+type DeveloperOptions = Map Text [ DeveloperOption ]
 
 --------------------------------------------------------------------------------
 -- Defaults
@@ -148,40 +145,42 @@ readInstallDescript path = do
     parseLine inst line = case T.breakOn "," line of
       ( rawKey, rest )
         | not (T.null rest) -> let
-            key = T.toLower (clean rawKey)
-            val = clean (T.drop 1 rest)
+            key    = T.toLower (clean rawKey)
+            val    = clean (T.drop 1 rest)
             rawMap = Map.insert key val (idRaw inst)
-          in
+          in 
             parseKey (inst { idRaw = rawMap }) key val
       _ -> inst
 
     parseKey :: InstallDescript -> Text -> Text -> InstallDescript
     parseKey inst key val
       -- Required fields
-      | key == "charset" = inst { idCharset = val }
-      | key == "name" = inst { idName = val }
-      | key == "type" = inst { idType = parseInstallType val }
-      | key == "directory" = inst { idDirectory = val }
-      -- Optional fields
-      | key == "accept" = inst { idAccept = Just val }
-      | key == "refresh" = inst { idRefresh = val == "1" || T.toLower val == "true" }
-      | key == "refreshundeletemask" = inst { idRefreshUndeleteMask = T.splitOn ":" val }
-      -- Bundled balloon
-      | key == "balloon.directory" = inst { idBalloonDirectory = Just val }
-      | key == "balloon.source.directory" = inst { idBalloonSourceDirectory = Just val }
-      -- Bundled plugin
-      | key == "plugin.directory" = inst { idPluginDirectory = Just val }
-      | key == "plugin.source.directory" = inst { idPluginSourceDirectory = Just val }
-      -- Bundled headline
-      | key == "headline.directory" = inst { idHeadlineDirectory = Just val }
-      | key == "headline.source.directory" = inst { idHeadlineSourceDirectory = Just val }
-      -- Bundled calendar
-      | key == "calendar.directory" = inst { idCalendarDirectory = Just val }
-      | key == "calendar.source.directory" = inst { idCalendarSourceDirectory = Just val }
-      -- Bundled calendar skin
-      | key == "calendarskin.directory" = inst { idCalendarSkinDirectory = Just val }
-      | key == "calendarskin.source.directory" = inst { idCalendarSkinSourceDirectory = Just val }
-      | otherwise = inst
+
+        | key == "charset" = inst { idCharset = val }
+        | key == "name" = inst { idName = val }
+        | key == "type" = inst { idType = parseInstallType val }
+        | key == "directory" = inst { idDirectory = val }
+        -- Optional fields
+        | key == "accept" = inst { idAccept = Just val }
+        | key == "refresh" = inst { idRefresh = val == "1" || T.toLower val == "true" }
+        | key == "refreshundeletemask" = inst { idRefreshUndeleteMask = T.splitOn ":" val }
+        -- Bundled balloon
+        | key == "balloon.directory" = inst { idBalloonDirectory = Just val }
+        | key == "balloon.source.directory" = inst { idBalloonSourceDirectory = Just val }
+        -- Bundled plugin
+        | key == "plugin.directory" = inst { idPluginDirectory = Just val }
+        | key == "plugin.source.directory" = inst { idPluginSourceDirectory = Just val }
+        -- Bundled headline
+        | key == "headline.directory" = inst { idHeadlineDirectory = Just val }
+        | key == "headline.source.directory" = inst { idHeadlineSourceDirectory = Just val }
+        -- Bundled calendar
+        | key == "calendar.directory" = inst { idCalendarDirectory = Just val }
+        | key == "calendar.source.directory" = inst { idCalendarSourceDirectory = Just val }
+        -- Bundled calendar skin
+        | key == "calendarskin.directory" = inst { idCalendarSkinDirectory = Just val }
+        | key == "calendarskin.source.directory"
+          = inst { idCalendarSkinSourceDirectory = Just val }
+        | otherwise = inst
 
 -- | Read and parse a delete.txt file
 -- Format: one relative path per line, backslash-separated, directories end with \
@@ -192,7 +191,7 @@ readDeleteList path = do
       utf8Bytes       = convertToUtf8 detectedCharset rawBytes
       contents        = TE.decodeUtf8 (BL.toStrict utf8Bytes)
       -- Normalize backslashes to forward slashes for cross-platform
-      normalize = T.replace "\\" "/"
+      normalize       = T.replace "\\" "/"
   return $ filter (not . T.null) $ map (normalize . T.strip) (T.lines contents)
 
 -- | Read and parse a developer_options.txt file
@@ -206,15 +205,19 @@ readDeveloperOptions path = do
   return $ foldl' parseLine Map.empty (T.lines contents)
   where
     parseLine :: DeveloperOptions -> Text -> DeveloperOptions
-    parseLine opts line =
-      let parts = T.splitOn "," (T.strip line)
-      in case parts of
-        (filePath : optStrs) | not (T.null filePath) ->
-          let options = mapMaybe parseOption optStrs
-          in if null options
-             then opts
-             else Map.insert filePath options opts
-        _ -> opts
+    parseLine opts line
+      = let
+          parts = T.splitOn "," (T.strip line)
+        in 
+          case parts of
+            (filePath : optStrs)
+              | not (T.null filePath) -> let
+                  options = mapMaybe parseOption optStrs
+                in 
+                  if null options
+                    then opts
+                    else Map.insert filePath options opts
+            _ -> opts
 
     parseOption :: Text -> Maybe DeveloperOption
     parseOption opt = case T.toLower (T.strip opt) of
@@ -222,8 +225,8 @@ readDeveloperOptions path = do
       "noupdate" -> Just NoUpdate
       _          -> Nothing
 
-    mapMaybe :: (a -> Maybe b) -> [a] -> [b]
-    mapMaybe _ [] = []
-    mapMaybe f (x:xs) = case f x of
+    mapMaybe :: (a -> Maybe b) -> [ a ] -> [ b ]
+    mapMaybe _ []       = []
+    mapMaybe f (x : xs) = case f x of
       Just y  -> y : mapMaybe f xs
       Nothing -> mapMaybe f xs

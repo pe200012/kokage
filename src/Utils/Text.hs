@@ -16,6 +16,7 @@ import           Data.Char  ( isSpace )
 import           Data.Maybe ( fromMaybe )
 import           Data.Text  ( Text )
 import qualified Data.Text  as T
+
 import           Text.Read  ( readMaybe )
 
 -- | Trim leading and trailing whitespace (String version for charset detection).

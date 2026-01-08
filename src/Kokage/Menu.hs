@@ -11,58 +11,55 @@ module Kokage.Menu
   , Gtk.PopoverMenu
   ) where
 
-import           Data.Maybe                 ( fromMaybe )
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
+import           Data.Text       ( Text )
+import qualified Data.Text       as T
 
-import qualified GI.Gdk                     as Gdk
-import qualified GI.Gio                     as Gio
-import qualified GI.Gtk                     as Gtk
+import qualified GI.Gdk          as Gdk
+import qualified GI.Gio          as Gio
+import qualified GI.Gtk          as Gtk
 
-import           System.FilePath            ( (</>) )
+import           System.FilePath ( (</>) )
 
-import           Types.Ghost                ( ShellDescript(..) )
+import           Types.Ghost     ( ShellDescript(..) )
 
 data MenuConfig
-  = MenuConfig
-  { mcShells          :: ![(Text, Text)]
-  , mcBalloons        :: ![(Text, Text)]
-  , mcCurrentShell    :: !Text
-  , mcCurrentBalloon  :: !Text
-  , mcIsSticky        :: !Bool
-  }
+  = MenuConfig { mcShells         :: ![ ( Text, Text ) ]
+               , mcBalloons       :: ![ ( Text, Text ) ]
+               , mcCurrentShell   :: !Text
+               , mcCurrentBalloon :: !Text
+               , mcIsSticky       :: !Bool
+               }
   deriving ( Show, Eq )
 
 emptyMenuConfig :: MenuConfig
-emptyMenuConfig = MenuConfig
-  { mcShells = []
-  , mcBalloons = []
-  , mcCurrentShell = ""
-  , mcCurrentBalloon = ""
-  , mcIsSticky = False
-  }
+emptyMenuConfig
+  = MenuConfig { mcShells         = []
+               , mcBalloons       = []
+               , mcCurrentShell   = ""
+               , mcCurrentBalloon = ""
+               , mcIsSticky       = False
+               }
 
 data MenuStyle
   = MenuStyle
-  { msShellPath               :: Maybe FilePath
-  , msBackgroundBitmapFile    :: Maybe Text
-  , msForegroundBitmapFile    :: Maybe Text
-  , msSidebarBitmapFile       :: Maybe Text
-  , msBackgroundFontColorR    :: Maybe Int
-  , msBackgroundFontColorG    :: Maybe Int
-  , msBackgroundFontColorB    :: Maybe Int
-  , msForegroundFontColorR    :: Maybe Int
-  , msForegroundFontColorG    :: Maybe Int
-  , msForegroundFontColorB    :: Maybe Int
-  , msSeparatorColorR         :: Maybe Int
-  , msSeparatorColorG         :: Maybe Int
-  , msSeparatorColorB         :: Maybe Int
-  , msBackgroundAlignment     :: Text
-  , msForegroundAlignment     :: Text
-  , msSidebarAlignment        :: Text
-  , msFontName                :: Maybe Text
-  , msFontHeight              :: Maybe Int
+  { msShellPath :: Maybe FilePath
+  , msBackgroundBitmapFile :: Maybe Text
+  , msForegroundBitmapFile :: Maybe Text
+  , msSidebarBitmapFile :: Maybe Text
+  , msBackgroundFontColorR :: Maybe Int
+  , msBackgroundFontColorG :: Maybe Int
+  , msBackgroundFontColorB :: Maybe Int
+  , msForegroundFontColorR :: Maybe Int
+  , msForegroundFontColorG :: Maybe Int
+  , msForegroundFontColorB :: Maybe Int
+  , msSeparatorColorR :: Maybe Int
+  , msSeparatorColorG :: Maybe Int
+  , msSeparatorColorB :: Maybe Int
+  , msBackgroundAlignment :: Text
+  , msForegroundAlignment :: Text
+  , msSidebarAlignment :: Text
+  , msFontName :: Maybe Text
+  , msFontHeight :: Maybe Int
   }
   deriving ( Show, Eq )
 
@@ -124,7 +121,10 @@ createMenuModel config = do
   Gio.menuAppend portalMenu (Just "Placeholder") (Just "app.todo")
   Gio.menuAppendSubmenu menu (Just "Portal sites") portalMenu
 
-  let stickyLabel = if mcIsSticky config then "Unstick" else "Stick"
+  let stickyLabel
+        = if mcIsSticky config
+          then "Unstick"
+          else "Stick"
   Gio.menuAppend menu (Just stickyLabel) (Just "app.stick")
 
   optionsMenu <- Gio.menuNew
@@ -176,30 +176,32 @@ createMenuModel config = do
 
   return menu
 
-populateShellMenu :: Gio.Menu -> [(Text, Text)] -> Text -> IO ()
+populateShellMenu :: Gio.Menu -> [ ( Text, Text ) ] -> Text -> IO ()
 populateShellMenu menu shells currentShell = do
   if null shells
     then Gio.menuAppend menu (Just "(No shells available)") Nothing
     else mapM_ addShellItem shells
   where
-    addShellItem (name, path) = do
-      let label = if name == currentShell
-                  then T.concat ["● ", name]
-                  else T.concat ["  ", name]
-          action = T.concat ["app.change_shell::", path]
+    addShellItem ( name, path ) = do
+      let label
+            = if name == currentShell
+              then T.concat [ "● ", name ]
+              else T.concat [ "  ", name ]
+          action = T.concat [ "app.change_shell::", path ]
       Gio.menuAppend menu (Just label) (Just action)
 
-populateBalloonMenu :: Gio.Menu -> [(Text, Text)] -> Text -> IO ()
+populateBalloonMenu :: Gio.Menu -> [ ( Text, Text ) ] -> Text -> IO ()
 populateBalloonMenu menu balloons currentBalloon = do
   if null balloons
     then Gio.menuAppend menu (Just "(No balloons available)") Nothing
     else mapM_ addBalloonItem balloons
   where
-    addBalloonItem (name, path) = do
-      let label = if name == currentBalloon
-                  then T.concat ["● ", name]
-                  else T.concat ["  ", name]
-          action = T.concat ["app.change_balloon::", path]
+    addBalloonItem ( name, path ) = do
+      let label
+            = if name == currentBalloon
+              then T.concat [ "● ", name ]
+              else T.concat [ "  ", name ]
+          action = T.concat [ "app.change_balloon::", path ]
       Gio.menuAppend menu (Just label) (Just action)
 
 createContextMenu :: Gtk.Window -> MenuStyle -> MenuConfig -> IO Gtk.PopoverMenu
@@ -230,79 +232,87 @@ applyMenuStyle popover style = do
 generateMenuCss :: MenuStyle -> Text
 generateMenuCss style
   = let
-      shellPath = msShellPath style
+      shellPath    = msShellPath style
 
-      bgImageCss = case (shellPath, msBackgroundBitmapFile style) of
+      bgImageCss   = case ( shellPath, msBackgroundBitmapFile style ) of
         ( Just sp, Just bf ) -> let
-            fullPath   = T.pack (sp </> T.unpack bf)
-            alignCss   = alignmentToCss (msBackgroundAlignment style)
-          in
+            fullPath = T.pack (sp </> T.unpack bf)
+            alignCss = alignmentToCss (msBackgroundAlignment style)
+          in 
             T.concat
-            [ "background-image: url('file://", fullPath, "');\n"
-            , "background-repeat: repeat-y;\n"
-            , "background-position: ", alignCss, ";\n"
-            ]
+              [ "background-image: url('file://"
+              , fullPath
+              , "');\n"
+              , "background-repeat: repeat-y;\n"
+              , "background-position: "
+              , alignCss
+              , ";\n"
+              ]
         _ -> ""
 
-      fontColorCss = case ( msBackgroundFontColorR style
-                          , msBackgroundFontColorG style
-                          , msBackgroundFontColorB style
-                          ) of
-        ( Just r, Just g, Just b ) -> T.concat [ "color: rgb(", showT r, ",", showT g, ",", showT b, ");\n" ]
-        _ -> ""
+      fontColorCss
+        = case ( msBackgroundFontColorR style
+               , msBackgroundFontColorG style
+               , msBackgroundFontColorB style
+               ) of
+          ( Just r, Just g, Just b )
+            -> T.concat [ "color: rgb(", showT r, ",", showT g, ",", showT b, ");\n" ]
+          _ -> ""
 
-      fontCss = case msFontName style of
+      fontCss      = case msFontName style of
         Just name -> T.concat
-          [ "font-family: '", name, "';\n"
+          [ "font-family: '"
+          , name
+          , "';\n"
           , maybe "" (\h -> T.concat [ "font-size: ", showT h, "px;\n" ]) (msFontHeight style)
           ]
-        Nothing -> ""
+        Nothing   -> ""
 
-      hoverCss = case (shellPath, msForegroundBitmapFile style) of
+      hoverCss     = case ( shellPath, msForegroundBitmapFile style ) of
         ( Just sp, Just ff ) -> let
             fullPath = T.pack (sp </> T.unpack ff)
             alignCss = alignmentToCss (msForegroundAlignment style)
-            fgColor  = case ( msForegroundFontColorR style
-                            , msForegroundFontColorG style
-                            , msForegroundFontColorB style
-                            ) of
-              ( Just r, Just g, Just b ) -> T.concat [ "color: rgb(", showT r, ",", showT g, ",", showT b, ");\n" ]
-              _ -> ""
-          in
+            fgColor
+              = case ( msForegroundFontColorR style
+                     , msForegroundFontColorG style
+                     , msForegroundFontColorB style
+                     ) of
+                ( Just r, Just g, Just b )
+                  -> T.concat [ "color: rgb(", showT r, ",", showT g, ",", showT b, ");\n" ]
+                _ -> ""
+          in 
             T.concat
-            [ "popover.menu contents modelbutton:hover {\n"
-            , "  background-image: url('file://", fullPath, "');\n"
-            , "  background-repeat: repeat-y;\n"
-            , "  background-position: ", alignCss, ";\n"
-            , fgColor
-            , "}\n"
-            ]
+              [ "popover.menu contents modelbutton:hover {\n"
+              , "  background-image: url('file://"
+              , fullPath
+              , "');\n"
+              , "  background-repeat: repeat-y;\n"
+              , "  background-position: "
+              , alignCss
+              , ";\n"
+              , fgColor
+              , "}\n"
+              ]
         _ -> ""
 
       baseCss
         = if T.null bgImageCss && T.null fontColorCss && T.null fontCss
           then ""
-          else T.concat
-            [ "popover.menu contents {\n"
-            , bgImageCss
-            , fontColorCss
-            , fontCss
-            , "}\n"
-            ]
-    in
+          else T.concat [ "popover.menu contents {\n", bgImageCss, fontColorCss, fontCss, "}\n" ]
+    in 
       T.concat [ baseCss, hoverCss ]
 
 alignmentToCss :: Text -> Text
 alignmentToCss align = case T.toLower align of
-  "lefttop"    -> "left top"
-  "righttop"   -> "right top"
-  "centertop"  -> "center top"
+  "lefttop" -> "left top"
+  "righttop" -> "right top"
+  "centertop" -> "center top"
   "leftbottom" -> "left bottom"
-  "rightbottom"-> "right bottom"
+  "rightbottom" -> "right bottom"
   "centerbottom" -> "center bottom"
-  "top"        -> "left top"
-  "bottom"     -> "left bottom"
-  _            -> "left top"
+  "top" -> "left top"
+  "bottom" -> "left bottom"
+  _ -> "left top"
 
 showT :: Show a => a -> Text
 showT = T.pack . show

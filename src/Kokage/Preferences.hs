@@ -1,5 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | User preferences system with persistence.
@@ -33,42 +34,36 @@ module Kokage.Preferences
   , setShowCollisionArea
   ) where
 
-import           Control.Exception                ( catch, SomeException )
-import           Control.Monad                    ( when )
+import           Control.Exception ( SomeException, catch )
 
-import           Data.Aeson                       ( FromJSON, ToJSON
-                                                  , eitherDecodeFileStrict
-                                                  , encodeFile
-                                                  )
-import           Data.IORef                       ( IORef, newIORef, readIORef
-                                                  , writeIORef, modifyIORef' )
-import           Data.Text                        ( Text )
-import qualified Data.Text                        as T
+import           Data.Aeson        ( FromJSON, ToJSON, eitherDecodeFileStrict, encodeFile )
+import           Data.IORef        ( modifyIORef', newIORef, readIORef, writeIORef )
+import           Data.Text         ( Text )
 
-import           GHC.Generics                     ( Generic )
+import           GHC.Generics      ( Generic )
 
-import           System.Directory                 ( createDirectoryIfMissing
-                                                  , doesFileExist
-                                                  , getXdgDirectory
-                                                  , XdgDirectory(..)
-                                                  )
-import           System.FilePath                  ( (</>) )
+import           System.Directory  ( XdgDirectory(..)
+                                   , createDirectoryIfMissing
+                                   , doesFileExist
+                                   , getXdgDirectory
+                                   )
+import           System.FilePath   ( (</>) )
 
 -- | User preferences for Kokage.
 data Preferences
   = Preferences
   { -- Surface & Balloon settings
-    prefSurfaceScale     :: !Int        -- ^ Surface scale percentage (10-1000, default 100)
-  , prefScriptSpeed      :: !Int        -- ^ Text display speed (-1 to 8, default 1)
-                                        -- ^ -1 = instant, 0 = no delay, 1-8 = progressively slower
-  , prefBalloonFont      :: !Text       -- ^ Font for balloon text (default "Monospace")
-  , prefMenuFont         :: !Text       -- ^ Font for menus (default "Sans")
-  , prefUsePNA           :: !Bool       -- ^ Use PNA alpha masks (default True)
-  , prefScaleBalloon     :: !Bool       -- ^ Scale balloon with surface (default False)
+    prefSurfaceScale :: !Int        -- ^ Surface scale percentage (10-1000, default 100)
+  , prefScriptSpeed :: !Int        -- ^ Text display speed (-1 to 8, default 1)
+                                   -- ^ -1 = instant, 0 = no delay, 1-8 = progressively slower
+  , prefBalloonFont :: !Text       -- ^ Font for balloon text (default "Monospace")
+  , prefMenuFont :: !Text       -- ^ Font for menus (default "Sans")
+  , prefUsePNA :: !Bool       -- ^ Use PNA alpha masks (default True)
+  , prefScaleBalloon :: !Bool       -- ^ Scale balloon with surface (default False)
     -- Behavior settings
-  , prefSSTPAllow        :: !Bool       -- ^ Allow external SSTP connections (default False)
-  , prefSinkAfterTalk    :: !Bool       -- ^ Lower window after speech ends (default False)
-  , prefRaiseBeforeTalk  :: !Bool       -- ^ Raise window when speech starts (default True)
+  , prefSSTPAllow :: !Bool       -- ^ Allow external SSTP connections (default False)
+  , prefSinkAfterTalk :: !Bool       -- ^ Lower window after speech ends (default False)
+  , prefRaiseBeforeTalk :: !Bool       -- ^ Raise window when speech starts (default True)
     -- Debug settings
   , prefShowCollisionArea :: !Bool      -- ^ Show collision regions overlay (default False)
   , prefShowCollisionNames :: !Bool     -- ^ Show collision region names (default False)
@@ -76,20 +71,22 @@ data Preferences
   deriving ( Eq, Show, Generic )
 
 instance FromJSON Preferences
+
 instance ToJSON Preferences
 
 -- | Default preferences.
 defaultPreferences :: Preferences
-defaultPreferences = Preferences
-  { prefSurfaceScale      = 100
-  , prefScriptSpeed       = 1
-  , prefBalloonFont       = "Monospace"
-  , prefMenuFont          = "Sans"
-  , prefUsePNA            = True
-  , prefScaleBalloon      = False
-  , prefSSTPAllow         = False
-  , prefSinkAfterTalk     = False
-  , prefRaiseBeforeTalk   = True
+defaultPreferences
+  = Preferences
+  { prefSurfaceScale = 100
+  , prefScriptSpeed = 1
+  , prefBalloonFont = "Monospace"
+  , prefMenuFont = "Sans"
+  , prefUsePNA = True
+  , prefScaleBalloon = False
+  , prefSSTPAllow = False
+  , prefSinkAfterTalk = False
+  , prefRaiseBeforeTalk = True
   , prefShowCollisionArea = False
   , prefShowCollisionNames = False
   }
@@ -114,7 +111,7 @@ loadPreferences = do
     else do
       result <- eitherDecodeFileStrict path
       case result of
-        Left err -> do
+        Left err    -> do
           putStrLn $ "[Preferences] Error loading preferences: " <> err
           putStrLn "[Preferences] Using defaults"
           return defaultPreferences
@@ -129,9 +126,8 @@ savePreferences prefs = do
   configDir <- getXdgDirectory XdgConfig "kokage"
   createDirectoryIfMissing True configDir
   encodeFile path prefs
-  putStrLn $ "[Preferences] Saved to " <> path
-  `catch` \(e :: SomeException) ->
-    putStrLn $ "[Preferences] Error saving: " <> show e
+  putStrLn ("[Preferences] Saved to " <> path) `catch` \(e :: SomeException)
+    -> putStrLn $ "[Preferences] Error saving: " <> show e
 
 -- | Get script speed (character delay).
 -- Returns milliseconds per character based on prefScriptSpeed setting.

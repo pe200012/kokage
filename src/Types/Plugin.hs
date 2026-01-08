@@ -13,16 +13,12 @@ module Types.Plugin
   , readPluginDescript
   ) where
 
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
-import qualified Data.ByteString.Lazy       as BL
+import qualified Data.ByteString.Lazy as BL
+import           Data.Text            ( Text )
+import qualified Data.Text            as T
+import qualified Data.Text.Encoding   as TE
 
-import           Types.Ghost                ( detectCharsetFromBytes
-                                            , convertToUtf8
-                                            , clean
-                                            , readIntOr
-                                            )
+import           Types.Ghost          ( clean, convertToUtf8, detectCharsetFromBytes, readIntOr )
 
 --------------------------------------------------------------------------------
 -- Data Types
@@ -107,27 +103,28 @@ readPluginDescript path = do
         | not (T.null rest) -> let
             key = T.toLower (clean rawKey)
             val = clean (T.drop 1 rest)
-          in
+          in 
             parseKey pd key val
       _ -> pd
 
     parseKey :: PluginDescript -> Text -> Text -> PluginDescript
     parseKey pd key val
       -- Basic info
-      | key == "charset" = pd { pdCharset = val }
-      | key == "name" = pd { pdName = val }
-      | key == "id" = pd { pdId = val }
-      | key == "filename" = pd { pdFilename = val }
-      | key == "type" = pd { pdType = val }
-      -- Author info
-      | key == "craftman" = pd { pdCraftman = Just val }
-      | key == "craftmanw" = pd { pdCraftmanw = Just val }
-      | key == "craftmanurl" = pd { pdCraftmanUrl = Just val }
-      | key == "homeurl" = pd { pdHomeUrl = Just val }
-      -- Readme
-      | key == "readme" = pd { pdReadme = val }
-      | key == "readme.charset" = pd { pdReadmeCharset = Just val }
-      -- Plugin behavior
-      | key == "secondchangeinterval" = pd { pdSecondChangeInterval = readIntOr 1 val }
-      | key == "otherghosttalk" = pd { pdOtherGhostTalk = parseOtherGhostTalk val }
-      | otherwise = pd
+
+        | key == "charset" = pd { pdCharset = val }
+        | key == "name" = pd { pdName = val }
+        | key == "id" = pd { pdId = val }
+        | key == "filename" = pd { pdFilename = val }
+        | key == "type" = pd { pdType = val }
+        -- Author info
+        | key == "craftman" = pd { pdCraftman = Just val }
+        | key == "craftmanw" = pd { pdCraftmanw = Just val }
+        | key == "craftmanurl" = pd { pdCraftmanUrl = Just val }
+        | key == "homeurl" = pd { pdHomeUrl = Just val }
+        -- Readme
+        | key == "readme" = pd { pdReadme = val }
+        | key == "readme.charset" = pd { pdReadmeCharset = Just val }
+        -- Plugin behavior
+        | key == "secondchangeinterval" = pd { pdSecondChangeInterval = readIntOr 1 val }
+        | key == "otherghosttalk" = pd { pdOtherGhostTalk = parseOtherGhostTalk val }
+        | otherwise = pd

@@ -24,27 +24,34 @@ module Kokage.Event
   ) where
 
 import           Control.Monad              ( when )
+
 import           Data.IORef                 ( newIORef, readIORef, writeIORef )
-import           Data.Time.Clock            ( getCurrentTime, UTCTime, diffUTCTime )
 import qualified Data.Map.Strict            as Map
 import qualified Data.Text                  as T
+import           Data.Time.Clock            ( UTCTime, diffUTCTime, getCurrentTime )
 
 import qualified GI.Gdk                     as Gdk
 import qualified GI.Gtk                     as Gtk
 
 import           Kokage.Collision           ( findCollisionAt )
+import           Kokage.Event.Config
+import           Kokage.Event.Shiori
+-- Re-export submodules
+import           Kokage.Event.Types
 
-import           Reactive.Banana            ( (<@), (<@>), Behavior, Event, filterE, stepper, unionWith )
-import           Reactive.Banana.Frameworks ( MomentIO, fromAddHandler, reactimate, liftIO )
+import           Reactive.Banana            ( (<@)
+                                            , (<@>)
+                                            , Behavior
+                                            , Event
+                                            , filterE
+                                            , stepper
+                                            , unionWith
+                                            )
+import           Reactive.Banana.Frameworks ( MomentIO, fromAddHandler, liftIO, reactimate )
 import           Reactive.Banana.GI.Gtk     ( signalE0R )
 
 import           Types.Ghost                ( CollisionRegion(..) )
 import           Types.Shiori               ( ShioriEvent(..) )
-
--- Re-export submodules
-import           Kokage.Event.Types
-import           Kokage.Event.Config
-import           Kokage.Event.Shiori
 
 -- | Process a click event against collision regions.
 handleClick :: [ CollisionRegion ] -> ( Double, Double ) -> CollisionHit
@@ -53,7 +60,7 @@ handleClick collisions ( x, y )
       ix  = floor x :: Int
       iy  = floor y :: Int
       evt = ClickEvent ix iy
-    in
+    in 
       case findCollisionAt ix iy collisions of
         Just cr -> HitRegion evt cr
         Nothing -> HitNothing evt
@@ -95,10 +102,8 @@ setupNetwork config = do
         let uptime = case mShiori of
               Just sc -> getUptimeHours (scStartTime sc) now
               Nothing -> 0
-            refs = Map.fromList
-              [ (0, T.pack $ show uptime)
-              , (1, "0"), (2, "0"), (3, "1")
-              ]
+            refs
+              = Map.fromList [ ( 0, T.pack $ show uptime ), ( 1, "0" ), ( 2, "0" ), ( 3, "1" ) ]
         sendShioriAndLog mShiori OnSecondChange refs
 
   let handleMinuteTick lt = do
@@ -107,10 +112,8 @@ setupNetwork config = do
         let uptime = case mShiori of
               Just sc -> getUptimeHours (scStartTime sc) now
               Nothing -> 0
-            refs = Map.fromList
-              [ (0, T.pack $ show uptime)
-              , (1, "0"), (2, "0"), (3, "1")
-              ]
+            refs
+              = Map.fromList [ ( 0, T.pack $ show uptime ), ( 1, "0" ), ( 2, "0" ), ( 3, "1" ) ]
         sendShioriAndLog mShiori OnMinuteChange refs
 
   let handleHourTick lt = do
@@ -119,10 +122,8 @@ setupNetwork config = do
         let uptime = case mShiori of
               Just sc -> getUptimeHours (scStartTime sc) now
               Nothing -> 0
-            refs = Map.fromList
-              [ (0, T.pack $ show uptime)
-              , (1, "0"), (2, "0"), (3, "1")
-              ]
+            refs
+              = Map.fromList [ ( 0, T.pack $ show uptime ), ( 1, "0" ), ( 2, "0" ), ( 3, "1" ) ]
         sendShioriAndLog mShiori OnHourTimeSignal refs
 
   reactimate $ handleSecondTick <$> secondTickE
@@ -140,7 +141,7 @@ setupNetwork config = do
   lastMotionTimeRef <- liftIO $ newIORef (Nothing :: Maybe UTCTime)
 
   -- Create a Behavior that holds the latest mouse position
-  motionB :: Behavior (Maybe (Double, Double)) <- stepper Nothing (Just <$> motionE)
+  motionB :: Behavior (Maybe ( Double, Double )) <- stepper Nothing (Just <$> motionE)
 
   -- Update timestamp on every motion
   let recordMotionTime _ = writeIORef lastMotionTimeRef . Just =<< getCurrentTime
@@ -154,26 +155,30 @@ setupNetwork config = do
       motionExpirySeconds = 0.1
 
   let handleSampledMotion mPos = case mPos of
-        Nothing -> return ()  -- No motion yet
-        Just (x, y) -> do
+        Nothing       -> return ()  -- No motion yet
+        Just ( x, y ) -> do
           mLastTime <- readIORef lastMotionTimeRef
           case mLastTime of
-            Nothing -> return ()
+            Nothing       -> return ()
             Just lastTime -> do
               now <- getCurrentTime
               let age = realToFrac (diffUTCTime now lastTime) :: Double
               -- Only send if motion is fresh
               when (age < motionExpirySeconds) $ do
-                let ix = floor x :: Int
-                    iy = floor y :: Int
+                let ix     = floor x :: Int
+                    iy     = floor y :: Int
                     surfId = maybe 0 scSurfaceId mShiori
                 case findCollisionAt ix iy collisions of
                   Just cr -> do
-                    let refs = Map.fromList
-                          [ (0, T.pack $ show ix), (1, T.pack $ show iy)
-                          , (2, ""), (3, "0"), (4, crName cr)
-                          , (5, T.pack $ show surfId)
-                          ]
+                    let refs
+                          = Map.fromList
+                            [ ( 0, T.pack $ show ix )
+                            , ( 1, T.pack $ show iy )
+                            , ( 2, "" )
+                            , ( 3, "0" )
+                            , ( 4, crName cr )
+                            , ( 5, T.pack $ show surfId )
+                            ]
                     sendShioriAndLog mShiori OnMouseMove refs
                   Nothing -> return ()
 
@@ -194,21 +199,27 @@ setupNetwork config = do
         case hit of
           HitRegion evt cr -> do
             let surfId = maybe 0 scSurfaceId mShiori
-                refs = Map.fromList
-                  [ (0, T.pack $ show $ clickX evt)
-                  , (1, T.pack $ show $ clickY evt)
-                  , (2, "0"), (3, crName cr), (4, "0")
-                  , (5, T.pack $ show surfId)
-                  ]
+                refs
+                  = Map.fromList
+                    [ ( 0, T.pack $ show $ clickX evt )
+                    , ( 1, T.pack $ show $ clickY evt )
+                    , ( 2, "0" )
+                    , ( 3, crName cr )
+                    , ( 4, "0" )
+                    , ( 5, T.pack $ show surfId )
+                    ]
             sendShioriAndLog mShiori OnMouseClick refs
-          HitNothing evt -> do
+          HitNothing evt   -> do
             let surfId = maybe 0 scSurfaceId mShiori
-                refs = Map.fromList
-                  [ (0, T.pack $ show $ clickX evt)
-                  , (1, T.pack $ show $ clickY evt)
-                  , (2, "0"), (3, ""), (4, "0")
-                  , (5, T.pack $ show surfId)
-                  ]
+                refs
+                  = Map.fromList
+                    [ ( 0, T.pack $ show $ clickX evt )
+                    , ( 1, T.pack $ show $ clickY evt )
+                    , ( 2, "0" )
+                    , ( 3, "" )
+                    , ( 4, "0" )
+                    , ( 5, T.pack $ show surfId )
+                    ]
             sendShioriAndLog mShiori OnMouseClick refs
 
   reactimate $ handleCollisionHit <$> hitE
@@ -229,9 +240,9 @@ setupNetwork config = do
 
   -- Handle window movement
   case moveMode of
-    MoveToplevel beginMove -> do
+    MoveToplevel beginMove        -> do
       let firstExceedE = filterE exceedsThreshold dragUpdateE
-          moveE = dragStartB <@ firstExceedE
+          moveE        = dragStartB <@ firstExceedE
       reactimate $ uncurry beginMove <$> moveE
     MoveLayerShell updatePosition -> do
       let significantUpdateE = filterE exceedsThreshold dragUpdateE
@@ -240,15 +251,15 @@ setupNetwork config = do
 -- | Set up the FRP network for a single character window.
 setupCharacterNetwork :: CharacterNetworkConfig -> MomentIO ()
 setupCharacterNetwork config = do
-  let window     = cncWindow config
-      inputs     = cncInputs config
-      collisions = cncCollisions config
-      moveMode   = cncMoveMode config
-      scopeId    = cncScopeId config
-      mShiori    = cncShiori config
-      handler    = cncScriptHandler config
+  let window      = cncWindow config
+      inputs      = cncInputs config
+      collisions  = cncCollisions config
+      moveMode    = cncMoveMode config
+      scopeId     = cncScopeId config
+      mShiori     = cncShiori config
+      handler     = cncScriptHandler config
       contextMenu = cncContextMenu config
-      motionTick = cncMotionTick config
+      motionTick  = cncMotionTick config
 
   closeE <- signalE0R window #closeRequest False
   reactimate $ sendShioriWithCallback mShiori OnClose Map.empty handler <$ closeE
@@ -280,7 +291,7 @@ setupCharacterNetwork config = do
   -- IORef to track last motion timestamp
   lastMotionTimeRef <- liftIO $ newIORef (Nothing :: Maybe UTCTime)
 
-  motionB :: Behavior (Maybe (Double, Double)) <- stepper Nothing (Just <$> motionE)
+  motionB :: Behavior (Maybe ( Double, Double )) <- stepper Nothing (Just <$> motionE)
   let sampledMotionE = motionB <@ motionTickE
 
   -- Motion expiry threshold (1 second)
@@ -296,32 +307,36 @@ setupCharacterNetwork config = do
           Just _cr -> do
             mCursor <- Gdk.cursorNewFromName "pointer" (Nothing :: Maybe Gdk.Cursor)
             Gtk.widgetSetCursor window mCursor
-          Nothing -> Gtk.widgetSetCursor window (Nothing :: Maybe Gdk.Cursor)
+          Nothing  -> Gtk.widgetSetCursor window (Nothing :: Maybe Gdk.Cursor)
 
   reactimate $ updateCursor <$> motionE
 
   -- Send OnMouseMove only on sampled ticks (throttled) and if fresh
   let handleSampledMotion mPos = case mPos of
-        Nothing -> return ()
-        Just (x, y) -> do
+        Nothing       -> return ()
+        Just ( x, y ) -> do
           mLastTime <- readIORef lastMotionTimeRef
           case mLastTime of
-            Nothing -> return ()
+            Nothing       -> return ()
             Just lastTime -> do
               now <- getCurrentTime
               let age = realToFrac (diffUTCTime now lastTime) :: Double
               -- Only send if motion is fresh (< 1 second old)
               when (age < motionExpirySeconds) $ do
-                let ix = floor x :: Int
-                    iy = floor y :: Int
+                let ix     = floor x :: Int
+                    iy     = floor y :: Int
                     surfId = maybe 0 scSurfaceId mShiori
                 case findCollisionAt ix iy collisions of
                   Just cr -> do
-                    let refs = Map.fromList
-                          [ (0, T.pack $ show ix), (1, T.pack $ show iy)
-                          , (2, ""), (3, T.pack $ show scopeId), (4, crName cr)
-                          , (5, T.pack $ show surfId)
-                          ]
+                    let refs
+                          = Map.fromList
+                            [ ( 0, T.pack $ show ix )
+                            , ( 1, T.pack $ show iy )
+                            , ( 2, "" )
+                            , ( 3, T.pack $ show scopeId )
+                            , ( 4, crName cr )
+                            , ( 5, T.pack $ show surfId )
+                            ]
                     sendShioriWithCallback mShiori OnMouseMove refs handler
                   Nothing -> return ()
 
@@ -338,21 +353,22 @@ setupCharacterNetwork config = do
   dragExceededB :: Behavior Bool <- stepper False dragExceededE
 
   let dragEndWithState = (,) <$> dragStartB <*> dragExceededB <@ dragEndE
-      suppressedE = filterE snd dragEndWithState
+      suppressedE      = filterE snd dragEndWithState
 
   leftClickE <- fromAddHandler (ihLeftClick inputs)
 
   let leftClickWithDragState = (,) <$> dragExceededB <@> leftClickE
       validClickE = snd <$> filterE (not . fst) leftClickWithDragState
-      singleClickE = (\(_, x, y) -> (x, y)) <$> filterE (\(n, _, _) -> n == 1) validClickE
-      doubleClickE = (\(_, x, y) -> (x, y)) <$> filterE (\(n, _, _) -> n == 2) validClickE
+      singleClickE = (\( _, x, y ) -> ( x, y )) <$> filterE (\( n, _, _ ) -> n == 1) validClickE
+      doubleClickE = (\( _, x, y ) -> ( x, y )) <$> filterE (\( n, _, _ ) -> n == 2) validClickE
 
   let singleHitE = handleClick collisions <$> singleClickE
       doubleHitE = handleClick collisions <$> doubleClickE
 
   -- Unified click handlers using handleMouseClick from Event.Shiori
   reactimate $ (\hit -> handleMouseClick mShiori OnMouseClick scopeId hit handler) <$> singleHitE
-  reactimate $ (\hit -> handleMouseClick mShiori OnMouseDoubleClick scopeId hit handler) <$> doubleHitE
+  reactimate
+    $ (\hit -> handleMouseClick mShiori OnMouseDoubleClick scopeId hit handler) <$> doubleHitE
   reactimate $ putStrLn "[Click] Suppressed (drag exceeded threshold)" <$ suppressedE
 
   -- Drag logging
@@ -361,8 +377,8 @@ setupCharacterNetwork config = do
       mkDragEnd ( ox, oy ) = DragEvent DragEnd 0 0 ox oy
 
   let dragStartE = mkDragStart <$> dragBeginE
-      dragMoveE = mkDragMove <$> filterE exceedsThreshold dragUpdateE
-      dragEndE' = mkDragEnd <$> filterE exceedsThreshold dragEndE
+      dragMoveE  = mkDragMove <$> filterE exceedsThreshold dragUpdateE
+      dragEndE'  = mkDragEnd <$> filterE exceedsThreshold dragEndE
 
   reactimate $ logDragEvent <$> dragStartE
   reactimate $ logDragEvent <$> dragMoveE
@@ -370,17 +386,17 @@ setupCharacterNetwork config = do
 
   -- Window movement
   case moveMode of
-    MoveToplevel beginMove -> do
+    MoveToplevel beginMove        -> do
       let firstExceedE = filterE exceedsThreshold dragUpdateE
-          moveE = dragStartB <@ firstExceedE
+          moveE        = dragStartB <@ firstExceedE
       reactimate $ uncurry beginMove <$> moveE
     MoveLayerShell updatePosition -> do
       let significantUpdateE = filterE exceedsThreshold dragUpdateE
       reactimate $ uncurry updatePosition <$> significantUpdateE
 
   -- ============ BALLOON EVENTS ============
-  let balloonWindow = cncBalloonWindow config
-      balloonInputs = cncBalloonInputs config
+  let balloonWindow   = cncBalloonWindow config
+      balloonInputs   = cncBalloonInputs config
       balloonMoveMode = cncBalloonMoveMode config
 
   balloonCloseE <- signalE0R balloonWindow #closeRequest True
@@ -391,19 +407,19 @@ setupCharacterNetwork config = do
   _balloonDragEndE <- fromAddHandler (ihDragEnd balloonInputs)
 
   case balloonMoveMode of
-    BalloonMoveToplevel beginBalloonMove -> do
+    BalloonMoveToplevel beginBalloonMove     -> do
       let balloonExceedsThreshold ( ox, oy ) = isDragSignificant ox oy
           balloonFirstExceedE = filterE balloonExceedsThreshold balloonDragUpdateE
       balloonDragStartB <- stepper ( 0, 0 ) balloonDragBeginE
       let balloonMoveE = balloonDragStartB <@ balloonFirstExceedE
       reactimate $ uncurry beginBalloonMove <$> balloonMoveE
-    BalloonMoveLayerShell setBalloonPosition ->
-      reactimate $ uncurry setBalloonPosition <$> balloonDragUpdateE
+    BalloonMoveLayerShell setBalloonPosition
+      -> reactimate $ uncurry setBalloonPosition <$> balloonDragUpdateE
 
 -- | Set up the global FRP network for timers.
 setupGlobalNetwork :: GlobalNetworkConfig -> MomentIO ()
 setupGlobalNetwork config = do
-  let timers = gncTimers config
+  let timers  = gncTimers config
       mShiori = gncShiori config
       handler = gncScriptHandler config
 
@@ -417,10 +433,8 @@ setupGlobalNetwork config = do
         let uptime = case mShiori of
               Just sc -> getUptimeHours (scStartTime sc) now
               Nothing -> 0
-            refs = Map.fromList
-              [ (0, T.pack $ show uptime)
-              , (1, "0"), (2, "0"), (3, "1")
-              ]
+            refs
+              = Map.fromList [ ( 0, T.pack $ show uptime ), ( 1, "0" ), ( 2, "0" ), ( 3, "1" ) ]
         sendShioriWithCallback mShiori OnSecondChange refs handler
 
   let handleMinuteTick lt = do
@@ -429,10 +443,8 @@ setupGlobalNetwork config = do
         let uptime = case mShiori of
               Just sc -> getUptimeHours (scStartTime sc) now
               Nothing -> 0
-            refs = Map.fromList
-              [ (0, T.pack $ show uptime)
-              , (1, "0"), (2, "0"), (3, "1")
-              ]
+            refs
+              = Map.fromList [ ( 0, T.pack $ show uptime ), ( 1, "0" ), ( 2, "0" ), ( 3, "1" ) ]
         sendShioriAndLog mShiori OnMinuteChange refs
 
   let handleHourTick lt = do
@@ -441,10 +453,8 @@ setupGlobalNetwork config = do
         let uptime = case mShiori of
               Just sc -> getUptimeHours (scStartTime sc) now
               Nothing -> 0
-            refs = Map.fromList
-              [ (0, T.pack $ show uptime)
-              , (1, "0"), (2, "0"), (3, "1")
-              ]
+            refs
+              = Map.fromList [ ( 0, T.pack $ show uptime ), ( 1, "0" ), ( 2, "0" ), ( 3, "1" ) ]
         sendShioriAndLog mShiori OnHourTimeSignal refs
 
   reactimate $ handleSecondTick <$> secondTickE

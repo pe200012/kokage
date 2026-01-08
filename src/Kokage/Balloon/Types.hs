@@ -17,15 +17,15 @@ module Kokage.Balloon.Types
   , BalloonState(..)
   ) where
 
-import           Data.IORef                 ( IORef )
-import           Data.Maybe                 ( fromMaybe )
-import qualified Data.Text                  as T
+import           Data.IORef      ( IORef )
+import           Data.Maybe      ( fromMaybe )
+import qualified Data.Text       as T
 
-import qualified GI.Cairo.Render            as Cairo
-import qualified GI.GdkPixbuf               as Pixbuf
-import qualified GI.Gtk                     as Gtk
+import qualified GI.Cairo.Render as Cairo
+import qualified GI.GdkPixbuf    as Pixbuf
+import qualified GI.Gtk          as Gtk
 
-import           Types.Balloon              ( BalloonDescript(..), FontSettings(..), ShadowStyle(..) )
+import           Types.Balloon   ( BalloonDescript(..), FontSettings(..), ShadowStyle(..) )
 
 -- | A choice presented in the balloon that the user can click.
 data BalloonChoice
@@ -93,7 +93,8 @@ data BalloonConfig
 
 -- | Default balloon configuration.
 defaultBalloonConfig :: BalloonConfig
-defaultBalloonConfig = BalloonConfig
+defaultBalloonConfig
+  = BalloonConfig
   { bcfOriginX       = 10
   , bcfOriginY       = 10
   , bcfValidWidth    = 280
@@ -127,7 +128,8 @@ defaultBalloonConfig = BalloonConfig
 --   - Or use wordwrappoint.x if specified (negative value from right edge)
 -- - Height = (image_height + validrect.bottom) - Y - origin.y
 configFromDescript :: BalloonDescript -> Int -> Int -> BalloonConfig
-configFromDescript bd imgWidth imgHeight = BalloonConfig
+configFromDescript bd imgWidth imgHeight
+  = BalloonConfig
   { bcfOriginX       = originX
   , bcfOriginY       = originY
   , bcfValidWidth    = validWidth
@@ -152,22 +154,27 @@ configFromDescript bd imgWidth imgHeight = BalloonConfig
   , bcfShadowColorB  = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorB (bdFont bd))
   }
   where
-    originX = fromMaybe 10 (bdOriginX bd)
-    originY = fromMaybe 10 (bdOriginY bd)
+    originX         = fromMaybe 10 (bdOriginX bd)
+
+    originY         = fromMaybe 10 (bdOriginY bd)
 
     validRectLeft   = fromMaybe 0 (bdValidRectLeft bd)
+
     validRectTop    = fromMaybe 0 (bdValidRectTop bd)
+
     validRectRight  = fromMaybe 0 (bdValidRectRight bd)
+
     validRectBottom = fromMaybe 0 (bdValidRectBottom bd)
 
-    textAreaX = originX + validRectLeft
-    textAreaY = originY + validRectTop
+    textAreaX       = originX + validRectLeft
 
-    validWidth = case bdWordWrapPointX bd of
+    textAreaY       = originY + validRectTop
+
+    validWidth      = case bdWordWrapPointX bd of
       Just wwpX -> imgWidth + wwpX - textAreaX
       Nothing   -> imgWidth + validRectRight - textAreaX - originX
 
-    validHeight = imgHeight + validRectBottom - textAreaY - originY
+    validHeight     = imgHeight + validRectBottom - textAreaY - originY
 
 -- | State for a balloon window.
 data BalloonState
@@ -175,19 +182,19 @@ data BalloonState
   { bsWindow         :: !Gtk.Window                                              -- ^ The balloon window
   , bsDrawArea       :: !Gtk.DrawingArea                                         -- ^ Drawing area for balloon content
   , bsConfig         :: !(IORef BalloonConfig)                                   -- ^ Balloon configuration
-  , bsText           :: !(IORef [TextSegment])                                   -- ^ Current text segments with styles
+  , bsText           :: !(IORef [ TextSegment ])                                   -- ^ Current text segments with styles
   , bsScrollLine     :: !(IORef Int)                                             -- ^ Current scroll line (0 = top)
   , bsSurface        :: !(IORef (Maybe Pixbuf.Pixbuf))                           -- ^ Current balloon surface image
   , bsCairoSurface   :: !(IORef (Maybe Cairo.Surface))                           -- ^ Cached Cairo surface for drawing
   , bsVisible        :: !(IORef Bool)                                            -- ^ Whether balloon is visible
   , bsLayerShell     :: !(IORef Bool)                                            -- ^ Whether layer-shell was initialized
-  , bsChoices        :: !(IORef [BalloonChoice])                                 -- ^ Current choices to display
+  , bsChoices        :: !(IORef [ BalloonChoice ])                                 -- ^ Current choices to display
   , bsChoiceCallback :: !(IORef (Maybe (BalloonChoice -> IO ())))                -- ^ Callback when choice is selected
-  , bsChoiceRects    :: !(IORef [(BalloonChoice, Double, Double, Double, Double)]) -- ^ Choice hit boxes (choice, x, y, w, h)
+  , bsChoiceRects    :: !(IORef [ ( BalloonChoice, Double, Double, Double, Double ) ]) -- ^ Choice hit boxes (choice, x, y, w, h)
   , bsBalloonDir     :: !(IORef (Maybe FilePath))                                -- ^ Balloon directory path for surface loading
   , bsCharType       :: !(IORef T.Text)                                          -- ^ Character type: "s" (sakura), "k" (kero), "c" (communicate)
   , bsBalloonId      :: !(IORef Int)                                             -- ^ Current balloon ID: 0=default, 1=choice surface, etc.
-  , bsPosition       :: !(IORef (Int, Int))                                      -- ^ Current balloon position (x, y)
+  , bsPosition       :: !(IORef ( Int, Int ))                                      -- ^ Current balloon position (x, y)
   , bsAutoScroll     :: !(IORef Bool)                                            -- ^ Whether to auto-scroll when text overflows (default: True)
   , bsDescript       :: !(IORef (Maybe BalloonDescript))                         -- ^ Balloon descript.txt settings
   , bsDirection      :: !(IORef Int)                                             -- ^ Balloon direction: 0=left of char, 1=right of char

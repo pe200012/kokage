@@ -19,43 +19,42 @@ module Kokage.Ghost
   , getScreenGeometry
   ) where
 
-import           Control.Exception          ( SomeException, try )
-import           Control.Monad              ( filterM, forM )
+import           Control.Exception ( SomeException, try )
+import           Control.Monad     ( filterM, forM )
 
-import           Data.List                  ( find, sortOn )
-import           Data.Maybe                 ( fromMaybe, listToMaybe )
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
-import qualified Data.Text.IO               as TIO
+import           Data.List         ( find, sortOn )
+import           Data.Maybe        ( fromMaybe, listToMaybe )
+import           Data.Text         ( Text )
+import qualified Data.Text         as T
+import qualified Data.Text.IO      as TIO
 
-import           System.Directory           ( createDirectoryIfMissing
-                                            , doesDirectoryExist
-                                            , doesFileExist
-                                            , getXdgDirectory
-                                            , listDirectory
-                                            , XdgDirectory(..)
-                                            )
-import           System.FilePath            ( (</>), takeBaseName )
+import qualified GI.Gdk            as Gdk
+import qualified GI.Gio            as Gio
 
-import qualified GI.Gdk                     as Gdk
-import qualified GI.Gio                     as Gio
+import           Kokage.Config     ( BaseDir(..) )
+import qualified Kokage.Install    as Install
 
-import           Kokage.Config              ( BaseDir(..) )
-import qualified Kokage.Install             as Install
-import           Types.Ghost                ( Ghost(..), Shell(..)
-                                            , shellDescriptName, shellDescript
-                                            )
+import           System.Directory  ( XdgDirectory(..)
+                                   , createDirectoryIfMissing
+                                   , doesDirectoryExist
+                                   , doesFileExist
+                                   , getXdgDirectory
+                                   , listDirectory
+                                   )
+import           System.FilePath   ( (</>), takeBaseName )
+
+import           Types.Ghost       ( Ghost(..), Shell(..), shellDescript, shellDescriptName )
 
 -- | Get the default shell from a ghost.
 -- Returns the "master" shell if it exists, otherwise the first shell.
 getDefaultShell :: Ghost -> Maybe Shell
 getDefaultShell ghost = case ghostShells ghost of
-  []     -> Nothing
-  (s:ss) -> Just $ fromMaybe s $
-    find (\sh -> shellDescriptName (shellDescript sh) == "master") (s:ss)
+  []       -> Nothing
+  (s : ss)
+    -> Just $ fromMaybe s $ find (\sh -> shellDescriptName (shellDescript sh) == "master") (s : ss)
 
 -- | Get screen geometry (width, height) from the default monitor.
-getScreenGeometry :: IO (Int, Int)
+getScreenGeometry :: IO ( Int, Int )
 getScreenGeometry = do
   display <- Gdk.displayGetDefault >>= \case
     Nothing -> error "No display available"
@@ -63,21 +62,21 @@ getScreenGeometry = do
   monitors <- Gdk.displayGetMonitors display
   nMonitors <- Gio.listModelGetNItems monitors
   if nMonitors == 0
-    then return (1920, 1080)  -- Fallback default
+    then return ( 1920, 1080 )  -- Fallback default
     else do
       mObj <- Gio.listModelGetItem monitors 0
       case mObj of
-        Nothing -> return (1920, 1080)
+        Nothing  -> return ( 1920, 1080 )
         Just obj -> do
           monitor <- Gdk.unsafeCastTo Gdk.Monitor obj
           geo <- Gdk.monitorGetGeometry monitor
           w <- Gdk.getRectangleWidth geo
           h <- Gdk.getRectangleHeight geo
-          return (fromIntegral w, fromIntegral h)
+          return ( fromIntegral w, fromIntegral h )
 
 -- | Scan a directory for valid ghost subdirectories.
 -- Returns list of (ghost_name, ghost_path) pairs sorted by name.
-scanGhosts :: BaseDir -> IO [(T.Text, FilePath)]
+scanGhosts :: BaseDir -> IO [ ( T.Text, FilePath ) ]
 scanGhosts (BaseDir baseDir) = do
   let ghostBaseDir = baseDir </> "ghost"
   exists <- doesDirectoryExist ghostBaseDir
@@ -87,8 +86,7 @@ scanGhosts (BaseDir baseDir) = do
       entries <- listDirectory ghostBaseDir
       let fullPaths = map (ghostBaseDir </>) entries
       validPaths <- filterM isValidGhostDir fullPaths
-      return $ sortOn fst
-        [ (T.pack $ takeBaseName p, p) | p <- validPaths ]
+      return $ sortOn fst [ ( T.pack $ takeBaseName p, p ) | p <- validPaths ]
 
 -- | Check if a directory is a valid ghost directory.
 -- A valid ghost has ghost/master/descript.txt
@@ -106,14 +104,18 @@ resolveGhost :: Maybe FilePath -> BaseDir -> IO (Maybe FilePath)
 resolveGhost mExplicitPath baseDir = case mExplicitPath of
   Just path -> do
     valid <- isValidGhostDir path
-    if valid then return (Just path) else scanFirst
-  Nothing -> do
+    if valid
+      then return (Just path)
+      else scanFirst
+  Nothing   -> do
     mLast <- loadLastGhost
     case mLast of
       Just lastPath -> do
         valid <- isValidGhostDir lastPath
-        if valid then return (Just lastPath) else scanFirst
-      Nothing -> scanFirst
+        if valid
+          then return (Just lastPath)
+          else scanFirst
+      Nothing       -> scanFirst
   where
     scanFirst = do
       ghosts <- scanGhosts baseDir
@@ -151,7 +153,7 @@ loadLastGhost = do
 findBalloonDir :: BaseDir -> Ghost -> IO (Maybe FilePath)
 findBalloonDir (BaseDir baseDir) _ghost = do
   let balloonBaseDir = baseDir </> "balloon"
-  
+
   -- Check if balloon base directory exists
   exists <- doesDirectoryExist balloonBaseDir
   if not exists
@@ -160,10 +162,10 @@ findBalloonDir (BaseDir baseDir) _ghost = do
       entries <- listDirectory balloonBaseDir
       let fullPaths = map (balloonBaseDir </>) entries
       validPaths <- filterM doesDirectoryExist fullPaths
-      
+
       -- Filter for directories with descript.txt
       validBalloons <- filterM (\p -> doesFileExist (p </> "descript.txt")) validPaths
-      
+
       if null validBalloons
         then return Nothing
         else do
@@ -176,7 +178,7 @@ findBalloonDir (BaseDir baseDir) _ghost = do
 
 -- | List all available balloons with their names and paths.
 -- Returns list of (display name, path) pairs.
-listAvailableBalloons :: Install.BaseDir -> IO [(Text, Text)]
+listAvailableBalloons :: Install.BaseDir -> IO [ ( Text, Text ) ]
 listAvailableBalloons installBaseDir = do
   let balloonBaseDir = Install.bdBalloon installBaseDir
   exists <- doesDirectoryExist balloonBaseDir
@@ -187,10 +189,10 @@ listAvailableBalloons installBaseDir = do
       let fullPaths = map (balloonBaseDir </>) entries
       validPaths <- filterM doesDirectoryExist fullPaths
       validBalloons <- filterM (\p -> doesFileExist (p </> "descript.txt")) validPaths
-      
+
       forM validBalloons $ \path -> do
         name <- getBalloonName path
-        return (name, T.pack path)
+        return ( name, T.pack path )
 
 -- | Get balloon display name from descript.txt or directory name.
 getBalloonName :: FilePath -> IO Text
@@ -198,9 +200,9 @@ getBalloonName path = do
   let descriptPath = path </> "descript.txt"
   result <- try $ TIO.readFile descriptPath :: IO (Either SomeException T.Text)
   case result of
-    Left _ -> return $ T.pack $ takeBaseName path
+    Left _        -> return $ T.pack $ takeBaseName path
     Right content -> do
       let nameLines = filter (T.isPrefixOf "name,") (T.lines content)
       case nameLines of
-        (line:_) -> return $ T.strip $ T.drop 5 line
-        [] -> return $ T.pack $ takeBaseName path
+        (line : _) -> return $ T.strip $ T.drop 5 line
+        []         -> return $ T.pack $ takeBaseName path

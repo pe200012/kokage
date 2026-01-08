@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE StrictData #-}
+
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StrictData #-}
 
 -- | Wine bridge for communicating with SHIORI DLLs.
 --
@@ -39,56 +40,54 @@ module Kokage.Shiori.WineBridge
   , toWinePath
   ) where
 
-import           Control.Exception          ( SomeException
-                                            , bracket
-                                            , try
-                                            )
-import           Control.Monad              ( void, when )
-import           Data.Maybe                 ( isNothing )
+import           Control.Exception      ( SomeException, bracket, try )
+import           Control.Monad          ( void, when )
 
-import qualified Data.ByteString.Base64     as B64
-import qualified Data.ByteString.Char8      as BS8
-import qualified Data.Map.Strict            as Map
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.ByteString.Char8  as BS8
+import qualified Data.Map.Strict        as Map
+import           Data.Maybe             ( isNothing )
+import           Data.Text              ( Text )
+import qualified Data.Text              as T
 
-import           System.Directory           ( makeAbsolute )
-import           System.Environment         ( getEnvironment )
-import           System.FilePath            ( (</>) )
-import           System.IO                  ( BufferMode(..)
-                                            , Handle
-                                            , hClose
-                                            , hFlush
-                                            , hGetLine
-                                            , hPutStrLn
-                                            , hSetBuffering
-                                            )
-import           System.Process             ( CreateProcess(..)
-                                            , ProcessHandle
-                                            , StdStream(..)
-                                            , createProcess
-                                            , proc
-                                            , terminateProcess
-                                            , waitForProcess
-                                            )
-import           System.Timeout             ( timeout )
+import           System.Directory       ( makeAbsolute )
+import           System.Environment     ( getEnvironment )
+import           System.FilePath        ( (</>) )
+import           System.IO              ( BufferMode(..)
+                                        , Handle
+                                        , hClose
+                                        , hFlush
+                                        , hGetLine
+                                        , hPutStrLn
+                                        , hSetBuffering
+                                        )
+import           System.Process         ( CreateProcess(..)
+                                        , ProcessHandle
+                                        , StdStream(..)
+                                        , createProcess
+                                        , proc
+                                        , terminateProcess
+                                        , waitForProcess
+                                        )
+import           System.Timeout         ( timeout )
 
-import           Types.Shiori               ( ShioriEvent(..)
-                                            , ShioriRequest(..)
-                                            , ShioriResponse(..)
-                                            , emptyResponse
-                                            , eventToId
-                                            , mkRequest
-                                            , parseShioriResponseBS
-                                            , serializeShioriRequestBS
-                                            )
+import           Types.Shiori           ( ShioriEvent(..)
+                                        , ShioriRequest(..)
+                                        , ShioriResponse(..)
+                                        , emptyResponse
+                                        , eventToId
+                                        , mkRequest
+                                        , parseShioriResponseBS
+                                        , serializeShioriRequestBS
+                                        )
 
 --------------------------------------------------------------------------------
 -- Configuration
 --------------------------------------------------------------------------------
 
 -- | Configuration for the Wine bridge
-data WineBridgeConfig = WineBridgeConfig
+data WineBridgeConfig
+  = WineBridgeConfig
   { wbcWineCommand  :: FilePath  -- ^ Wine executable (default: "wine")
   , wbcBridgePath   :: FilePath  -- ^ Path to shiori_bridge.exe
   , wbcBridgeSoPath :: FilePath  -- ^ Path to shiori_bridge.exe.so (preferred)
@@ -99,7 +98,8 @@ data WineBridgeConfig = WineBridgeConfig
 
 -- | Default configuration
 defaultWineBridgeConfig :: WineBridgeConfig
-defaultWineBridgeConfig = WineBridgeConfig
+defaultWineBridgeConfig
+  = WineBridgeConfig
   { wbcWineCommand  = "wine"
   , wbcBridgePath   = "wine-helper" </> "shiori_bridge.exe"
   , wbcBridgeSoPath = "wine-helper" </> "shiori_bridge.exe.so"
@@ -112,14 +112,14 @@ defaultWineBridgeConfig = WineBridgeConfig
 --------------------------------------------------------------------------------
 
 -- | Handle to a running Wine bridge process
-data WineShiori = WineShiori
-  { wsProcess   :: ProcessHandle     -- ^ Wine process handle
-  , wsStdin     :: Handle            -- ^ Stdin for commands
-  , wsStdout    :: Handle            -- ^ Stdout for responses
-  , wsConfig    :: WineBridgeConfig  -- ^ Configuration used
-  , wsDllPath   :: Maybe FilePath    -- ^ Currently loaded DLL path
-  , wsGhostPath :: Maybe FilePath    -- ^ Ghost directory path
-  }
+data WineShiori
+  = WineShiori { wsProcess   :: ProcessHandle     -- ^ Wine process handle
+               , wsStdin     :: Handle            -- ^ Stdin for commands
+               , wsStdout    :: Handle            -- ^ Stdout for responses
+               , wsConfig    :: WineBridgeConfig  -- ^ Configuration used
+               , wsDllPath   :: Maybe FilePath    -- ^ Currently loaded DLL path
+               , wsGhostPath :: Maybe FilePath    -- ^ Ghost directory path
+               }
 
 --------------------------------------------------------------------------------
 -- Lifecycle
@@ -132,20 +132,20 @@ startWineBridge config = do
   result <- try $ do
     -- Get current environment and add WINEDEBUG=-all
     currentEnv <- getEnvironment
-    let modifiedEnv = ("WINEDEBUG", "-all") : filter ((/= "WINEDEBUG") . fst) currentEnv
+    let modifiedEnv = ( "WINEDEBUG", "-all" ) : filter ((/= "WINEDEBUG") . fst) currentEnv
 
     -- Use the .exe wrapper script which handles Wine loading
     -- The wrapper script respects WINELOADER env var and handles paths correctly
-    let (cmd, args) = (wbcBridgePath config, [])
+    let ( cmd, args ) = ( wbcBridgePath config, [] )
 
-    let cp = (proc cmd args)
-          { std_in  = CreatePipe
-          , std_out = CreatePipe
-          , std_err = Inherit  -- Let Wine debug go to terminal stderr
-          , env     = Just modifiedEnv  -- Inherit env with WINEDEBUG added
-          }
+    let cp
+          = (proc cmd args) { std_in  = CreatePipe
+                            , std_out = CreatePipe
+                            , std_err = Inherit  -- Let Wine debug go to terminal stderr
+                            , env     = Just modifiedEnv  -- Inherit env with WINEDEBUG added
+                            }
 
-    (Just hIn, Just hOut, _, ph) <- createProcess cp
+    ( Just hIn, Just hOut, _, ph ) <- createProcess cp
 
     -- Set line buffering for IPC
     hSetBuffering hIn LineBuffering
@@ -155,13 +155,13 @@ startWineBridge config = do
     -- Skip Wine debug output lines that may appear before READY
     -- Use a longer timeout for startup (Wine initialization can be slow)
     let startupTimeoutUs = wbcTimeoutMs config * 1000 * 2  -- Double the normal timeout
-    
+
     -- Read lines until we get READY or timeout
     let waitForReady :: IO (Either String WineShiori)
         waitForReady = do
           mLine <- timeout startupTimeoutUs $ hGetLine hOut
           case mLine of
-            Nothing -> do
+            Nothing   -> do
               terminateProcess ph
               return $ Left "Startup timeout: bridge did not respond in time"
             Just line -> do
@@ -170,18 +170,19 @@ startWineBridge config = do
               if "wine:" `isPrefixOf` cleanLine || "wineserver:" `isPrefixOf` cleanLine
                 then waitForReady  -- Skip and try next line
                 else if cleanLine == "READY"
-                  then return $ Right WineShiori
-                    { wsProcess   = ph
-                    , wsStdin     = hIn
-                    , wsStdout    = hOut
-                    , wsConfig    = config
-                    , wsDllPath   = Nothing
-                    , wsGhostPath = Nothing
-                    }
+                  then return
+                    $ Right
+                      WineShiori { wsProcess   = ph
+                                 , wsStdin     = hIn
+                                 , wsStdout    = hOut
+                                 , wsConfig    = config
+                                 , wsDllPath   = Nothing
+                                 , wsGhostPath = Nothing
+                                 }
                   else do
                     terminateProcess ph
                     return $ Left $ "Unexpected bridge output: " ++ show line
-    
+
     waitForReady
 
   case result of
@@ -234,14 +235,14 @@ sendCommand ws cmd = do
 
 -- | Load a SHIORI DLL.
 -- Returns an updated handle with the loaded DLL info.
-loadShiori :: WineShiori 
+loadShiori :: WineShiori
            -> FilePath    -- ^ Path to SHIORI DLL
            -> FilePath    -- ^ Ghost directory path
            -> IO (Either String WineShiori)
 loadShiori ws dllPath ghostPath = do
   -- Convert Unix paths to Wine Z: drive paths
   -- Ensure paths are absolute first so Z: mapping works correctly regardless of CWD
-  absDllPath   <- makeAbsolute dllPath
+  absDllPath <- makeAbsolute dllPath
   absGhostPath <- makeAbsolute ghostPath
   let wineDllPath   = toWinePath absDllPath
       wineGhostPath = toWinePath absGhostPath
@@ -249,38 +250,33 @@ loadShiori ws dllPath ghostPath = do
 
   response <- sendCommand ws cmd
   case response of
-    Left err -> return $ Left err
-    Right resp ->
-      let respClean = stripWhitespace resp
-      in if respClean == "OK"
-         then return $ Right ws
-           { wsDllPath   = Just dllPath
-           , wsGhostPath = Just ghostPath
-           }
-         else return $ Left $ "Load failed: " ++ resp
+    Left err   -> return $ Left err
+    Right resp -> let
+        respClean = stripWhitespace resp
+      in 
+        if respClean == "OK"
+          then return $ Right ws { wsDllPath = Just dllPath, wsGhostPath = Just ghostPath }
+          else return $ Left $ "Load failed: " ++ resp
 
 -- | Unload the currently loaded SHIORI DLL
 unloadShiori :: WineShiori -> IO (Either String WineShiori)
 unloadShiori ws = do
   response <- sendCommand ws "UNLOAD"
   case response of
-    Left err -> return $ Left err
-    Right resp ->
-      let respClean = stripWhitespace resp
-      in if respClean == "OK"
-         then return $ Right ws
-           { wsDllPath   = Nothing
-           , wsGhostPath = Nothing
-           }
-         else return $ Left $ "Unload failed: " ++ resp
+    Left err   -> return $ Left err
+    Right resp -> let
+        respClean = stripWhitespace resp
+      in 
+        if respClean == "OK"
+          then return $ Right ws { wsDllPath = Nothing, wsGhostPath = Nothing }
+          else return $ Left $ "Unload failed: " ++ resp
 
 -- | Send a SHIORI request and receive the response
 sendRequest :: WineShiori -> ShioriRequest -> IO (Either String ShioriResponse)
 sendRequest ws req = do
   -- Check if SHIORI is loaded
-  when (isNothing (wsDllPath ws)) $
-    return ()  -- Will fail at bridge level
-  
+  when (isNothing (wsDllPath ws)) $ return ()  -- Will fail at bridge level
+
   -- Serialize and Base64 encode
   let reqBytes = serializeShioriRequestBS req
       reqB64   = B64.encode reqBytes
@@ -288,12 +284,12 @@ sendRequest ws req = do
 
   response <- sendCommand ws cmd
   case response of
-    Left err -> return $ Left err
+    Left err   -> return $ Left err
     Right resp -> parseResponse resp
 
 -- | Send a SHIORI event (convenience wrapper)
 -- Creates a GET request for the event with the given references
-sendEvent :: WineShiori 
+sendEvent :: WineShiori
           -> ShioriEvent      -- ^ Event to send
           -> Map.Map Int Text -- ^ Reference parameters
           -> IO (Either String ShioriResponse)
@@ -310,30 +306,28 @@ sendEvent ws event refs = do
 parseResponse :: String -> IO (Either String ShioriResponse)
 parseResponse resp
   | "RESPONSE " `isPrefixOf` resp = do
-      -- Has Base64 payload
-      let b64Data = drop 9 resp  -- Skip "RESPONSE "
-      case B64.decode (BS8.pack b64Data) of
-        Left err        -> return $ Left $ "Base64 decode error: " ++ err
-        Right respBytes -> 
-          case parseShioriResponseBS respBytes of
-            Left err  -> return $ Left $ "Parse error: " ++ T.unpack err
-            Right res -> return $ Right res
-  
-  | stripWhitespace resp == "RESPONSE" =
-      -- Empty response (204 No Content)
-      return $ Right emptyResponse
-  
-  | "ERROR " `isPrefixOf` resp =
-      return $ Left $ drop 6 resp
-  
-  | otherwise =
-      return $ Left $ "Unexpected response: " ++ resp
+    -- Has Base64 payload
+    let b64Data = drop 9 resp  -- Skip "RESPONSE "
+    case B64.decode (BS8.pack b64Data) of
+      Left err        -> return $ Left $ "Base64 decode error: " ++ err
+      Right respBytes -> case parseShioriResponseBS respBytes of
+        Left err  -> return $ Left $ "Parse error: " ++ T.unpack err
+        Right res -> return $ Right res
+
+  | stripWhitespace resp == "RESPONSE"
+    =
+    -- Empty response (204 No Content)
+    return $ Right emptyResponse
+
+  | "ERROR " `isPrefixOf` resp = return $ Left $ drop 6 resp
+
+  | otherwise = return $ Left $ "Unexpected response: " ++ resp
 
 -- | Convert Unix path to Wine Z: drive path
 toWinePath :: FilePath -> FilePath
 toWinePath path
   | "/" `isPrefixOf` path = "Z:" ++ map toBackslash path
-  | otherwise             = map toBackslash path
+  | otherwise = map toBackslash path
   where
     toBackslash '/' = '\\'
     toBackslash c   = c

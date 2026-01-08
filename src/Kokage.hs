@@ -45,15 +45,13 @@ module Kokage
   , Edge(..)
   ) where
 
-import           Control.Concurrent              ( threadDelay )
 import           Control.Exception               ( Exception
                                                  , SomeException
                                                  , finally
                                                  , throwIO
                                                  , try
                                                  )
-import           Control.Monad                   ( filterM, forM_, unless, void, when, join )
-import           Control.Monad.Except            ( MonadError(throwError) )
+import           Control.Monad                   ( filterM, forM_, join, unless, void, when )
 import           Control.Monad.Trans.Class       ( lift )
 import           Control.Monad.Trans.Maybe       ( MaybeT(runMaybeT, MaybeT) )
 
@@ -71,21 +69,19 @@ import           Data.Int                        ( Int32 )
 import           Data.List                       ( sort )
 import qualified Data.Map.Strict                 as Map
 import           Data.Maybe                      ( fromMaybe, listToMaybe )
+import qualified Data.Set                        as Set
 import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as TIO
-import           Data.Time                       ( getCurrentTime
+import           Data.Time                       ( TimeOfDay(..)
+                                                 , getCurrentTime
                                                  , getCurrentTimeZone
+                                                 , timeToTimeOfDay
+                                                 , toGregorian
                                                  , utcToLocalTime
                                                  , utctDay
                                                  , utctDayTime
-                                                 , toGregorian
-                                                 , timeToTimeOfDay
-                                                 , TimeOfDay(..)
                                                  )
 import           Data.Time.Calendar.WeekDate     ( toWeekDate )
-import           System.Environment              ( lookupEnv )
-
-import qualified Data.Set                        as Set
 
 import           Foreign.Ptr                     ( Ptr, nullPtr )
 
@@ -95,14 +91,13 @@ import qualified GI.GdkPixbuf                    as Pixbuf
 import qualified GI.Gio                          as Gio
 import qualified GI.Gtk                          as Gtk
 
-import           Kokage.Animation                ( AnimationState(..)
-                                                 , ActiveAnim(..)
+import           Kokage.Animation                ( ActiveAnim(..)
+                                                 , AnimationState(..)
                                                  , clearAnimations
                                                  , getEnabledBinds
                                                  , stopAnimation
                                                  , toggleBind
                                                  )
-import qualified Types.Ghost.Surface             as Surface
 import           Kokage.Balloon                  ( BalloonChoice(..)
                                                  , BalloonState(..)
                                                  , addChoice
@@ -114,37 +109,38 @@ import           Kokage.Balloon                  ( BalloonChoice(..)
                                                  , clearBalloon
                                                  , clearChars
                                                  , clearChoices
+                                                 , getFontSize
                                                  , hasChoices
                                                  , hideBalloon
                                                  , moveCursor
+                                                 , resetFont
+                                                 , setBalloonId
                                                  , setChoiceCallback
                                                  , setFontBold
                                                  , setFontColor
                                                  , setFontItalic
                                                  , setFontName
                                                  , setFontSize
-                                                 , getFontSize
                                                  , setFontStrike
-                                                 , setFontUnderline
                                                  , setFontSub
                                                  , setFontSup
-                                                 , resetFont
-                                                 , setBalloonId
+                                                 , setFontUnderline
                                                  , showBalloon
                                                  )
 import           Kokage.Character                ( CharacterState(..)
+                                                 , cancelSurfaceLifeTimer
                                                  , createCharacter
                                                  , getCharacterBalloon
                                                  , initBalloonPosition
                                                  , setCharacterPosition
                                                  , setCharacterSurface
                                                  , showCharacter
+                                                 , startSurfaceLifeTimer
                                                  , tickCharacter
                                                  , updateBalloonPosition
-                                                 , startSurfaceLifeTimer
-                                                 , cancelSurfaceLifeTimer
                                                  )
 import           Kokage.Collision
+import           Kokage.Config                   ( BaseDir(..) )
 import           Kokage.Event                    ( BalloonMoveMode(..)
                                                  , CharacterNetworkConfig(..)
                                                  , GlobalNetworkConfig(..)
@@ -156,12 +152,13 @@ import           Kokage.Event                    ( BalloonMoveMode(..)
                                                  , setupCharacterNetwork
                                                  , setupGlobalNetwork
                                                  )
+import           Kokage.Ghost                    ( listAvailableBalloons )
 import           Kokage.Install                  ( InstallResult(..), installNar )
 import qualified Kokage.Install                  as Install
-import           Kokage.Ghost                    ( listAvailableBalloons )
-import           Kokage.Config                   ( BaseDir(..) )
-import           Kokage.Menu                     ( createContextMenu, menuStyleFromShellDescript
-                                                 , MenuConfig(..), emptyMenuConfig
+import           Kokage.Menu                     ( MenuConfig(..)
+                                                 , createContextMenu
+                                                 , emptyMenuConfig
+                                                 , menuStyleFromShellDescript
                                                  )
 import           Kokage.Platform                 ( Edge(..)
                                                  , Layer(..)
@@ -173,11 +170,6 @@ import           Kokage.Platform                 ( Edge(..)
                                                  , setWindowLayer
                                                  , setWindowPosition
                                                  )
-import           Kokage.Sound                    ( SoundState
-                                                 , newSoundState
-                                                 , playSound
-                                                 , stopSound
-                                                 )
 import           Kokage.SakuraScript.Interpreter ( InterpreterCallbacks(..)
                                                  , InterpreterConfig(..)
                                                  , defaultCallbacks
@@ -185,7 +177,6 @@ import           Kokage.SakuraScript.Interpreter ( InterpreterCallbacks(..)
                                                  , executeScriptAsync
                                                  )
 import           Kokage.SakuraScript.Parser      ( parseScript )
-import           Types.SakuraScript              ( EnvVar(..), FontCmd(..), Color(..), FontSize(..), FontToggle(..), SoundAction(..) )
 import           Kokage.Shiori.WineBridge        ( WineBridgeConfig(..)
                                                  , WineShiori(..)
                                                  , defaultWineBridgeConfig
@@ -197,6 +188,11 @@ import           Kokage.Shiori.WineBridge        ( WineBridgeConfig(..)
                                                  , toWinePath
                                                  , unloadShiori
                                                  , withWineBridge
+                                                 )
+import           Kokage.Sound                    ( SoundState
+                                                 , newSoundState
+                                                 , playSound
+                                                 , stopSound
                                                  )
 import           Kokage.Surface
 
@@ -211,10 +207,12 @@ import           System.Directory                ( XdgDirectory(..)
                                                  , getXdgDirectory
                                                  , listDirectory
                                                  )
+import           System.Environment              ( lookupEnv )
 import           System.FilePath                 ( (</>), takeExtension )
+import           System.Random                   ( randomRIO )
 
-import           Types.Ghost                     ( CollisionRegion(..)
-                                                 , CharacterSettings(..)
+import           Types.Ghost                     ( CharacterSettings(..)
+                                                 , CollisionRegion(..)
                                                  , DrawMethod(..)
                                                  , Element(..)
                                                  , Ghost(..)
@@ -223,10 +221,18 @@ import           Types.Ghost                     ( CollisionRegion(..)
                                                  , ShellDescript(..)
                                                  , SurfaceDefinition(..)
                                                  , Surfaces(..)
+                                                 , getCharSettings
                                                  , ghostShells
                                                  , loadGhost
                                                  , shellDescriptName
-                                                 , getCharSettings
+                                                 )
+import qualified Types.Ghost.Surface             as Surface
+import           Types.SakuraScript              ( Color(..)
+                                                 , EnvVar(..)
+                                                 , FontCmd(..)
+                                                 , FontSize(..)
+                                                 , FontToggle(..)
+                                                 , SoundAction(..)
                                                  )
 import           Types.Shiori                    ( ShioriEvent(..) )
 
@@ -309,7 +315,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
               (descriptSakuraDefaultLeft descript)
           relY
             = maybe (screenH - fromIntegral surfH) fromIntegral (descriptSakuraDefaultTop descript)
-        in
+        in 
           ( monX + relX, monY + relY )
     _    -- Kero and others: default to left of sakura position
       -> let
@@ -318,7 +324,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
           defaultY = screenH - fromIntegral surfH
           relX     = maybe defaultX fromIntegral (descriptKeroDefaultLeft descript)
           relY     = maybe defaultY fromIntegral (descriptKeroDefaultTop descript)
-        in
+        in 
           ( monX + relX, monY + relY )
 
 --------------------------------------------------------------------------------
@@ -462,7 +468,7 @@ parseHistory content
         Just v  -> case reads (T.unpack v) of
           [ ( n, "" ) ] -> n
           _ -> def
-    in
+    in 
       GhostHistory { ghTime = lookupInt "time" 0, ghVanishedCount = lookupInt "vanished_count" 0 }
 
 -- | Save ghost history to HISTORY file.
@@ -599,8 +605,9 @@ kokageMain config = do
       mBalloonDir <- findBalloonDir gPath (configBaseDir config)
 
       -- Create Install.BaseDir from config's base directory
-      let configDir = unBaseDir (configBaseDir config)
-          installDir = Install.BaseDir
+      let configDir  = unBaseDir (configBaseDir config)
+          installDir
+            = Install.BaseDir
             { Install.bdGhost        = configDir </> "ghost"
             , Install.bdBalloon      = configDir </> "balloon"
             , Install.bdPlugin       = configDir </> "plugin"
@@ -681,7 +688,16 @@ runGtkApp :: Ghost
           -> Maybe FilePath
           -> Install.BaseDir
           -> IO ()
-runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCount mBalloonDir installBaseDir = do
+runGtkApp
+  ghost
+  shell
+  initialSurfaceId
+  mShiori
+  ghostPath'
+  firstBoot
+  vanishedCount
+  mBalloonDir
+  installBaseDir = do
   -- Get start time for uptime tracking
   startTime <- getCurrentTime
 
@@ -781,7 +797,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
     -- Track current character scope (0=sakura, 1=kero, etc.)
     currentScopeRef <- newIORef (0 :: Int)
-    
+
     -- Initialize sound state
     soundState <- newSoundState
 
@@ -808,26 +824,37 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
             Just cs -> do
               setCharacterSurface cs shell newSurfaceId
               -- Handle surface_life timer for OnSurfaceRestore
-              let shellDesc = shellDescript shell
-                  charSettings = getCharSettings scope shellDesc
-                  defaultSurfId = csDefaultSurface cs
-              case csSurfaceLife charSettings of
-                Nothing -> return ()  -- No surface_life configured
-                Just surfaceLifeMs
-                  | newSurfaceId == defaultSurfId -> do
-                      -- Returning to default surface, cancel any timer
-                      cancelSurfaceLifeTimer cs
-                  | otherwise -> do
-                      -- Non-default surface, start timer
-                      onSurfaceRestore <- readIORef surfaceRestoreCallbackRef
-                      startSurfaceLifeTimer cs (fromIntegral surfaceLifeMs) onSurfaceRestore
+              -- When surface changes to non-default, start a timer (20-30 seconds)
+              -- When timer expires, fire OnSurfaceRestore event
+              let defaultSurfId = csDefaultSurface cs
+              if newSurfaceId == defaultSurfId
+                then do
+                  -- Returning to default surface, cancel any timer
+                  cancelSurfaceLifeTimer cs
+                else do
+                  -- Non-default surface, start timer with random 20-30 second delay
+                  -- Use configured surface_life if available, otherwise default to 20-30 seconds
+                  let shellDesc    = shellDescript shell
+                      charSettings = getCharSettings scope shellDesc
+                  delayMs <- case csSurfaceLife charSettings of
+                    Just configuredMs -> return $ fromIntegral configuredMs
+                    Nothing           -> do
+                      -- Random delay between 20000-30000 ms (20-30 seconds)
+                      randomDelay <- randomRIO ( 20000, 30000 ) :: IO Int
+                      return $ fromIntegral randomDelay
+                  onSurfaceRestore <- readIORef surfaceRestoreCallbackRef
+                  startSurfaceLifeTimer cs delayMs onSurfaceRestore
+                  putStrLn
+                    $ "[SurfaceLife] Started timer ("
+                    <> show delayMs
+                    <> "ms) for scope "
+                    <> show scope
 
     -- Helper to hide all balloons if none have choices
     let hideBalloonIfNoChoices :: IO ()
         hideBalloonIfNoChoices = do
           -- Check if any balloon has choices
-          anyHasChoices <- or
-            <$> mapM (hasChoices . getCharacterBalloon) (Map.elems characters)
+          anyHasChoices <- or <$> mapM (hasChoices . getCharacterBalloon) (Map.elems characters)
           unless anyHasChoices $ do
             -- wait for a short moment to ensure user sees the completed text
             _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
@@ -839,42 +866,42 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
     -- Create interpreter callbacks that interact with the balloon and surface
     let interpreterCallbacks
           = defaultCallbacks
-          { cbAppendChar   = \c -> getCurrentBalloon >>= \b -> appendChar b c
-          , cbAppendText   = \t -> getCurrentBalloon >>= \b -> appendText b t
-          , cbNewline      = getCurrentBalloon >>= appendNewline
-          , cbNewlineHalf  = getCurrentBalloon >>= appendNewlineHalf
+          { cbAppendChar = \c -> getCurrentBalloon >>= \b -> appendChar b c
+          , cbAppendText = \t -> getCurrentBalloon >>= \b -> appendText b t
+          , cbNewline = getCurrentBalloon >>= appendNewline
+          , cbNewlineHalf = getCurrentBalloon >>= appendNewlineHalf
           , cbNewlinePercent = \pct -> getCurrentBalloon >>= \b -> appendNewlinePercent b pct
-          , cbClear        = getCurrentBalloon >>= clearBalloon
-          , cbClearChars   = \n -> getCurrentBalloon >>= \b -> clearChars b n
-          , cbSetScope     = \scope -> do
+          , cbClear = getCurrentBalloon >>= clearBalloon
+          , cbClearChars = \n -> getCurrentBalloon >>= \b -> clearChars b n
+          , cbSetScope = \scope -> do
               writeIORef currentScopeRef scope
               putStrLn $ "[Scope] Switched to scope " <> show scope
-          , cbSetSurface   = changeSurface
-          , cbSetBalloon   = \scope balloonId -> do
+          , cbSetSurface = changeSurface
+          , cbSetBalloon = \scope balloonId -> do
               putStrLn $ "[Balloon] Set balloon " <> show balloonId <> " for scope " <> show scope
               case Map.lookup scope characters of
                 Just cs -> setBalloonId (getCharacterBalloon cs) balloonId
                 Nothing -> putStrLn $ "[Balloon] Scope " <> show scope <> " not found"
-          , cbHideBalloon  = \scope -> do
+          , cbHideBalloon = \scope -> do
               case Map.lookup scope characters of
                 Just cs -> hideBalloon (getCharacterBalloon cs)
                 Nothing -> return ()
-          , cbShowBalloon  = \scope -> do
+          , cbShowBalloon = \scope -> do
               case Map.lookup scope characters of
                 Just cs -> showBalloon (getCharacterBalloon cs)
                 Nothing -> return ()
-          , cbMoveCursor   = \x y -> do
+          , cbMoveCursor = \x y -> do
               b <- getCurrentBalloon
               moveCursor b x y
-          , cbAddChoice    = \choiceId text action -> do
+          , cbAddChoice = \choiceId text action -> do
               b <- getCurrentBalloon
               addChoice b (BalloonChoice text choiceId action)
           , cbClearChoices = getCurrentBalloon >>= clearChoices
-          -- Animation callbacks
-          , cbAnimStart    = \scope animId -> do
+            -- Animation callbacks
+          , cbAnimStart = \scope animId -> do
               putStrLn $ "[Anim] Start animation " <> show animId <> " on scope " <> show scope
               -- Animation start requires surface definition lookup which is done at Character level
-          , cbAnimStop     = \scope animId -> do
+          , cbAnimStop = \scope animId -> do
               putStrLn $ "[Anim] Stop animation " <> show animId <> " on scope " <> show scope
               case Map.lookup scope characters of
                 Just cs -> do
@@ -883,13 +910,13 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                   let newAnims = stopAnimation activeAnims animId
                   writeIORef (asActiveAnims animState) newAnims
                 Nothing -> return ()
-          , cbAnimWait     = \scope animId' -> do
+          , cbAnimWait = \scope animId' -> do
               putStrLn $ "[Anim] Wait for animation " <> show animId' <> " on scope " <> show scope
               -- Poll until animation is no longer active (simple busy wait with delay)
               case Map.lookup scope characters of
                 Just cs -> do
                   let animState = csAnimState cs
-                      waitLoop = do
+                      waitLoop  = do
                         activeAnims <- readIORef (asActiveAnims animState)
                         let isRunning = any (\a -> animId' == Surface.animId (aaDef a)) activeAnims
                         when isRunning $ do
@@ -897,7 +924,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                           waitLoop
                   waitLoop
                 Nothing -> return ()
-          , cbAnimClear    = \scope mAnimId -> do
+          , cbAnimClear = \scope mAnimId -> do
               putStrLn $ "[Anim] Clear animations on scope " <> show scope
               case Map.lookup scope characters of
                 Just cs -> do
@@ -907,11 +934,18 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                       activeAnims <- readIORef (asActiveAnims animState)
                       let newAnims = stopAnimation activeAnims aid
                       writeIORef (asActiveAnims animState) newAnims
-                    Nothing -> clearAnimations animState
+                    Nothing  -> clearAnimations animState
                 Nothing -> return ()
-          , cbBindToggle   = \scope category part enabled -> do
-              putStrLn $ "[Bind] Toggle " <> T.unpack category <> "/" <> T.unpack part 
-                       <> " = " <> show enabled <> " on scope " <> show scope
+          , cbBindToggle = \scope category part enabled -> do
+              putStrLn
+                $ "[Bind] Toggle "
+                <> T.unpack category
+                <> "/"
+                <> T.unpack part
+                <> " = "
+                <> show enabled
+                <> " on scope "
+                <> show scope
               case Map.lookup scope characters of
                 Just cs -> do
                   let animState = csAnimState cs
@@ -920,52 +954,63 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                   if enabled
                     then do
                       binds <- getEnabledBinds animState
-                      unless (Set.member animId' binds) $
-                        toggleBind animState animId'
+                      unless (Set.member animId' binds) $ toggleBind animState animId'
                     else do
                       binds <- getEnabledBinds animState
-                      when (Set.member animId' binds) $
-                        toggleBind animState animId'
+                      when (Set.member animId' binds) $ toggleBind animState animId'
                 Nothing -> return ()
-          -- Move callbacks
-          , cbMove         = \scope x y mTime async -> do
-              putStrLn $ "[Move] Move scope " <> show scope <> " to (" <> show x <> ", " <> show y <> ")"
-                       <> maybe "" (\t -> " in " <> show t <> "ms") mTime
-                       <> if async then " (async)" else ""
+            -- Move callbacks
+          , cbMove = \scope x y mTime async -> do
+              putStrLn
+                $ "[Move] Move scope "
+                <> show scope
+                <> " to ("
+                <> show x
+                <> ", "
+                <> show y
+                <> ")"
+                <> maybe "" (\t -> " in " <> show t <> "ms") mTime
+                <> if async
+                  then " (async)"
+                  else ""
               case Map.lookup scope characters of
                 Just cs -> setCharacterPosition cs (fromIntegral x) (fromIntegral y)
                 Nothing -> return ()
-          -- Font callbacks
-          , cbSetFont      = \fontCmd -> do
+            -- Font callbacks
+          , cbSetFont = \fontCmd -> do
               b <- getCurrentBalloon
               case fontCmd of
-                FontName name      -> setFontName b name
-                FontHeight fontSize -> case fontSize of
-                  FontSizeAbsolute size -> setFontSize b size
+                FontName name        -> setFontName b name
+                FontHeight fontSize  -> case fontSize of
+                  FontSizeAbsolute size  -> setFontSize b size
                   FontSizeRelative delta -> do
                     currentSize <- getFontSize b
                     setFontSize b (max 1 (currentSize + delta))
-                  FontSizePercent pct -> do
+                  FontSizePercent pct    -> do
                     let defaultSize = 12
                     setFontSize b (max 1 ((defaultSize * pct) `div` 100))
-                  FontSizeDefault       -> setFontSize b 12  -- Default size
-                FontColor color    -> case color of
-                  ColorRGB r g b'  -> setFontColor b (fromIntegral r / 255.0) (fromIntegral g / 255.0) (fromIntegral b' / 255.0)
+                  FontSizeDefault        -> setFontSize b 12  -- Default size
+                FontColor color      -> case color of
+                  ColorRGB r g b'        -> setFontColor
+                    b
+                    (fromIntegral r / 255.0)
+                    (fromIntegral g / 255.0)
+                    (fromIntegral b' / 255.0)
                   ColorRGBPercent r g b' -> setFontColor b r g b'
-                  ColorHex hexStr  -> case parseHexColor hexStr of
-                    Just (r, g, b') -> setFontColor b r g b'
-                    Nothing -> return ()
-                  ColorName name   -> case lookupColorName name of
-                    Just (r, g, b') -> setFontColor b r g b'
-                    Nothing -> return ()
-                  ColorDefault     -> resetFont b
-                  ColorDisable     -> return ()
-                FontBold toggle    -> case toggle of
+                  ColorHex hexStr        -> case parseHexColor hexStr of
+                    Just ( r, g, b' ) -> setFontColor b r g b'
+                    Nothing           -> return ()
+                  ColorName name         -> case lookupColorName name of
+                    Just ( r, g, b' ) -> setFontColor b r g b'
+                    Nothing           -> return ()
+                  ColorDefault           -> resetFont b
+                  ColorDisable           -> return ()
+                FontBold toggle      -> case toggle of
                   ToggleOn      -> setFontBold b True
                   ToggleOff     -> setFontBold b False
                   ToggleDefault -> setFontBold b False
                   ToggleDisable -> return ()
-                FontItalic toggle  -> case toggle of
+                FontItalic toggle    -> case toggle of
                   ToggleOn      -> setFontItalic b True
                   ToggleOff     -> setFontItalic b False
                   ToggleDefault -> setFontItalic b False
@@ -975,35 +1020,35 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                   ToggleOff     -> setFontUnderline b False
                   ToggleDefault -> setFontUnderline b False
                   ToggleDisable -> return ()
-                FontStrike toggle  -> case toggle of
+                FontStrike toggle    -> case toggle of
                   ToggleOn      -> setFontStrike b True
                   ToggleOff     -> setFontStrike b False
                   ToggleDefault -> setFontStrike b False
                   ToggleDisable -> return ()
-                FontDefault        -> resetFont b
-                FontSub toggle     -> case toggle of
+                FontDefault          -> resetFont b
+                FontSub toggle       -> case toggle of
                   ToggleOn      -> setFontSub b True
                   ToggleOff     -> setFontSub b False
                   ToggleDefault -> setFontSub b False
                   ToggleDisable -> return ()
-                FontSup toggle     -> case toggle of
+                FontSup toggle       -> case toggle of
                   ToggleOn      -> setFontSup b True
                   ToggleOff     -> setFontSup b False
                   ToggleDefault -> setFontSup b False
                   ToggleDisable -> return ()
-                FontAlign _        -> return ()  -- Text alignment is handled at balloon render level
-                FontVAlign _       -> return ()  -- Vertical alignment is handled at balloon render level
-                FontShadowColor _  -> return ()  -- Shadow requires Pango attributes
-                FontDisable _      -> return ()  -- Disable is a special render flag
-                FontCursor _       -> return ()  -- Cursor color for input fields
-                FontAnchorNormal _ -> return ()  -- Anchor styling stored in balloon state
-                FontAnchorHover _  -> return ()  -- Anchor hover styling
-                FontChoiceNormal _ -> return ()  -- Choice styling stored in balloon state
-                FontChoiceHover _  -> return ()  -- Choice hover styling
-          -- Sound callbacks
-          , cbPlaySound    = playSound soundState
-          , cbStopSound    = stopSound soundState
-          , cbSoundAction  = \action file -> do
+                FontAlign _          -> return ()  -- Text alignment is handled at balloon render level
+                FontVAlign _         -> return ()  -- Vertical alignment is handled at balloon render level
+                FontShadowColor _    -> return ()  -- Shadow requires Pango attributes
+                FontDisable _        -> return ()  -- Disable is a special render flag
+                FontCursor _         -> return ()  -- Cursor color for input fields
+                FontAnchorNormal _   -> return ()  -- Anchor styling stored in balloon state
+                FontAnchorHover _    -> return ()  -- Anchor hover styling
+                FontChoiceNormal _   -> return ()  -- Choice styling stored in balloon state
+                FontChoiceHover _    -> return ()  -- Choice hover styling
+            -- Sound callbacks
+          , cbPlaySound = playSound soundState
+          , cbStopSound = stopSound soundState
+          , cbSoundAction = \action file -> do
               case action of
                 SoundActionPlay      -> playSound soundState file
                 SoundActionLoop      -> playSound soundState file  -- Loop not fully supported yet
@@ -1011,161 +1056,163 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 SoundActionResume    -> playSound soundState file
                 SoundActionSoundStop -> stopSound soundState
                 SoundActionWait      -> return ()  -- Wait for sound completion
-          -- Event callbacks
-          , cbRaiseEvent   = \eventName refs -> do
+            -- Event callbacks
+          , cbRaiseEvent = \eventName refs -> do
               putStrLn $ "[Event] Raise: " <> T.unpack eventName <> " with refs: " <> show refs
               -- Event raising would send to SHIORI - logged for now
-          , cbNotify       = \name refs -> do
+          , cbNotify = \name refs -> do
               putStrLn $ "[Event] Notify: " <> T.unpack name <> " with refs: " <> show refs
               -- Notifications are one-way messages to SHIORI
-          , cbTimerRaise   = \name delayMs -> do
+          , cbTimerRaise = \name delayMs -> do
               putStrLn $ "[Event] Timer raise: " <> T.unpack name <> " in " <> show delayMs <> "ms"
               -- Timer would use GLib.timeoutAdd - schedule for later
               void $ GLib.timeoutAdd GLib.PRIORITY_DEFAULT (fromIntegral delayMs) $ do
                 putStrLn $ "[Event] Timer fired: " <> T.unpack name
                 return False  -- Don't repeat
-          , cbTimerCancel  = \name -> do
+          , cbTimerCancel = \name -> do
               putStrLn $ "[Event] Timer cancel: " <> T.unpack name
               -- Timer cancellation requires tracking timer IDs
-          , cbGhostChange  = \ghostName -> do
+          , cbGhostChange = \ghostName -> do
               putStrLn $ "[Event] Ghost change: " <> T.unpack ghostName
               -- Ghost change requires reloading entire ghost
-          , cbShellChange  = \shellName -> do
+          , cbShellChange = \shellName -> do
               putStrLn $ "[Event] Shell change: " <> T.unpack shellName
               -- Shell change requires reloading shell surfaces
           , cbBalloonStyleChange = \balloonName -> do
               putStrLn $ "[Event] Balloon style change: " <> T.unpack balloonName
               -- Balloon style change requires loading different balloon directory
-          -- Open callbacks
-          , cbOpenURL      = \url -> do
+            -- Open callbacks
+          , cbOpenURL = \url -> do
               putStrLn $ "[Open] URL: " <> T.unpack url
               void $ Gio.appInfoLaunchDefaultForUri url (Nothing :: Maybe Gio.AppLaunchContext)
-          , cbOpenFile     = \file -> do
+          , cbOpenFile = \file -> do
               putStrLn $ "[Open] File: " <> T.unpack file
               let uri = "file://" <> file
               void $ Gio.appInfoLaunchDefaultForUri uri (Nothing :: Maybe Gio.AppLaunchContext)
           , cbOpenInputBox = \eventId opts -> do
-              putStrLn $ "[Open] Input box for event: " <> T.unpack eventId <> " opts: " <> show opts
+              putStrLn
+                $ "[Open] Input box for event: " <> T.unpack eventId <> " opts: " <> show opts
               -- Create an input dialog using GTK
-              dialog <- Gtk.new Gtk.Window [ #title := "Input"
-                                           , #modal := True
-                                           , #defaultWidth := 300
-                                           , #defaultHeight := 100
-                                           ]
-              box <- Gtk.new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                                     , #spacing := 10
-                                     , #marginTop := 10
-                                     , #marginBottom := 10
-                                     , #marginStart := 10
-                                     , #marginEnd := 10
-                                     ]
+              dialog <- Gtk.new
+                Gtk.Window
+                [ #title := "Input", #modal := True, #defaultWidth := 300, #defaultHeight := 100 ]
+              box <- Gtk.new
+                Gtk.Box
+                [ #orientation := Gtk.OrientationVertical
+                , #spacing := 10
+                , #marginTop := 10
+                , #marginBottom := 10
+                , #marginStart := 10
+                , #marginEnd := 10
+                ]
               entry <- Gtk.new Gtk.Entry [ #placeholderText := "Enter text..." ]
-              buttonBox <- Gtk.new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                                           , #spacing := 10
-                                           , #halign := Gtk.AlignEnd
-                                           ]
+              buttonBox <- Gtk.new
+                Gtk.Box
+                [ #orientation := Gtk.OrientationHorizontal
+                , #spacing := 10
+                , #halign := Gtk.AlignEnd
+                ]
               okBtn <- Gtk.new Gtk.Button [ #label := "OK" ]
               cancelBtn <- Gtk.new Gtk.Button [ #label := "Cancel" ]
-              
+
               Gtk.boxAppend buttonBox okBtn
               Gtk.boxAppend buttonBox cancelBtn
               Gtk.boxAppend box entry
               Gtk.boxAppend box buttonBox
               Gtk.windowSetChild dialog (Just box)
-              
+
               -- Handle OK button
               void $ Gtk.on okBtn #clicked $ do
                 inputText <- Gtk.editableGetText entry
                 putStrLn $ "[Open] Input result: " <> T.unpack inputText
                 -- Send result back via event (would call SHIORI)
                 Gtk.windowClose dialog
-              
-              -- Handle Cancel button  
+
+              -- Handle Cancel button
               void $ Gtk.on cancelBtn #clicked $ do
                 putStrLn "[Open] Input cancelled"
                 Gtk.windowClose dialog
-              
+
               Gtk.windowPresent dialog
-              
-          , cbOpenDialog   = \msg opt -> do
+          , cbOpenDialog = \msg opt -> do
               putStrLn $ "[Open] Dialog: " <> T.unpack msg <> " opt: " <> show opt
               -- Create a message dialog
-              dialog <- Gtk.new Gtk.Window [ #title := "Message"
-                                           , #modal := True
-                                           , #defaultWidth := 300
-                                           , #defaultHeight := 150
-                                           ]
-              box <- Gtk.new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                                     , #spacing := 10
-                                     , #marginTop := 20
-                                     , #marginBottom := 10
-                                     , #marginStart := 20
-                                     , #marginEnd := 20
-                                     ]
-              label <- Gtk.new Gtk.Label [ #label := msg
-                                         , #wrap := True
-                                         ]
-              okBtn <- Gtk.new Gtk.Button [ #label := "OK"
-                                          , #halign := Gtk.AlignCenter
-                                          ]
-              
+              dialog <- Gtk.new
+                Gtk.Window
+                [ #title := "Message"
+                , #modal := True
+                , #defaultWidth := 300
+                , #defaultHeight := 150
+                ]
+              box <- Gtk.new
+                Gtk.Box
+                [ #orientation := Gtk.OrientationVertical
+                , #spacing := 10
+                , #marginTop := 20
+                , #marginBottom := 10
+                , #marginStart := 20
+                , #marginEnd := 20
+                ]
+              label <- Gtk.new Gtk.Label [ #label := msg, #wrap := True ]
+              okBtn <- Gtk.new Gtk.Button [ #label := "OK", #halign := Gtk.AlignCenter ]
+
               Gtk.boxAppend box label
               Gtk.boxAppend box okBtn
               Gtk.windowSetChild dialog (Just box)
-              
+
               void $ Gtk.on okBtn #clicked $ Gtk.windowClose dialog
-              
+
               Gtk.windowPresent dialog
-          -- Meta callbacks
-          , cbSetProperty  = \prop -> do
+            -- Meta callbacks
+          , cbSetProperty = \prop -> do
               putStrLn $ "[Meta] Set property: " <> show prop
               -- Property setting requires ghost state management
-          , cbGetProperty  = \prop -> do
+          , cbGetProperty = \prop -> do
               putStrLn $ "[Meta] Get property: " <> show prop
               return ""  -- Property getting requires ghost state access
-          , cbReload       = \target -> do
+          , cbReload = \target -> do
               putStrLn $ "[Meta] Reload: " <> show target
               -- Reload requires reloading specific components
-          , cbExecute      = \execCmd -> do
+          , cbExecute = \execCmd -> do
               putStrLn $ "[Meta] Execute: " <> show execCmd
               -- Execute runs external commands
           , cbSetPassiveMode = \enabled -> do
               putStrLn $ "[Meta] Passive mode: " <> show enabled
               -- Passive mode affects event handling
-          , cbLock         = \component -> do
+          , cbLock = \component -> do
               putStrLn $ "[Meta] Lock: " <> T.unpack component
               -- Lock prevents user interaction with component
-          , cbUnlock       = \component -> do
+          , cbUnlock = \component -> do
               putStrLn $ "[Meta] Unlock: " <> T.unpack component
               -- Unlock restores user interaction
-          -- EnvVar callback
-          , cbGetEnvVar    = \envVar -> do
+            -- EnvVar callback
+          , cbGetEnvVar = \envVar -> do
               now <- getCurrentTime
-              let (year, month, day) = toGregorian (utctDay now)
+              let ( year, month, day )         = toGregorian (utctDay now)
                   TimeOfDay hour minute second = timeToTimeOfDay (utctDayTime now)
               case envVar of
-                EnvYear        -> return $ T.pack $ show year
-                EnvMonth       -> return $ T.pack $ show month
-                EnvDay         -> return $ T.pack $ show day
-                EnvHour        -> return $ T.pack $ show hour
-                EnvMinute      -> return $ T.pack $ show minute
-                EnvSecond      -> return $ T.pack $ show (truncate second :: Int)
-                EnvWeekday     -> do
-                  let (_, _, dow) = toWeekDate (utctDay now)
-                  return $ T.pack $ ["日", "月", "火", "水", "木", "金", "土"] !! (dow `mod` 7)
-                EnvSelfname    -> return "Emily"  -- Sakura name from ghost
-                EnvSelfname2   -> return ""       -- Alternate sakura name
-                EnvKeroname    -> return ""       -- Kero name from ghost
-                EnvGhostname   -> return "Kokage Ghost"  -- Ghost name
-                EnvShellname   -> return "master"  -- Current shell name
-                EnvUsername    -> do
+                EnvYear         -> return $ T.pack $ show year
+                EnvMonth        -> return $ T.pack $ show month
+                EnvDay          -> return $ T.pack $ show day
+                EnvHour         -> return $ T.pack $ show hour
+                EnvMinute       -> return $ T.pack $ show minute
+                EnvSecond       -> return $ T.pack $ show (truncate second :: Int)
+                EnvWeekday      -> do
+                  let ( _, _, dow ) = toWeekDate (utctDay now)
+                  return $ T.pack $ [ "日", "月", "火", "水", "木", "金", "土" ] !! (dow `mod` 7)
+                EnvSelfname     -> return "Emily"  -- Sakura name from ghost
+                EnvSelfname2    -> return ""       -- Alternate sakura name
+                EnvKeroname     -> return ""       -- Kero name from ghost
+                EnvGhostname    -> return "Kokage Ghost"  -- Ghost name
+                EnvShellname    -> return "master"  -- Current shell name
+                EnvUsername     -> do
                   mUser <- lookupEnv "USER"
                   return $ T.pack $ fromMaybe "User" mUser
-                EnvOS          -> return "Linux"
-                EnvScreenWidth -> do
+                EnvOS           -> return "Linux"
+                EnvScreenWidth  -> do
                   mDisplay <- Gdk.displayGetDefault
                   case mDisplay of
-                    Nothing -> return "1920"
+                    Nothing      -> return "1920"
                     Just display -> do
                       monitors <- Gdk.displayGetMonitors display
                       n <- Gio.listModelGetNItems monitors
@@ -1173,7 +1220,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                         then do
                           mMonitor <- Gio.listModelGetItem monitors 0
                           case mMonitor of
-                            Nothing -> return "1920"
+                            Nothing  -> return "1920"
                             Just obj -> do
                               monitor <- Gdk.unsafeCastTo Gdk.Monitor obj
                               geom <- Gdk.monitorGetGeometry monitor
@@ -1183,7 +1230,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 EnvScreenHeight -> do
                   mDisplay <- Gdk.displayGetDefault
                   case mDisplay of
-                    Nothing -> return "1080"
+                    Nothing      -> return "1080"
                     Just display -> do
                       monitors <- Gdk.displayGetMonitors display
                       n <- Gio.listModelGetNItems monitors
@@ -1191,44 +1238,44 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                         then do
                           mMonitor <- Gio.listModelGetItem monitors 0
                           case mMonitor of
-                            Nothing -> return "1080"
+                            Nothing  -> return "1080"
                             Just obj -> do
                               monitor <- Gdk.unsafeCastTo Gdk.Monitor obj
                               geom <- Gdk.monitorGetGeometry monitor
                               h <- Gdk.getRectangleHeight geom
                               return $ T.pack $ show h
                         else return "1080"
-                EnvSurface     -> do
+                EnvSurface      -> do
                   scope <- readIORef currentScopeRef
                   case Map.lookup scope characters of
                     Just cs -> do
                       surfId <- readIORef (csCurrentSurface cs)
                       return $ T.pack $ show surfId
                     Nothing -> return "0"
-                EnvSurface0    -> do
+                EnvSurface0     -> do
                   case Map.lookup 0 characters of
                     Just cs -> do
                       surfId <- readIORef (csCurrentSurface cs)
                       return $ T.pack $ show surfId
                     Nothing -> return "0"
-                EnvSurface1    -> do
+                EnvSurface1     -> do
                   case Map.lookup 1 characters of
                     Just cs -> do
                       surfId <- readIORef (csCurrentSurface cs)
                       return $ T.pack $ show surfId
                     Nothing -> return "0"
-                EnvCustom name -> do
+                EnvCustom name  -> do
                   -- Custom environment variables - could be extended
                   putStrLn $ "[EnvVar] Custom: " <> T.unpack name
                   return ""
-          -- Completion callbacks
-          , cbOnComplete   = do
+            -- Completion callbacks
+          , cbOnComplete = do
               putStrLn "[Script] Execution complete"
               hideBalloonIfNoChoices
-          , cbOnInterrupt  = do
+          , cbOnInterrupt = do
               putStrLn "[Script] Execution interrupted"
               hideBalloonIfNoChoices
-          , cbOnClickWait  = do
+          , cbOnClickWait = do
               -- Click wait is handled by the FRP network
               -- The interpreter pauses until a click event is received
               putStrLn "[Script] Click wait triggered"
@@ -1263,8 +1310,8 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
               writeIORef currentScriptInterruptRef interruptAction
 
     -- Fill in the surface restore callback now that displayScript is defined
-    writeIORef surfaceRestoreCallbackRef $
-      sendShioriWithCallback mShioriConfig OnSurfaceRestore Map.empty displayScript
+    writeIORef surfaceRestoreCallbackRef
+      $ sendShioriWithCallback mShioriConfig OnSurfaceRestore Map.empty displayScript
 
     -- Set up choice callback on sakura's balloon
     case Map.lookup 0 characters of
@@ -1295,7 +1342,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 Just url -> do
                   putStrLn $ "[Choice] Opening URL: " <> T.unpack url
                   void $ Gio.appInfoLaunchDefaultForUri url (Nothing :: Maybe Gio.AppLaunchContext)
-                Nothing   -> case T.stripPrefix "anchor:" action of
+                Nothing  -> case T.stripPrefix "anchor:" action of
                   Just anchorId -> do
                     let refs = Map.fromList [ ( 0, anchorId ), ( 1, bcText choice ) ]
                     sendShioriWithCallback mShioriConfig OnAnchorSelect refs displayScript
@@ -1404,7 +1451,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
       let window  = csWindow cs
           picture = csPicture cs
-          bs = getCharacterBalloon cs
+          bs      = getCharacterBalloon cs
 
       -- Create drag gesture (for left-click drag/move)
       dragGesture <- new Gtk.GestureDrag []
@@ -1415,8 +1462,8 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
 
       -- Create left-click gesture (Button 1) for click count detection (single/double click)
       leftClickGesture <- new Gtk.GestureClick [ #button := 1 ]
-      _ <- on leftClickGesture #pressed $ \nPress x y ->
-        fireLeftClick ( fromIntegral nPress, x, y )
+      _ <- on leftClickGesture #pressed
+        $ \nPress x y -> fireLeftClick ( fromIntegral nPress, x, y )
       Gtk.widgetAddController picture leftClickGesture
 
       -- Create drag gesture for balloon
@@ -1444,16 +1491,16 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       Gtk.widgetAddController picture rightClickGesture
 
       -- Create context menu for this character's window
-      let menuStyle = menuStyleFromShellDescript (shellPath shell) (shellDescript shell)
-          shellList = map (\s -> (shellDescriptName (shellDescript s), T.pack (shellPath s)))
-                          (ghostShells ghost)
+      let menuStyle        = menuStyleFromShellDescript (shellPath shell) (shellDescript shell)
+          shellList
+            = map
+              (\s -> ( shellDescriptName (shellDescript s), T.pack (shellPath s) ))
+              (ghostShells ghost)
           currentShellName = shellDescriptName (shellDescript shell)
       balloonList <- listAvailableBalloons installBaseDir
-      let menuConfig = emptyMenuConfig
-            { mcShells = shellList
-            , mcCurrentShell = currentShellName
-            , mcBalloons = balloonList
-            }
+      let menuConfig
+            = emptyMenuConfig
+            { mcShells = shellList, mcCurrentShell = currentShellName, mcBalloons = balloonList }
       contextMenu <- createContextMenu window menuStyle menuConfig
 
       -- Create motion controller
@@ -1552,8 +1599,8 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
       -- Build unified character+balloon network config
       let charConfig
             = CharacterNetworkConfig
-            { cncWindow        = window
-            , cncInputs        = InputHandlers
+            { cncWindow          = window
+            , cncInputs          = InputHandlers
                 { ihDragBegin  = dragBeginHandler
                 , ihDragUpdate = dragUpdateHandler
                 , ihDragEnd    = dragEndHandler
@@ -1561,14 +1608,14 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 , ihRightClick = rightClickHandler
                 , ihLeftClick  = leftClickHandler
                 }
-            , cncCollisions    = collisions
-            , cncMoveMode      = moveMode
-            , cncScopeId       = scopeId
-            , cncShiori        = mShioriConfig
-            , cncScriptHandler = displayScript
-            , cncContextMenu   = contextMenu
-            , cncMotionTick    = motionTickHandler
-            -- Balloon integration
+            , cncCollisions      = collisions
+            , cncMoveMode        = moveMode
+            , cncScopeId         = scopeId
+            , cncShiori          = mShioriConfig
+            , cncScriptHandler   = displayScript
+            , cncContextMenu     = contextMenu
+            , cncMotionTick      = motionTickHandler
+              -- Balloon integration
             , cncBalloonWindow   = bsWindow bs
             , cncBalloonInputs   = InputHandlers
                 { ihDragBegin  = balloonDragBeginHandler
@@ -1606,7 +1653,7 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           putStrLn $ "[Position] Character " <> show scopeId <> " initial position: " <> show pos
           uncurry (setCharacterPosition cs) pos
       Nothing
-        -> putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
+       -> putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
 
     -- Show all characters and set always-on-top
     forM_ (Map.elems characters) showCharacter
@@ -1635,16 +1682,17 @@ getDefaultBaseDir :: IO Install.BaseDir
 getDefaultBaseDir = do
   cwd <- getCurrentDirectory
   return
-    Install.BaseDir { Install.bdGhost        = cwd </> "ghost"
-            , Install.bdBalloon      = cwd </> "balloon"
-            , Install.bdPlugin       = cwd </> "plugin"
-            , Install.bdHeadline     = cwd </> "headline"
-            , Install.bdCalendar     = cwd </> "calendar"
-            , Install.bdCalendarSkin = cwd </> "calendar" </> "skin"
-            }
+    Install.BaseDir
+    { Install.bdGhost        = cwd </> "ghost"
+    , Install.bdBalloon      = cwd </> "balloon"
+    , Install.bdPlugin       = cwd </> "plugin"
+    , Install.bdHeadline     = cwd </> "headline"
+    , Install.bdCalendar     = cwd </> "calendar"
+    , Install.bdCalendarSkin = cwd </> "calendar" </> "skin"
+    }
 
 -- | Parse a hex color string like "#FF0000" or "FF0000" to RGB values (0.0-1.0)
-parseHexColor :: T.Text -> Maybe (Double, Double, Double)
+parseHexColor :: T.Text -> Maybe ( Double, Double, Double )
 parseHexColor hexStr = do
   let hex = T.dropWhile (== '#') hexStr
   case T.length hex of
@@ -1652,50 +1700,56 @@ parseHexColor hexStr = do
       r <- parseHexByte (T.take 2 hex)
       g <- parseHexByte (T.take 2 (T.drop 2 hex))
       b <- parseHexByte (T.drop 4 hex)
-      Just (fromIntegral r / 255.0, fromIntegral g / 255.0, fromIntegral b / 255.0)
+      Just ( fromIntegral r / 255.0, fromIntegral g / 255.0, fromIntegral b / 255.0 )
     3 -> do
       -- Short form like "F00" -> "FF0000"
       r <- parseHexNibble (T.take 1 hex)
       g <- parseHexNibble (T.take 1 (T.drop 1 hex))
       b <- parseHexNibble (T.drop 2 hex)
-      Just (fromIntegral (r * 17) / 255.0, fromIntegral (g * 17) / 255.0, fromIntegral (b * 17) / 255.0)
+      Just
+        ( fromIntegral (r * 17) / 255.0
+        , fromIntegral (g * 17) / 255.0
+        , fromIntegral (b * 17) / 255.0
+        )
     _ -> Nothing
   where
     parseHexByte :: T.Text -> Maybe Int
     parseHexByte t = case reads ("0x" ++ T.unpack t) of
-      [(n, "")] -> Just n
-      _         -> Nothing
+      [ ( n, "" ) ] -> Just n
+      _ -> Nothing
+
     parseHexNibble :: T.Text -> Maybe Int
     parseHexNibble t = case reads ("0x" ++ T.unpack t) of
-      [(n, "")] -> Just n
-      _         -> Nothing
+      [ ( n, "" ) ] -> Just n
+      _ -> Nothing
 
 -- | Look up a named color to RGB values (0.0-1.0)
-lookupColorName :: T.Text -> Maybe (Double, Double, Double)
+lookupColorName :: T.Text -> Maybe ( Double, Double, Double )
 lookupColorName name = Map.lookup (T.toLower name) colorNames
   where
-    colorNames :: Map.Map T.Text (Double, Double, Double)
-    colorNames = Map.fromList
-      [ ("black",   (0.0, 0.0, 0.0))
-      , ("white",   (1.0, 1.0, 1.0))
-      , ("red",     (1.0, 0.0, 0.0))
-      , ("green",   (0.0, 0.5, 0.0))
-      , ("blue",    (0.0, 0.0, 1.0))
-      , ("yellow",  (1.0, 1.0, 0.0))
-      , ("cyan",    (0.0, 1.0, 1.0))
-      , ("magenta", (1.0, 0.0, 1.0))
-      , ("gray",    (0.5, 0.5, 0.5))
-      , ("grey",    (0.5, 0.5, 0.5))
-      , ("orange",  (1.0, 0.65, 0.0))
-      , ("pink",    (1.0, 0.75, 0.8))
-      , ("purple",  (0.5, 0.0, 0.5))
-      , ("brown",   (0.65, 0.16, 0.16))
-      , ("navy",    (0.0, 0.0, 0.5))
-      , ("teal",    (0.0, 0.5, 0.5))
-      , ("olive",   (0.5, 0.5, 0.0))
-      , ("maroon",  (0.5, 0.0, 0.0))
-      , ("lime",    (0.0, 1.0, 0.0))
-      , ("aqua",    (0.0, 1.0, 1.0))
-      , ("silver",  (0.75, 0.75, 0.75))
-      , ("fuchsia", (1.0, 0.0, 1.0))
-      ]
+    colorNames :: Map.Map T.Text ( Double, Double, Double )
+    colorNames
+      = Map.fromList
+        [ ( "black", ( 0.0, 0.0, 0.0 ) )
+        , ( "white", ( 1.0, 1.0, 1.0 ) )
+        , ( "red", ( 1.0, 0.0, 0.0 ) )
+        , ( "green", ( 0.0, 0.5, 0.0 ) )
+        , ( "blue", ( 0.0, 0.0, 1.0 ) )
+        , ( "yellow", ( 1.0, 1.0, 0.0 ) )
+        , ( "cyan", ( 0.0, 1.0, 1.0 ) )
+        , ( "magenta", ( 1.0, 0.0, 1.0 ) )
+        , ( "gray", ( 0.5, 0.5, 0.5 ) )
+        , ( "grey", ( 0.5, 0.5, 0.5 ) )
+        , ( "orange", ( 1.0, 0.65, 0.0 ) )
+        , ( "pink", ( 1.0, 0.75, 0.8 ) )
+        , ( "purple", ( 0.5, 0.0, 0.5 ) )
+        , ( "brown", ( 0.65, 0.16, 0.16 ) )
+        , ( "navy", ( 0.0, 0.0, 0.5 ) )
+        , ( "teal", ( 0.0, 0.5, 0.5 ) )
+        , ( "olive", ( 0.5, 0.5, 0.0 ) )
+        , ( "maroon", ( 0.5, 0.0, 0.0 ) )
+        , ( "lime", ( 0.0, 1.0, 0.0 ) )
+        , ( "aqua", ( 0.0, 1.0, 1.0 ) )
+        , ( "silver", ( 0.75, 0.75, 0.75 ) )
+        , ( "fuchsia", ( 1.0, 0.0, 1.0 ) )
+        ]

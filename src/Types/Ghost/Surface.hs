@@ -36,21 +36,20 @@ module Types.Ghost.Surface
   , parseAnimationInterval
   ) where
 
-import           Control.Applicative        ( (<|>) )
+import           Control.Applicative  ( (<|>) )
 
-import qualified Data.ByteString.Lazy       as BL
-import           Data.List                  ( foldl' )
-import           Data.Map.Strict            ( Map )
-import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 ( mapMaybe )
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
+import qualified Data.ByteString.Lazy as BL
+import           Data.Map.Strict      ( Map )
+import qualified Data.Map.Strict      as Map
+import           Data.Maybe           ( mapMaybe )
+import           Data.Text            ( Text )
+import qualified Data.Text            as T
+import qualified Data.Text.Encoding   as TE
 
-import           Text.Read                  ( readMaybe )
+import           Text.Read            ( readMaybe )
 
-import           Utils.Charset              ( convertToUtf8, detectCharsetFromBytes )
-import           Utils.Text                 ( readIntOr, readMaybeInt )
+import           Utils.Charset        ( convertToUtf8, detectCharsetFromBytes )
+import           Utils.Text           ( readIntOr, readMaybeInt )
 
 -- | Drawing method for element/animation pattern composition
 data DrawMethod
@@ -301,7 +300,7 @@ tokenizeBraces contents = go Nothing [] (filter (not . isCommentOrEmpty) (T.line
     isCommentOrEmpty line
       = let
           stripped = T.strip line
-        in
+        in 
           T.null stripped || "//" `T.isPrefixOf` stripped
 
     go :: Maybe Text -> [ Text ] -> [ Text ] -> [ BraceBlock ]
@@ -313,7 +312,7 @@ tokenizeBraces contents = go Nothing [] (filter (not . isCommentOrEmpty) (T.line
         -- Name might be on same line as {
         let
             name = T.strip (T.dropEnd 1 (T.strip line))
-          in
+          in 
             go (Just name) [] rest
       | otherwise
         =
@@ -336,7 +335,7 @@ parseDrawMethod txt
         = if T.null rest
           then []
           else mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," (T.drop 1 rest))
-    in
+    in 
       case method of
         "base" -> DrawBase
         "overlay" -> DrawOverlay
@@ -365,7 +364,7 @@ parseAnimationInterval :: Text -> AnimationInterval
 parseAnimationInterval txt
   = let
       stripped = T.toLower (T.strip txt)
-    in
+    in 
       if "+" `T.isInfixOf` stripped
         then IntervalCombined (map parseAnimationInterval (T.splitOn "+" stripped))
         else parseSingleInterval stripped
@@ -400,7 +399,7 @@ parseAnimationOption txt
         = if T.null rest
           then Nothing
           else Just (mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," (T.drop 1 rest)))
-    in
+    in 
       case opt of
         "exclusive" -> Just (OptionExclusive ids)
         "background" -> Just OptionBackground
@@ -418,7 +417,7 @@ parseSurfaceIds txt
         | "surface.append" `T.isPrefixOf` stripped = ( True, T.drop 14 stripped )
         | "surface" `T.isPrefixOf` stripped = ( False, T.drop 7 stripped )
         | otherwise = ( False, stripped )
-    in
+    in 
       ( isAppend, parseIdSpec numPart )
   where
     parseIdSpec :: Text -> [ Int ]
@@ -428,7 +427,7 @@ parseSurfaceIds txt
           ( includes, excludes ) = foldr categorize ( [], [] ) parts
           baseIds = concatMap parseRange includes
           excludeIds = concatMap parseRange excludes
-        in
+        in 
           filter (`notElem` excludeIds) baseIds
 
     categorize :: Text -> ( [ Text ], [ Text ] ) -> ( [ Text ], [ Text ] )
@@ -441,7 +440,7 @@ parseSurfaceIds txt
       ( start, rest )
         | not (T.null rest) && not (T.null start) -> let
             end = T.drop 1 rest
-          in
+          in 
             case ( readMaybe (T.unpack start), readMaybe (T.unpack end) ) of
               ( Just s, Just e ) -> [ s .. e ]
               _ -> maybeToList (readMaybe (T.unpack part))
@@ -456,7 +455,7 @@ parseCollision :: Text -> Text -> Maybe CollisionRegion
 parseCollision key val
   = let
       parts = T.splitOn "," val
-    in
+    in 
       if "collisionex" `T.isPrefixOf` key
         then parseCollisionEx parts
         else parseCollisionOld key parts
@@ -544,23 +543,22 @@ parseElement key val = do
 -- | Parse animation pattern line (SERIKO version 1)
 parseAnimationPattern :: Int -> Text -> Maybe AnimationPattern
 parseAnimationPattern idx val = case T.splitOn "," val of
-  [ p1, p2, p3, p4, p5 ] ->
-    case readMaybe (T.unpack p1) :: Maybe Int of
-      Just surfId ->
-        -- Old format: surfaceId,wait,method,x,y
-        do
-          x' <- readMaybe (T.unpack p4)
-          y' <- readMaybe (T.unpack p5)
-          let ( wait, waitMax ) = parseWait p2
-          Just $ AnimationPattern idx (parseDrawMethod p3) surfId wait waitMax x' y'
-      Nothing     ->
-        -- New format: method,surfaceId,wait,x,y
-        do
-          surfId <- readMaybe (T.unpack p2)
-          x' <- readMaybe (T.unpack p4)
-          y' <- readMaybe (T.unpack p5)
-          let ( wait, waitMax ) = parseWait p3
-          Just $ AnimationPattern idx (parseDrawMethod p1) surfId wait waitMax x' y'
+  [ p1, p2, p3, p4, p5 ] -> case readMaybe (T.unpack p1) :: Maybe Int of
+    Just surfId ->
+      -- Old format: surfaceId,wait,method,x,y
+      do
+        x' <- readMaybe (T.unpack p4)
+        y' <- readMaybe (T.unpack p5)
+        let ( wait, waitMax ) = parseWait p2
+        Just $ AnimationPattern idx (parseDrawMethod p3) surfId wait waitMax x' y'
+    Nothing     ->
+      -- New format: method,surfaceId,wait,x,y
+      do
+        surfId <- readMaybe (T.unpack p2)
+        x' <- readMaybe (T.unpack p4)
+        y' <- readMaybe (T.unpack p5)
+        let ( wait, waitMax ) = parseWait p3
+        Just $ AnimationPattern idx (parseDrawMethod p1) surfId wait waitMax x' y'
   _ -> Nothing
   where
     parseWait :: Text -> ( Int, Maybe Int )
@@ -600,46 +598,47 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
         | not (T.null rest) -> let
             key = T.toLower (T.strip rawKey)
             val = T.drop 1 rest  -- drop comma
-          in
+          in 
             parseKey sd key val
       _ -> sd
 
     parseKey :: SurfaceDefinition -> Text -> Text -> SurfaceDefinition
     parseKey sd key val
       -- Elements
-      | "element" `T.isPrefixOf` key = case parseElement key val of
-        Just el -> sd { sdElements = sdElements sd ++ [ el ] }
-        Nothing -> sd
 
-      -- Collisions (surface-level)
-      | "collisionex" `T.isPrefixOf` key = case parseCollision key val of
-        Just col -> sd { sdCollisions = sdCollisions sd ++ [ col ] }
-        Nothing  -> sd
-      | "collision" `T.isPrefixOf` key && not ("." `T.isInfixOf` key)
-        = case parseCollision key val of
+        | "element" `T.isPrefixOf` key = case parseElement key val of
+          Just el -> sd { sdElements = sdElements sd ++ [ el ] }
+          Nothing -> sd
+
+        -- Collisions (surface-level)
+        | "collisionex" `T.isPrefixOf` key = case parseCollision key val of
           Just col -> sd { sdCollisions = sdCollisions sd ++ [ col ] }
           Nothing  -> sd
+        | "collision" `T.isPrefixOf` key && not ("." `T.isInfixOf` key)
+          = case parseCollision key val of
+            Just col -> sd { sdCollisions = sdCollisions sd ++ [ col ] }
+            Nothing  -> sd
 
-      -- Animation keys: animation<N>.interval, animation<N>.pattern<M>, etc.
-      | "animation" `T.isPrefixOf` key = parseAnimationKey sd key val
+        -- Animation keys: animation<N>.interval, animation<N>.pattern<M>, etc.
+        | "animation" `T.isPrefixOf` key = parseAnimationKey sd key val
 
-      -- Balloon offsets
-      | key == "sakura.balloon.offsetx" = sd { sdSakuraBalloonOffsetX = readMaybeInt val }
-      | key == "sakura.balloon.offsety" = sd { sdSakuraBalloonOffsetY = readMaybeInt val }
-      | key == "kero.balloon.offsetx" = sd { sdKeroBalloonOffsetX = readMaybeInt val }
-      | key == "kero.balloon.offsety" = sd { sdKeroBalloonOffsetY = readMaybeInt val }
-      | key == "balloon.offsetx" = sd { sdBalloonOffsetX = readMaybeInt val }
-      | key == "balloon.offsety" = sd { sdBalloonOffsetY = readMaybeInt val }
+        -- Balloon offsets
+        | key == "sakura.balloon.offsetx" = sd { sdSakuraBalloonOffsetX = readMaybeInt val }
+        | key == "sakura.balloon.offsety" = sd { sdSakuraBalloonOffsetY = readMaybeInt val }
+        | key == "kero.balloon.offsetx" = sd { sdKeroBalloonOffsetX = readMaybeInt val }
+        | key == "kero.balloon.offsety" = sd { sdKeroBalloonOffsetY = readMaybeInt val }
+        | key == "balloon.offsetx" = sd { sdBalloonOffsetX = readMaybeInt val }
+        | key == "balloon.offsety" = sd { sdBalloonOffsetY = readMaybeInt val }
 
-      -- Center/position points
-      | key == "point.centerx" = sd { sdPointCenterX = readMaybeInt val }
-      | key == "point.centery" = sd { sdPointCenterY = readMaybeInt val }
-      | key == "point.kinoko.centerx" = sd { sdPointKinokoCenterX = readMaybeInt val }
-      | key == "point.kinoko.centery" = sd { sdPointKinokoCenterY = readMaybeInt val }
-      | key == "point.basepos.x" = sd { sdPointBaseposX = readMaybeInt val }
-      | key == "point.basepos.y" = sd { sdPointBaseposY = readMaybeInt val }
+        -- Center/position points
+        | key == "point.centerx" = sd { sdPointCenterX = readMaybeInt val }
+        | key == "point.centery" = sd { sdPointCenterY = readMaybeInt val }
+        | key == "point.kinoko.centerx" = sd { sdPointKinokoCenterX = readMaybeInt val }
+        | key == "point.kinoko.centery" = sd { sdPointKinokoCenterY = readMaybeInt val }
+        | key == "point.basepos.x" = sd { sdPointBaseposX = readMaybeInt val }
+        | key == "point.basepos.y" = sd { sdPointBaseposY = readMaybeInt val }
 
-      | otherwise = sd
+        | otherwise = sd
 
     -- Parse animation<N>.* keys
     parseAnimationKey :: SurfaceDefinition -> Text -> Text -> SurfaceDefinition
@@ -649,7 +648,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
           | not (T.null dotRest) -> case readMaybe (T.unpack numPart) of
             Just aid -> let
                 subKey = T.drop 1 dotRest  -- drop the dot
-              in
+              in 
                 updateAnimation sd aid subKey val
             Nothing  -> sd
         _ -> sd
@@ -668,7 +667,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
             []      -> emptyAnimationAcc
           acc'     = updateAnimationAcc acc subKey val
           anim     = accToAnimation aid acc'
-        in
+        in 
           sd { sdAnimations = others ++ [ anim ] }
 
     updateAnimationAcc :: AnimationAcc -> Text -> Text -> AnimationAcc
@@ -685,7 +684,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
       | "collision" `T.isPrefixOf` subKey
         = let
             fullKey = "collision" <> T.drop 9 subKey  -- rebuild collision key
-          in
+          in 
             case parseCollision fullKey val of
               Just col -> acc { aaCollisions = aaCollisions acc ++ [ col ] }
               Nothing  -> acc
@@ -701,7 +700,7 @@ parseDescriptBrace = foldl' parseLine emptySurfacesDescript
         | not (T.null rest) -> let
             key = T.toLower (T.strip rawKey)
             val = T.strip (T.drop 1 rest)
-          in
+          in 
             case key of
               "version" -> sd { surfDescVersion = readIntOr 1 val }
               "maxwidth" -> sd { surfDescMaxWidth = readMaybeInt val }
@@ -722,7 +721,7 @@ parseAliasBrace = mapMaybe parseLine
             -- Parse [id1,id2,...] format
             cleaned = T.filter (\c -> c /= '[' && c /= ']') idsPart
             ids     = mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," cleaned)
-          in
+          in 
             if null ids
               then Nothing
               else Just $ SurfaceAlias (T.strip name) ids
@@ -738,11 +737,11 @@ parseCursorBrace = foldl' parseLine emptyScopeCursors
         | not (T.null rest) -> let
             key   = T.toLower (T.strip rawKey)
             parts = T.splitOn "," (T.drop 1 rest)
-          in
+          in 
             case parts of
               [ collId, cursorFile ] -> let
                   def = CursorDef (T.strip collId) (T.strip cursorFile)
-                in
+                in 
                   categorize key def sc
               _ -> sc
       _ -> sc
@@ -776,7 +775,7 @@ parseScopeIndex txt
     = let
         rest    = T.drop 4 txt  -- drop "char"
         numPart = T.takeWhile (/= '.') rest
-      in
+      in 
         readMaybe (T.unpack numPart)
   | otherwise = Nothing
 
@@ -796,50 +795,50 @@ readSurfaces path = do
     processBrace :: Surfaces -> BraceBlock -> Surfaces
     processBrace surf (BraceBlock name lns)
       -- descript brace
-      | name == "descript" = surf { surfacesDescript = parseDescriptBrace lns }
 
-      -- surface definitions
-      | "surface" `T.isPrefixOf` name
-        && not ("alias" `T.isInfixOf` name)
-        && not ("cursor" `T.isInfixOf` name)
-        && not ("tooltips" `T.isInfixOf` name)
-        = let
-            ( _, ids ) = parseSurfaceIds name
-            newDefs           = map (`parseSurfaceBrace` lns) ids
-          in
-            surf
-              { surfaceDefinitions = mergeSurfaceDefinitions (surfaceDefinitions surf) newDefs
-              }
+        | name == "descript" = surf { surfacesDescript = parseDescriptBrace lns }
 
-      -- surface aliases
-      | name == "sakura.surface.alias" = surf { surfaceSakuraAlias = parseAliasBrace lns }
-      | name == "kero.surface.alias" = surf { surfaceKeroAlias = parseAliasBrace lns }
-      | ".surface.alias" `T.isSuffixOf` name = case parseScopeIndex name of
-        Just idx
-          | idx >= 2 -> surf
-            { surfaceCharAliases = surfaceCharAliases surf ++ [ ( idx, parseAliasBrace lns ) ] }
-        _        -> surf
+        -- surface definitions
+        | "surface" `T.isPrefixOf` name
+          && not ("alias" `T.isInfixOf` name)
+          && not ("cursor" `T.isInfixOf` name)
+          && not ("tooltips" `T.isInfixOf` name)
+          = let
+              ( _, ids ) = parseSurfaceIds name
+              newDefs    = map (`parseSurfaceBrace` lns) ids
+            in 
+              surf { surfaceDefinitions = mergeSurfaceDefinitions (surfaceDefinitions surf) newDefs
+                   }
 
-      -- cursors
-      | name == "sakura.cursor" = surf { surfaceSakuraCursor = parseCursorBrace lns }
-      | name == "kero.cursor" = surf { surfaceKeroCursor = parseCursorBrace lns }
-      | ".cursor" `T.isSuffixOf` name = case parseScopeIndex name of
-        Just idx
-          | idx >= 2 -> surf
-            { surfaceCharCursors = surfaceCharCursors surf ++ [ ( idx, parseCursorBrace lns ) ] }
-        _        -> surf
+        -- surface aliases
+        | name == "sakura.surface.alias" = surf { surfaceSakuraAlias = parseAliasBrace lns }
+        | name == "kero.surface.alias" = surf { surfaceKeroAlias = parseAliasBrace lns }
+        | ".surface.alias" `T.isSuffixOf` name = case parseScopeIndex name of
+          Just idx
+            | idx >= 2 -> surf
+              { surfaceCharAliases = surfaceCharAliases surf ++ [ ( idx, parseAliasBrace lns ) ] }
+          _        -> surf
 
-      -- tooltips
-      | name == "sakura.tooltips" = surf { surfaceSakuraTooltips = parseTooltipBrace lns }
-      | name == "kero.tooltips" = surf { surfaceKeroTooltips = parseTooltipBrace lns }
-      | ".tooltips" `T.isSuffixOf` name = case parseScopeIndex name of
-        Just idx
-          | idx >= 2 -> surf { surfaceCharTooltips
-                                 = surfaceCharTooltips surf ++ [ ( idx, parseTooltipBrace lns ) ]
-                             }
-        _        -> surf
+        -- cursors
+        | name == "sakura.cursor" = surf { surfaceSakuraCursor = parseCursorBrace lns }
+        | name == "kero.cursor" = surf { surfaceKeroCursor = parseCursorBrace lns }
+        | ".cursor" `T.isSuffixOf` name = case parseScopeIndex name of
+          Just idx
+            | idx >= 2 -> surf
+              { surfaceCharCursors = surfaceCharCursors surf ++ [ ( idx, parseCursorBrace lns ) ] }
+          _        -> surf
 
-      | otherwise = surf
+        -- tooltips
+        | name == "sakura.tooltips" = surf { surfaceSakuraTooltips = parseTooltipBrace lns }
+        | name == "kero.tooltips" = surf { surfaceKeroTooltips = parseTooltipBrace lns }
+        | ".tooltips" `T.isSuffixOf` name = case parseScopeIndex name of
+          Just idx
+            | idx >= 2 -> surf { surfaceCharTooltips
+                                   = surfaceCharTooltips surf ++ [ ( idx, parseTooltipBrace lns ) ]
+                               }
+          _        -> surf
+
+        | otherwise = surf
 
     -- Merge appended surface definitions with existing ones
     mergeSurfaceDefinitions
@@ -848,14 +847,14 @@ readSurfaces path = do
       = let
           existingMap = Map.fromList [ ( sdId sd, sd ) | sd <- existing ]
           merged      = foldl' mergeOne existingMap appends
-        in
+        in 
           Map.elems merged
 
     mergeOne :: Map Int SurfaceDefinition -> SurfaceDefinition -> Map Int SurfaceDefinition
     mergeOne m append
       = let
           sid = sdId append
-        in
+        in 
           case Map.lookup sid m of
             Just existing -> Map.insert sid (mergeSurfaceDef existing append) m
             Nothing       -> Map.insert sid append m

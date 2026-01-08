@@ -16,9 +16,9 @@ module Kokage.Event.Types
   , isDragSignificant
   ) where
 
-import           Data.Time.LocalTime        ( LocalTime )
+import           Data.Time.LocalTime ( LocalTime )
 
-import           Types.Ghost                ( CollisionRegion )
+import           Types.Ghost         ( CollisionRegion )
 
 -- | Minimum distance (in pixels) to consider a drag vs a click.
 -- Movements below this threshold are treated as clicks.
@@ -63,5 +63,5 @@ isDragSignificant :: Double -> Double -> Bool
 isDragSignificant ox oy
   = let
       dist = sqrt (ox * ox + oy * oy)
-    in
+    in 
       dist >= dragThreshold

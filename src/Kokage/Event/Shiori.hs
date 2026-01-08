@@ -21,25 +21,25 @@ module Kokage.Event.Shiori
   , getUptimeHours
   ) where
 
-import           Data.Time.Clock             ( UTCTime, diffUTCTime, getCurrentTime )
-import           Data.Time.LocalTime        ( LocalTime(..), TimeOfDay(..) )
-import qualified Data.Map.Strict            as Map
-import qualified Data.Text                  as T
+import qualified Data.Map.Strict          as Map
+import           Data.Maybe               ( fromMaybe )
+import qualified Data.Text                as T
+import           Data.Time.Clock          ( UTCTime, diffUTCTime )
+import           Data.Time.LocalTime      ( LocalTime(..), TimeOfDay(..) )
 
-import           Kokage.Event.Config        ( ShioriConfig(..) )
-import           Kokage.Event.Types         ( ClickEvent(..), CollisionHit(..), DragEvent(..), DragPhase(..) )
-import           Kokage.Shiori.WineBridge   ( sendEvent )
+import           Kokage.Event.Config      ( ShioriConfig(..) )
+import           Kokage.Event.Types       ( ClickEvent(..), CollisionHit(..), DragEvent(..) )
+import           Kokage.Shiori.WineBridge ( sendEvent )
 
-import           Types.Ghost                ( CollisionRegion(..) )
-import           Types.Shiori               ( ShioriEvent, ShioriResponse(..), srsValue )
-import Data.Maybe (fromMaybe)
+import           Types.Ghost              ( CollisionRegion(..) )
+import           Types.Shiori             ( ShioriEvent, ShioriResponse(..), srsValue )
 
 -- | Log a SHIORI response for debugging.
 logShioriResponse :: ShioriEvent -> Either String ShioriResponse -> IO ()
 logShioriResponse event result = case result of
-  Left err -> putStrLn $ "[SHIORI] " <> show event <> " error: " <> err
+  Left err   -> putStrLn $ "[SHIORI] " <> show event <> " error: " <> err
   Right resp -> case srsValue resp of
-    Nothing -> putStrLn $ "[SHIORI] " <> show event <> " -> (no content)"
+    Nothing  -> putStrLn $ "[SHIORI] " <> show event <> " -> (no content)"
     Just val -> do
       putStrLn $ "[SHIORI] " <> show event <> " -> script:"
       -- Print first 200 chars of script for debugging
@@ -50,7 +50,7 @@ logShioriResponse event result = case result of
 -- | Send a SHIORI event and log the response.
 -- Does nothing if SHIORI is not configured.
 sendShioriAndLog :: Maybe ShioriConfig -> ShioriEvent -> Map.Map Int T.Text -> IO ()
-sendShioriAndLog Nothing _ _ = return ()  -- No SHIORI, skip
+sendShioriAndLog Nothing _ _          = return ()  -- No SHIORI, skip
 sendShioriAndLog (Just sc) event refs = do
   result <- sendEvent (scShiori sc) event refs
   logShioriResponse event result
@@ -58,17 +58,18 @@ sendShioriAndLog (Just sc) event refs = do
 -- | Send a SHIORI event with a callback for the response.
 -- The callback receives Just the script text on success, Nothing on failure.
 -- Does nothing if SHIORI is not configured.
-sendShioriWithCallback :: Maybe ShioriConfig
-                       -> ShioriEvent
-                       -> Map.Map Int T.Text
-                       -> (Maybe T.Text -> IO ())  -- ^ Callback with response script
-                       -> IO ()
+sendShioriWithCallback
+  :: Maybe ShioriConfig
+  -> ShioriEvent
+  -> Map.Map Int T.Text
+  -> (Maybe T.Text -> IO ())  -- ^ Callback with response script
+  -> IO ()
 sendShioriWithCallback Nothing _ _ _ = return ()  -- No SHIORI, skip
 sendShioriWithCallback (Just sc) event refs callback = do
   result <- sendEvent (scShiori sc) event refs
   logShioriResponse event result
   case result of
-    Left _ -> callback Nothing
+    Left _     -> callback Nothing
     Right resp -> callback (srsValue resp)
 
 -- | Log a collision hit for debugging.
@@ -111,32 +112,34 @@ formatTime tod
       h = todHour tod
       m = todMin tod
       s = floor (todSec tod) :: Int
-    in
+    in 
       pad h <> ":" <> pad m <> ":" <> pad s
   where
-    pad n = if n < 10 then "0" <> show n else show n
+    pad n
+      = if n < 10
+        then "0" <> show n
+        else show n
 
 -- | Calculate uptime in hours from start time to now.
 getUptimeHours :: UTCTime -> UTCTime -> Int
-getUptimeHours startTime now =
-  let diffSeconds = diffUTCTime now startTime
-      hours = floor (realToFrac diffSeconds / 3600 :: Double) :: Int
-  in max 0 hours  -- Ensure non-negative
+getUptimeHours startTime now
+  = let
+      diffSeconds = diffUTCTime now startTime
+      hours       = floor (realToFrac diffSeconds / 3600 :: Double) :: Int
+    in 
+      max 0 hours  -- Ensure non-negative
 
 -- | Log a second timer event.
 logSecondTick :: LocalTime -> IO ()
-logSecondTick lt
-  = putStrLn $ "[Timer] Second tick: " <> formatTime (localTimeOfDay lt)
+logSecondTick lt = putStrLn $ "[Timer] Second tick: " <> formatTime (localTimeOfDay lt)
 
 -- | Log a minute timer event.
 logMinuteTick :: LocalTime -> IO ()
-logMinuteTick lt
-  = putStrLn $ "[Timer] Minute tick: " <> formatTime (localTimeOfDay lt)
+logMinuteTick lt = putStrLn $ "[Timer] Minute tick: " <> formatTime (localTimeOfDay lt)
 
 -- | Log an hour timer event.
 logHourTick :: LocalTime -> IO ()
-logHourTick lt
-  = putStrLn $ "[Timer] Hour tick: " <> formatTime (localTimeOfDay lt)
+logHourTick lt = putStrLn $ "[Timer] Hour tick: " <> formatTime (localTimeOfDay lt)
 
 -- | Build SHIORI Reference map for mouse click events.
 -- Reference format:
@@ -148,15 +151,16 @@ logHourTick lt
 --   5: button ("0"=left, "1"=right, "2"=middle)
 --   6: input type (always "mouse")
 buildMouseClickRefs :: ClickEvent -> Int -> Maybe T.Text -> Int -> Map.Map Int T.Text
-buildMouseClickRefs evt scopeId mCollisionName button = Map.fromList
-  [ (0, T.pack $ show $ clickX evt)
-  , (1, T.pack $ show $ clickY evt)
-  , (2, "0")  -- wheel
-  , (3, T.pack $ show scopeId)
-  , (4, fromMaybe "" mCollisionName)
-  , (5, T.pack $ show button)
-  , (6, "mouse")
-  ]
+buildMouseClickRefs evt scopeId mCollisionName button
+  = Map.fromList
+    [ ( 0, T.pack $ show $ clickX evt )
+    , ( 1, T.pack $ show $ clickY evt )
+    , ( 2, "0" )  -- wheel
+    , ( 3, T.pack $ show scopeId )
+    , ( 4, fromMaybe "" mCollisionName )
+    , ( 5, T.pack $ show button )
+    , ( 6, "mouse" )
+    ]
 
 -- | Build SHIORI Reference map for mouse move events.
 -- Reference format:
@@ -167,14 +171,15 @@ buildMouseClickRefs evt scopeId mCollisionName button = Map.fromList
 --   4: collision region name
 --   5: surface ID
 buildMouseMoveRefs :: Int -> Int -> Int -> T.Text -> Int -> Map.Map Int T.Text
-buildMouseMoveRefs x y scopeId collisionName surfaceId = Map.fromList
-  [ (0, T.pack $ show x)
-  , (1, T.pack $ show y)
-  , (2, "")
-  , (3, T.pack $ show scopeId)
-  , (4, collisionName)
-  , (5, T.pack $ show surfaceId)
-  ]
+buildMouseMoveRefs x y scopeId collisionName surfaceId
+  = Map.fromList
+    [ ( 0, T.pack $ show x )
+    , ( 1, T.pack $ show y )
+    , ( 2, "" )
+    , ( 3, T.pack $ show scopeId )
+    , ( 4, collisionName )
+    , ( 5, T.pack $ show surfaceId )
+    ]
 
 -- | Unified handler for mouse click events (single or double click).
 -- Logs the hit and sends the appropriate SHIORI event.
@@ -186,8 +191,8 @@ handleMouseClick :: Maybe ShioriConfig
                  -> IO ()
 handleMouseClick mShiori event scopeId hit handler = do
   logCollisionHit hit
-  let (evt, mCollisionName) = case hit of
-        HitRegion e cr -> (e, Just $ crName cr)
-        HitNothing e   -> (e, Nothing)
+  let ( evt, mCollisionName ) = case hit of
+        HitRegion e cr -> ( e, Just $ crName cr )
+        HitNothing e   -> ( e, Nothing )
       refs = buildMouseClickRefs evt scopeId mCollisionName 0  -- 0 = left button
   sendShioriWithCallback mShiori event refs handler

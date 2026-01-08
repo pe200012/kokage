@@ -3,15 +3,10 @@
 
 -- | Ghost descriptor types and parsers.
 -- Parses ghost/master/descript.txt files.
-module Types.Ghost.Descript
-  ( GhostDescript(..)
-  , emptyGhostDescript
-  , readGhostDescript
-  ) where
+module Types.Ghost.Descript ( GhostDescript(..), emptyGhostDescript, readGhostDescript ) where
 
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
-import           Data.List                  ( foldl' )
 import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
@@ -245,7 +240,7 @@ readGhostDescript path = do
             key    = T.toLower (clean rawKey)
             rawVal = T.drop 1 rest  -- drop the comma
             val    = clean rawVal
-          in
+          in 
             case key of
               "charset" -> desc { descriptCharset = val }
               "name" -> desc { descriptName = val }

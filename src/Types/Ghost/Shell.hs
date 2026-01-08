@@ -21,19 +21,18 @@ module Types.Ghost.Shell
   , MenuItemEx(..)
   ) where
 
-import qualified Data.ByteString.Lazy       as BL
-import           Data.List                  ( foldl' )
-import           Data.Map.Strict            ( Map )
-import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 ( mapMaybe )
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
+import qualified Data.ByteString.Lazy as BL
+import           Data.Map.Strict      ( Map )
+import qualified Data.Map.Strict      as Map
+import           Data.Maybe           ( mapMaybe )
+import           Data.Text            ( Text )
+import qualified Data.Text            as T
+import qualified Data.Text.Encoding   as TE
 
-import           Text.Read                  ( readMaybe )
+import           Text.Read            ( readMaybe )
 
-import           Utils.Charset              ( convertToUtf8, detectCharsetFromBytes )
-import           Utils.Text                 ( clean, readIntOr, readMaybeInt, readMaybeBool )
+import           Utils.Charset        ( convertToUtf8, detectCharsetFromBytes )
+import           Utils.Text           ( clean, readIntOr, readMaybeBool, readMaybeInt )
 
 -- | Bind group definition for costume/clothing
 data BindGroup
@@ -273,7 +272,7 @@ updateCharSettings idx f desc
       chars   = shellDescriptCharacters desc
       current = Map.findWithDefault emptyCharacterSettings idx chars
       updated = f current
-    in
+    in 
       desc { shellDescriptCharacters = Map.insert idx updated chars }
 
 readShellDescript :: FilePath -> IO ShellDescript
@@ -319,7 +318,7 @@ readShellDescript path = do
           groups  = csBindGroups cs
           current = Map.findWithDefault emptyBindGroup bgAnimId groups
           updated = f current
-        in
+        in 
           cs { csBindGroups = Map.insert bgAnimId updated groups }
 
     -- Parse bind option types from "+" separated string
@@ -327,7 +326,7 @@ readShellDescript path = do
     parseBindOptions val
       = let
           parts = T.splitOn "+" val
-        in
+        in 
           concatMap parseOne parts
       where
         parseOne t = case T.toLower (T.strip t) of
@@ -347,7 +346,7 @@ readShellDescript path = do
             key    = T.toLower (clean rawKey)
             rawVal = T.drop 1 rest  -- drop the comma
             val    = clean rawVal
-          in
+          in 
             case key of
               -- Global settings
               "charset" -> desc { shellDescriptCharset = val }
@@ -447,7 +446,8 @@ readShellDescript path = do
       "balloon.syncscale"
         -> updateCharSettings idx (\cs -> cs { csBalloonSyncScale = readMaybeBool val }) desc
       "menu" -> updateCharSettings idx (\cs -> cs { csMenu = Just val }) desc
-      "surface_life" -> updateCharSettings idx (\cs -> cs { csSurfaceLife = readMaybeInt val }) desc
+      "surface_life"
+        -> updateCharSettings idx (\cs -> cs { csSurfaceLife = readMaybeInt val }) desc
 
       -- Bind group settings: bindgroup<N>.name, bindgroup<N>.default, bindgroup<N>.addid
       _
@@ -455,33 +455,35 @@ readShellDescript path = do
           "name"    ->
             -- Parse "category,partname,thumbnail" or "category,partname"
             case T.splitOn "," rawVal of
-              (cat : pname : thumb : _) ->
-                updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
-                  { bgCategory  = clean cat
-                  , bgPartName  = clean pname
-                  , bgThumbnail = Just (clean thumb)
-                  })) desc
-              (cat : pname : _) ->
-                updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
-                  { bgCategory  = clean cat
-                  , bgPartName  = clean pname
-                  , bgThumbnail = Nothing
-                  })) desc
-              (cat : _) ->
-                updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
-                  { bgCategory  = clean cat
-                  , bgPartName  = ""
-                  , bgThumbnail = Nothing
-                  })) desc
+              (cat : pname : thumb : _) -> updateCharSettings
+                idx
+                (updateBindGroup bgAnimId (\bg -> bg { bgCategory  = clean cat
+                                                     , bgPartName  = clean pname
+                                                     , bgThumbnail = Just (clean thumb)
+                                                     }))
+                desc
+              (cat : pname : _) -> updateCharSettings
+                idx
+                (updateBindGroup
+                   bgAnimId
+                   (\bg -> bg
+                    { bgCategory = clean cat, bgPartName = clean pname, bgThumbnail = Nothing }))
+                desc
+              (cat : _) -> updateCharSettings
+                idx
+                (updateBindGroup
+                   bgAnimId
+                   (\bg -> bg { bgCategory = clean cat, bgPartName = "", bgThumbnail = Nothing }))
+                desc
               [] -> desc
           "default" -> let
               isDefault = val == "1" || T.toLower val == "true"
-            in
+            in 
               updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg
                                                                 { bgDefault = isDefault })) desc
           "addid"   -> let
               ids = mapMaybe (readMaybe . T.unpack . T.strip) (T.splitOn "," val)
-            in
+            in 
               updateCharSettings idx (updateBindGroup bgAnimId (\bg -> bg { bgAddIds = ids })) desc
           _         -> desc
 
@@ -494,7 +496,7 @@ readShellDescript path = do
               (cat : optPart : _) -> let
                   opts = parseBindOptions optPart
                   opt  = BindOption (clean cat) opts
-                in
+                in 
                   updateCharSettings idx (\cs -> cs
                                           { csBindOptions = csBindOptions cs ++ [ opt ] }) desc
               _ -> desc
@@ -504,7 +506,7 @@ readShellDescript path = do
       _
         | Just ( _, "" ) <- parseIndexedKey "menuitem" restKey -> let
             item = parseMenuItem val
-          in
+          in 
             updateCharSettings idx (\cs -> cs { csMenuItems = csMenuItems cs ++ [ item ] }) desc
 
       -- Extended menu item settings: menuitemex<N>
@@ -515,7 +517,7 @@ readShellDescript path = do
             (menuName : idPart : _) -> let
                 item   = parseMenuItem (clean idPart)
                 itemEx = MenuItemEx (clean menuName) item
-              in
+              in 
                 updateCharSettings idx (\cs -> cs
                                         { csMenuItemsEx = csMenuItemsEx cs ++ [ itemEx ] }) desc
             _ -> desc

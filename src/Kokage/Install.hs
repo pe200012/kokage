@@ -13,37 +13,33 @@ module Kokage.Install
   , getInstallDir
   ) where
 
-import           Control.Exception          ( catch, SomeException )
-import           Control.Monad              ( forM_, when, unless )
-import           Data.Text                  ( Text )
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as TE
-import qualified Data.ByteString.Lazy       as BL
-import           System.Directory           ( createDirectoryIfMissing
-                                            , doesDirectoryExist
-                                            , doesFileExist
-                                            , removeDirectoryRecursive
-                                            , removeFile
-                                            )
-import           System.FilePath            ( (</>)
-                                            , takeDirectory
-                                            )
-import           Codec.Archive.Zip          ( Archive
-                                            , Entry
-                                            , toArchive
-                                            , zEntries
-                                            , eRelativePath
-                                            , fromEntry
-                                            )
+import           Codec.Archive.Zip    ( Archive
+                                      , Entry
+                                      , eRelativePath
+                                      , fromEntry
+                                      , toArchive
+                                      , zEntries
+                                      )
 
-import           Types.Install              ( InstallType(..)
-                                            , InstallDescript(..)
-                                            , DeleteList
-                                            )
-import           Types.Ghost                ( detectCharsetFromBytes
-                                            , convertToUtf8
-                                            )
-import Data.Char (isAsciiUpper)
+import           Control.Exception    ( SomeException, catch )
+import           Control.Monad        ( forM_, unless, when )
+
+import qualified Data.ByteString.Lazy as BL
+import           Data.Char            ( isAsciiUpper )
+import           Data.Text            ( Text )
+import qualified Data.Text            as T
+import qualified Data.Text.Encoding   as TE
+
+import           System.Directory     ( createDirectoryIfMissing
+                                      , doesDirectoryExist
+                                      , doesFileExist
+                                      , removeDirectoryRecursive
+                                      , removeFile
+                                      )
+import           System.FilePath      ( (</>), takeDirectory )
+
+import           Types.Ghost          ( convertToUtf8, detectCharsetFromBytes )
+import           Types.Install        ( DeleteList, InstallDescript(..), InstallType(..) )
 
 --------------------------------------------------------------------------------
 -- Types
@@ -51,19 +47,18 @@ import Data.Char (isAsciiUpper)
 
 -- | Base directories for ukagaka installation
 data BaseDir
-  = BaseDir
-  { bdGhost :: FilePath       -- ^ ghost/ directory
-  , bdBalloon :: FilePath     -- ^ balloon/ directory
-  , bdPlugin :: FilePath      -- ^ plugin/ directory
-  , bdHeadline :: FilePath    -- ^ headline/ directory
-  , bdCalendar :: FilePath    -- ^ calendar/ directory
-  , bdCalendarSkin :: FilePath -- ^ calendar/skin/ directory
-  }
+  = BaseDir { bdGhost        :: FilePath       -- ^ ghost/ directory
+            , bdBalloon      :: FilePath     -- ^ balloon/ directory
+            , bdPlugin       :: FilePath      -- ^ plugin/ directory
+            , bdHeadline     :: FilePath    -- ^ headline/ directory
+            , bdCalendar     :: FilePath    -- ^ calendar/ directory
+            , bdCalendarSkin :: FilePath -- ^ calendar/skin/ directory
+            }
   deriving ( Show, Eq )
 
 -- | Result of NAR installation
 data InstallResult
-  = InstallSuccess Text InstallType FilePath [FilePath]
+  = InstallSuccess Text InstallType FilePath [ FilePath ]
     -- ^ Success: name, type, install path, bundled content paths
   | InstallFailure Text
     -- ^ Failure: error message
@@ -111,13 +106,13 @@ installNarImpl base narPath = do
 
   -- Find and read install.txt
   case findEntry "install.txt" entries of
-    Nothing -> return $ InstallFailure "No install.txt found in archive"
+    Nothing           -> return $ InstallFailure "No install.txt found in archive"
     Just installEntry -> do
       -- Parse install.txt from the archive
-      let installBytes = fromEntry installEntry
+      let installBytes    = fromEntry installEntry
           detectedCharset = detectCharsetFromBytes installBytes
-          utf8Bytes = convertToUtf8 detectedCharset installBytes
-          installContent = TE.decodeUtf8 (BL.toStrict utf8Bytes)
+          utf8Bytes       = convertToUtf8 detectedCharset installBytes
+          installContent  = TE.decodeUtf8 (BL.toStrict utf8Bytes)
 
       -- Parse the install descriptor
       instDesc <- parseInstallContent installContent
@@ -132,7 +127,9 @@ installNarImpl base narPath = do
             let targetDir = getInstallDir base (idType instDesc) (idDirectory instDesc)
 
             if null targetDir && needsDirectory (idType instDesc)
-              then return $ InstallFailure $ "Unknown install type: " <> T.pack (show (idType instDesc))
+              then return
+                $ InstallFailure
+                $ "Unknown install type: " <> T.pack (show (idType instDesc))
               else do
                 -- Handle refresh option (clear existing directory)
                 when (idRefresh instDesc) $ do
@@ -149,13 +146,13 @@ installNarImpl base narPath = do
 
                 -- Handle delete.txt if present (for network updates)
                 case findEntry "delete.txt" entries of
-                  Nothing -> return ()
+                  Nothing          -> return ()
                   Just deleteEntry -> do
-                    let deleteBytes = fromEntry deleteEntry
+                    let deleteBytes   = fromEntry deleteEntry
                         deleteCharset = detectCharsetFromBytes deleteBytes
-                        deleteUtf8 = convertToUtf8 deleteCharset deleteBytes
+                        deleteUtf8    = convertToUtf8 deleteCharset deleteBytes
                         deleteContent = TE.decodeUtf8 (BL.toStrict deleteUtf8)
-                        deleteList = parseDeleteContent deleteContent
+                        deleteList    = parseDeleteContent deleteContent
                     processDeleteList targetDir deleteList
 
                 -- Extract files to target directory
@@ -169,20 +166,23 @@ installNarImpl base narPath = do
 -- | Check if install type needs a directory
 needsDirectory :: InstallType -> Bool
 needsDirectory InstallSupplement = False  -- Supplement merges into existing
-needsDirectory InstallPackage    = False  -- Package is special
-needsDirectory _                 = True
+needsDirectory InstallPackage = False  -- Package is special
+needsDirectory _ = True
 
 -- | Find an entry by name in the archive (case-insensitive)
-findEntry :: FilePath -> [Entry] -> Maybe Entry
-findEntry name entries =
-  let nameLower = map toLower name
-  in find (\e -> map toLower (eRelativePath e) == nameLower) entries
+findEntry :: FilePath -> [ Entry ] -> Maybe Entry
+findEntry name entries
+  = let
+      nameLower = map toLower name
+    in 
+      find (\e -> map toLower (eRelativePath e) == nameLower) entries
   where
     toLower c
       | isAsciiUpper c = toEnum (fromEnum c + 32)
       | otherwise = c
-    find _ [] = Nothing
-    find p (x:xs)
+
+    find _ []       = Nothing
+    find p (x : xs)
       | p x = Just x
       | otherwise = find p xs
 
@@ -192,7 +192,8 @@ parseInstallContent content = do
   let emptyInst = emptyInstallDescript
   return $ foldl' parseLine emptyInst (T.lines content)
   where
-    emptyInstallDescript = InstallDescript
+    emptyInstallDescript
+      = InstallDescript
       { idCharset = ""
       , idName = ""
       , idType = InstallGhost
@@ -214,11 +215,12 @@ parseInstallContent content = do
       }
 
     parseLine inst line = case T.breakOn "," line of
-      (rawKey, rest)
-        | not (T.null rest) ->
-            let key = T.toLower (T.strip rawKey)
-                val = T.strip (T.drop 1 rest)
-            in parseKey inst key val
+      ( rawKey, rest )
+        | not (T.null rest) -> let
+            key = T.toLower (T.strip rawKey)
+            val = T.strip (T.drop 1 rest)
+          in 
+            parseKey inst key val
       _ -> inst
 
     parseKey inst key val
@@ -255,9 +257,11 @@ parseInstallContent content = do
 
 -- | Parse delete.txt content
 parseDeleteContent :: Text -> DeleteList
-parseDeleteContent content =
-  let normalize = T.replace "\\" "/"
-  in filter (not . T.null) $ map (normalize . T.strip) (T.lines content)
+parseDeleteContent content
+  = let
+      normalize = T.replace "\\" "/"
+    in 
+      filter (not . T.null) $ map (normalize . T.strip) (T.lines content)
 
 -- | Process delete list - remove files/directories
 processDeleteList :: FilePath -> DeleteList -> IO ()
@@ -273,7 +277,7 @@ processDeleteList baseDir deleteList = forM_ deleteList $ \relativePath -> do
       when exists $ removeFile fullPath
 
 -- | Clear directory while keeping files matching masks
-clearDirectoryWithMask :: FilePath -> [Text] -> IO ()
+clearDirectoryWithMask :: FilePath -> [ Text ] -> IO ()
 clearDirectoryWithMask _dir _masks = do
   -- For simplicity, we'll just not clear if there are keep masks
   -- A proper implementation would need glob matching
@@ -287,9 +291,9 @@ extractArchive targetDir archive = do
   forM_ entries $ \entry -> do
     let relativePath = eRelativePath entry
         -- Skip install.txt, delete.txt, developer_options.txt
-        skipFiles = ["install.txt", "delete.txt", "developer_options.txt"]
+        skipFiles    = [ "install.txt", "delete.txt", "developer_options.txt" ]
     unless (map toLower relativePath `elem` map (map toLower) skipFiles) $ do
-      let fullPath = targetDir </> normalizePathSeparators relativePath
+      let fullPath  = targetDir </> normalizePathSeparators relativePath
           parentDir = takeDirectory fullPath
       -- Create parent directories
       createDirectoryIfMissing True parentDir
@@ -301,32 +305,51 @@ extractArchive targetDir archive = do
     toLower c
       | isAsciiUpper c = toEnum (fromEnum c + 32)
       | otherwise = c
-    isDirectoryPath p = not (null p) && last p `elem` ['/', '\\']
-    normalizePathSeparators = map (\c -> if c == '\\' then '/' else c)
+
+    isDirectoryPath p = not (null p) && last p `elem` [ '/', '\\' ]
+
+    normalizePathSeparators = map (\c -> if c == '\\'
+                                     then '/'
+                                     else c)
 
 -- | Install bundled content (balloon, plugin, etc.)
-installBundledContent :: BaseDir -> Archive -> InstallDescript -> IO [FilePath]
+installBundledContent :: BaseDir -> Archive -> InstallDescript -> IO [ FilePath ]
 installBundledContent base archive inst = do
   let entries = zEntries archive
   paths <- sequence
-    [ installBundled entries (idBalloonDirectory inst) (idBalloonSourceDirectory inst)
-                     (bdBalloon base)
-    , installBundled entries (idPluginDirectory inst) (idPluginSourceDirectory inst)
-                     (bdPlugin base)
-    , installBundled entries (idHeadlineDirectory inst) (idHeadlineSourceDirectory inst)
-                     (bdHeadline base)
-    , installBundled entries (idCalendarDirectory inst) (idCalendarSourceDirectory inst)
-                     (bdCalendar base)
-    , installBundled entries (idCalendarSkinDirectory inst) (idCalendarSkinSourceDirectory inst)
-                     (bdCalendarSkin base)
+    [ installBundled
+        entries
+        (idBalloonDirectory inst)
+        (idBalloonSourceDirectory inst)
+        (bdBalloon base)
+    , installBundled
+        entries
+        (idPluginDirectory inst)
+        (idPluginSourceDirectory inst)
+        (bdPlugin base)
+    , installBundled
+        entries
+        (idHeadlineDirectory inst)
+        (idHeadlineSourceDirectory inst)
+        (bdHeadline base)
+    , installBundled
+        entries
+        (idCalendarDirectory inst)
+        (idCalendarSourceDirectory inst)
+        (bdCalendar base)
+    , installBundled
+        entries
+        (idCalendarSkinDirectory inst)
+        (idCalendarSkinSourceDirectory inst)
+        (bdCalendarSkin base)
     ]
   return $ concat paths
   where
-    installBundled :: [Entry] -> Maybe Text -> Maybe Text -> FilePath -> IO [FilePath]
+    installBundled :: [ Entry ] -> Maybe Text -> Maybe Text -> FilePath -> IO [ FilePath ]
     installBundled _ Nothing _ _ = return []
     installBundled allEntries (Just targetName) sourceDir baseTargetDir = do
-      let sourcePath = maybe (T.unpack targetName) T.unpack sourceDir
-          targetPath = baseTargetDir </> T.unpack targetName
+      let sourcePath      = maybe (T.unpack targetName) T.unpack sourceDir
+          targetPath      = baseTargetDir </> T.unpack targetName
           -- Find entries under source path
           matchingEntries = filter (isUnderPath sourcePath . eRelativePath) allEntries
       -- Create target directory
@@ -336,33 +359,41 @@ installBundledContent base archive inst = do
         let relativePath = eRelativePath entry
             -- Strip source prefix and apply to target
             strippedPath = stripPrefix sourcePath relativePath
-            fullPath = targetPath </> normalizePathSeparators strippedPath
-            parentDir = takeDirectory fullPath
+            fullPath     = targetPath </> normalizePathSeparators strippedPath
+            parentDir    = takeDirectory fullPath
         createDirectoryIfMissing True parentDir
         unless (isDirectoryPath relativePath) $ do
           let content = fromEntry entry
           BL.writeFile fullPath content
-      return [targetPath]
+      return [ targetPath ]
 
-    isUnderPath prefix path =
-      let prefixLower = map toLower prefix
-          pathLower = map toLower path
-      in prefixLower `isPrefixOf` pathLower || (prefixLower ++ "/") `isPrefixOf` pathLower
+    isUnderPath prefix path
+      = let
+          prefixLower = map toLower prefix
+          pathLower   = map toLower path
+        in 
+          prefixLower `isPrefixOf` pathLower || (prefixLower ++ "/") `isPrefixOf` pathLower
 
-    stripPrefix prefix path =
-      let prefixLen = length prefix
-          stripped = drop prefixLen path
-      in case stripped of
-           (c:rest) | c `elem` ['/', '\\'] -> rest
-           _ -> stripped
+    stripPrefix prefix path
+      = let
+          prefixLen = length prefix
+          stripped  = drop prefixLen path
+        in 
+          case stripped of
+            (c : rest)
+              | c `elem` [ '/', '\\' ] -> rest
+            _          -> stripped
 
     isPrefixOf [] _ = True
     isPrefixOf _ [] = False
-    isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
+    isPrefixOf (x : xs) (y : ys) = x == y && isPrefixOf xs ys
 
     toLower c
       | isAsciiUpper c = toEnum (fromEnum c + 32)
       | otherwise = c
 
-    isDirectoryPath p = not (null p) && last p `elem` ['/', '\\']
-    normalizePathSeparators = map (\c -> if c == '\\' then '/' else c)
+    isDirectoryPath p = not (null p) && last p `elem` [ '/', '\\' ]
+
+    normalizePathSeparators = map (\c -> if c == '\\'
+                                     then '/'
+                                     else c)

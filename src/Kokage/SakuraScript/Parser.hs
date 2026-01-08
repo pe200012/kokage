@@ -28,6 +28,8 @@ module Kokage.SakuraScript.Parser
 
 import           Control.Monad              ( void )
 
+import           Data.Functor               ( ($>) )
+import           Data.Maybe                 ( fromMaybe )
 import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 import           Data.Void                  ( Void )
@@ -37,8 +39,6 @@ import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
 import           Types.SakuraScript
-import Data.Functor (($>))
-import Data.Maybe (fromMaybe)
 
 --------------------------------------------------------------------------------
 -- Parser type
@@ -117,7 +117,7 @@ pScopeCmd
     ]
   where
     -- \p[n] or \pN (single digit shorthand)
-    pScopeIndex = pBracketedInt <|> (read . (:[]) <$> digitChar)
+    pScopeIndex = pBracketedInt <|> (read . (: []) <$> digitChar)
 
 --------------------------------------------------------------------------------
 -- Surface commands
@@ -141,12 +141,12 @@ pSurfaceMove5 = char '5' $> SurfaceMove defaultMoveSpec { moveBase = MoveBaseDes
 
 -- | Parse surface change: \s[n] or \s[alias]
 pSurfaceChange :: Parser SurfaceCmd
-pSurfaceChange
-  = char 's' *> pSurfaceIndex
+pSurfaceChange = char 's' *> pSurfaceIndex
   where
     -- \s[N] or \sN (single digit shorthand) or \s[alias]
-    pSurfaceIndex = pBracketed (try (SurfaceChange <$> pInt) <|> (SurfaceChangeAlias <$> pIdentifier))
-                <|> (SurfaceChange . read . (:[]) <$> digitChar)
+    pSurfaceIndex
+      = pBracketed (try (SurfaceChange <$> pInt) <|> (SurfaceChangeAlias <$> pIdentifier))
+      <|> (SurfaceChange . read . (: []) <$> digitChar)
 
 -- | Parse animation command: \i[n] or \i[n,action]
 pSurfaceAnim :: Parser SurfaceCmd
@@ -212,40 +212,42 @@ pMoveSpec async = do
 
 -- | Parse move base
 pMoveBase :: Parser MoveBase
-pMoveBase = choice
-  [ MoveBaseDesktop <$ string "desktop"
-  , MoveBasePrimary <$ string "primary"
-  , MoveBaseOwner <$ string "owner"
-  , MoveBaseCurrent <$ string "current"
-  ]
+pMoveBase
+  = choice
+    [ MoveBaseDesktop <$ string "desktop"
+    , MoveBasePrimary <$ string "primary"
+    , MoveBaseOwner <$ string "owner"
+    , MoveBaseCurrent <$ string "current"
+    ]
 
 -- | Parse \![anim,...] - animation control
 pSurfaceBangAnim :: Parser SurfaceCmd
-pSurfaceBangAnim = string "anim" *> pComma *> choice
-  [ pAnimStart
-  , pAnimStop
-  , pAnimWait
-  , pAnimClear
-  , pAnimPause
-  , pAnimResume
-  , pAnimOffset
-  ]
+pSurfaceBangAnim
+  = string "anim"
+  *> pComma
+  *> choice [ pAnimStart, pAnimStop, pAnimWait, pAnimClear, pAnimPause, pAnimResume, pAnimOffset ]
   where
-    pAnimStart = string "start" *> pComma *> do
+    pAnimStart  = string "start" *> pComma *> do
       animId <- pInt
       pure $ SurfaceAnim animId AnimStart
 
-    pAnimStop = string "stop" *> pComma *> do
+    pAnimStop   = string "stop" *> pComma *> do
       animId <- pInt
       pure $ SurfaceAnim animId AnimStop
 
-    pAnimWait = string "wait" *> pComma *> (SurfaceAnimWait <$> pInt)
+    pAnimWait   = string "wait" *> pComma *> (SurfaceAnimWait <$> pInt)
 
-    pAnimClear = string "clear" *> option (SurfaceAnimClear Nothing) (pComma *> (SurfaceAnimClear . Just <$> pInt))
+    pAnimClear
+      = string "clear"
+      *> option (SurfaceAnimClear Nothing) (pComma *> (SurfaceAnimClear . Just <$> pInt))
 
-    pAnimPause = string "pause" *> option (SurfaceAnimPause Nothing) (pComma *> (SurfaceAnimPause . Just <$> pInt))
+    pAnimPause
+      = string "pause"
+      *> option (SurfaceAnimPause Nothing) (pComma *> (SurfaceAnimPause . Just <$> pInt))
 
-    pAnimResume = string "resume" *> option (SurfaceAnimResume Nothing) (pComma *> (SurfaceAnimResume . Just <$> pInt))
+    pAnimResume
+      = string "resume"
+      *> option (SurfaceAnimResume Nothing) (pComma *> (SurfaceAnimResume . Just <$> pInt))
 
     pAnimOffset = string "offset" *> pComma *> do
       animId <- pInt
@@ -264,11 +266,12 @@ pSurfaceBangBind = string "bind" *> pComma *> do
   SurfaceBind category part <$> pBool
 
 pBindCategory :: Parser BindCategory
-pBindCategory = choice
-  [ BindClothes <$ string "clothes"
-  , BindAccessory <$ string "accessory"
-  , BindOther <$> pIdentifier
-  ]
+pBindCategory
+  = choice
+    [ BindClothes <$ string "clothes"
+    , BindAccessory <$ string "accessory"
+    , BindOther <$> pIdentifier
+    ]
 
 -- | Parse surface alignment
 pSurfaceAlignment :: Parser SurfaceCmd
@@ -336,12 +339,11 @@ pSyncSection = string "_s" *> option (SyncSection Nothing) (pBracketed pSyncSect
 
 -- | Parse balloon change: \b[n]
 pBalloonChange :: Parser BalloonCmd
-pBalloonChange
-  = char 'b' *> pBalloonIndex
+pBalloonChange = char 'b' *> pBalloonIndex
   where
     -- \b[N] or \bN (single digit shorthand)
-    pBalloonIndex = pBracketed (BalloonChange <$> pInt)
-                <|> (BalloonChange . read . (:[]) <$> digitChar)
+    pBalloonIndex
+      = pBracketed (BalloonChange <$> pInt) <|> (BalloonChange . read . (: []) <$> digitChar)
 
 -- | Parse newline variants: \n, \n[half], \n[percent,n]
 pNewline :: Parser BalloonCmd
@@ -460,7 +462,17 @@ pWaitBang
 
 -- | Parse choice commands
 pChoiceCmd :: Parser ChoiceCmd
-pChoiceCmd = choice [ pChoiceMarker, pChoiceEnd, pInputText, pInputCancel, pChoiceBasic, pChoiceScript, pChoiceNoTimeout, pAnchor ]
+pChoiceCmd
+  = choice
+    [ pChoiceMarker
+    , pChoiceEnd
+    , pInputText
+    , pInputCancel
+    , pChoiceBasic
+    , pChoiceScript
+    , pChoiceNoTimeout
+    , pAnchor
+    ]
 
 -- | Parse choice marker: \![*] - marks a choice item (just consume and return marker)
 -- This is a visual marker for choices in SSP, equivalent to a bullet point
@@ -514,19 +526,22 @@ pChoiceNoTimeout = string "_q" *> pBracketed pChoiceArgs
 
 -- | Parse anchor: \_a[id,text] or \_a[id] (start marker) or \_a (end marker)
 pAnchor :: Parser ChoiceCmd
-pAnchor = string "_a" *> choice
-  [ try pAnchorInline   -- \_a[id,text] format
-  , try pAnchorStart    -- \_a[id] format (start marker only)
-  , pure AnchorEnd      -- \_a without brackets = end marker
-  ]
+pAnchor
+  = string "_a"
+  *> choice
+    [ try pAnchorInline   -- \_a[id,text] format
+    , try pAnchorStart    -- \_a[id] format (start marker only)
+    , pure AnchorEnd      -- \_a without brackets = end marker
+    ]
   where
     -- Inline format: \_a[id,text]
     pAnchorInline = pBracketed $ do
       anchorId <- pURLText
       _ <- pComma
       Anchor anchorId <$> pChoiceText
+
     -- Start marker format: \_a[id]text\_a
-    pAnchorStart = do
+    pAnchorStart  = do
       anchorId <- pBracketed pURLText
       text <- T.pack <$> manyTill anySingle (string "\\_a")
       pure $ Anchor anchorId text
@@ -641,16 +656,17 @@ pFontToggle
 
 -- | Parse event commands
 pEventCmd :: Parser EventCmd
-pEventCmd = choice
-  [ EventExit <$ char 'e'
-  , pEventChain
-  , pGhostChange
-  , pGhostChangeSilent
-  , pEventCommunicate
-  , pEventSync6
-  , pEventSync7
-  , pEventBang
-  ]
+pEventCmd
+  = choice
+    [ EventExit <$ char 'e'
+    , pEventChain
+    , pGhostChange
+    , pGhostChangeSilent
+    , pEventCommunicate
+    , pEventSync6
+    , pEventSync7
+    , pEventBang
+    ]
 
 -- | Parse event chain: \-
 pEventChain :: Parser EventCmd

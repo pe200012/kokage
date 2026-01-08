@@ -16,17 +16,24 @@ module Kokage.Sound
   , isPlaying
   ) where
 
-import           Control.Concurrent             ( MVar, newMVar, modifyMVar_, readMVar, forkIO, killThread, ThreadId )
-import           Control.Exception              ( catch, SomeException )
-import           Control.Monad                  ( void, when )
-import           Data.IORef                     ( IORef, newIORef, readIORef, writeIORef )
-import           Data.Maybe                     ( isJust )
-import qualified Data.Text                      as T
-import           System.Directory               ( findExecutable )
-import           System.Process                 ( ProcessHandle, spawnProcess, terminateProcess, waitForProcess )
+import           Control.Concurrent ( forkIO )
+import           Control.Exception  ( SomeException, catch )
+import           Control.Monad      ( void )
+
+import           Data.IORef         ( IORef, newIORef, readIORef, writeIORef )
+import           Data.Maybe         ( isJust )
+import qualified Data.Text          as T
+
+import           System.Directory   ( findExecutable )
+import           System.Process     ( ProcessHandle
+                                    , spawnProcess
+                                    , terminateProcess
+                                    , waitForProcess
+                                    )
 
 -- | State for sound playback
-data SoundState = SoundState
+data SoundState
+  = SoundState
   { ssCurrentProcess :: !(IORef (Maybe ProcessHandle))  -- ^ Currently playing process
   , ssCurrentFile    :: !(IORef (Maybe T.Text))         -- ^ Currently playing file
   , ssVolume         :: !(IORef Double)                 -- ^ Volume (0.0-1.0)
@@ -39,67 +46,67 @@ newSoundState = do
   procRef <- newIORef Nothing
   fileRef <- newIORef Nothing
   volRef <- newIORef 1.0
-  
+
   -- Detect available audio player
   mPaplay <- findExecutable "paplay"
   mAplay <- findExecutable "aplay"
   mMpv <- findExecutable "mpv"
   mFfplay <- findExecutable "ffplay"
-  
-  let player = case (mPaplay, mAplay, mMpv, mFfplay) of
-        (Just p, _, _, _) -> Just p
-        (_, Just p, _, _) -> Just p
-        (_, _, Just p, _) -> Just p
-        (_, _, _, Just p) -> Just p
-        _                 -> Nothing
-  
+
+  let player = case ( mPaplay, mAplay, mMpv, mFfplay ) of
+        ( Just p, _, _, _ ) -> Just p
+        ( _, Just p, _, _ ) -> Just p
+        ( _, _, Just p, _ ) -> Just p
+        ( _, _, _, Just p ) -> Just p
+        _ -> Nothing
+
   playerRef <- newIORef player
-  
-  return SoundState
-    { ssCurrentProcess = procRef
-    , ssCurrentFile = fileRef
-    , ssVolume = volRef
-    , ssPlayerCmd = playerRef
-    }
+
+  return
+    SoundState { ssCurrentProcess = procRef
+               , ssCurrentFile    = fileRef
+               , ssVolume         = volRef
+               , ssPlayerCmd      = playerRef
+               }
 
 -- | Play a sound file
 playSound :: SoundState -> T.Text -> IO ()
 playSound ss file = do
   -- Stop any currently playing sound
   stopSound ss
-  
+
   mPlayer <- readIORef (ssPlayerCmd ss)
   case mPlayer of
-    Nothing -> putStrLn "[Sound] No audio player found (tried paplay, aplay, mpv, ffplay)"
+    Nothing     -> putStrLn "[Sound] No audio player found (tried paplay, aplay, mpv, ffplay)"
     Just player -> do
       let filePath = T.unpack file
-      
+
       -- Build command based on player
       let args = case player of
-            p | "paplay" `T.isInfixOf` T.pack p -> [filePath]
-              | "aplay" `T.isInfixOf` T.pack p  -> [filePath]
-              | "mpv" `T.isInfixOf` T.pack p    -> ["--no-video", "--really-quiet", filePath]
-              | "ffplay" `T.isInfixOf` T.pack p -> ["-nodisp", "-autoexit", "-loglevel", "quiet", filePath]
-              | otherwise -> [filePath]
-      
+            p
+              | "paplay" `T.isInfixOf` T.pack p -> [ filePath ]
+              | "aplay" `T.isInfixOf` T.pack p -> [ filePath ]
+              | "mpv" `T.isInfixOf` T.pack p -> [ "--no-video", "--really-quiet", filePath ]
+              | "ffplay" `T.isInfixOf` T.pack p
+                -> [ "-nodisp", "-autoexit", "-loglevel", "quiet", filePath ]
+              | otherwise -> [ filePath ]
+
       -- Spawn process
-      mProc <- catch
-        (Just <$> spawnProcess player args)
-        (\(_ :: SomeException) -> return Nothing)
-      
+      mProc <- catch (Just <$> spawnProcess player args) (\(_ :: SomeException) -> return Nothing)
+
       case mProc of
         Just proc -> do
           writeIORef (ssCurrentProcess ss) (Just proc)
           writeIORef (ssCurrentFile ss) (Just file)
           putStrLn $ "[Sound] Playing: " <> filePath
-          
+
           -- Start a thread to clean up when playback finishes
           void $ forkIO $ do
             _ <- waitForProcess proc
             writeIORef (ssCurrentProcess ss) Nothing
             writeIORef (ssCurrentFile ss) Nothing
-            
-        Nothing -> putStrLn $ "[Sound] Failed to play: " <> filePath
+
+        Nothing   -> putStrLn $ "[Sound] Failed to play: " <> filePath
 
 -- | Stop currently playing sound
 stopSound :: SoundState -> IO ()
@@ -111,7 +118,7 @@ stopSound ss = do
       writeIORef (ssCurrentProcess ss) Nothing
       writeIORef (ssCurrentFile ss) Nothing
       putStrLn "[Sound] Stopped"
-    Nothing -> return ()
+    Nothing   -> return ()
 
 -- | Pause currently playing sound (not supported by all players)
 pauseSound :: SoundState -> IO ()
@@ -128,7 +135,7 @@ resumeSound ss = do
   mFile <- readIORef (ssCurrentFile ss)
   case mFile of
     Just file -> playSound ss file
-    Nothing -> putStrLn "[Sound] Nothing to resume"
+    Nothing   -> putStrLn "[Sound] Nothing to resume"
 
 -- | Set volume (0.0-1.0)
 setVolume :: SoundState -> Double -> IO ()

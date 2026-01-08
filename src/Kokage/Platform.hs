@@ -48,30 +48,37 @@ module Kokage.Platform
   , setWindowLayer
   ) where
 
-import           Control.Exception          ( try, SomeException )
-import           Control.Monad.Trans.Maybe  ( MaybeT(..), runMaybeT )
-import           Data.Bits                  ( (.|.) )
-import           Data.Int                   ( Int32 )
-import           Data.Word                  ( Word32 )
-import           Foreign.C.Types            ( CInt )
+import           Control.Exception         ( SomeException, try )
+import           Control.Monad.Trans.Maybe ( MaybeT(..), runMaybeT )
 
-import qualified GI.Gdk                     as Gdk
-import qualified GI.Gio                     as Gio
-import qualified GI.Gtk                     as Gtk
+import           Data.Bits                 ( (.|.) )
+import           Data.Int                  ( Int32 )
+import           Data.Word                 ( Word32 )
 
-import qualified GI.Gtk4LayerShell          as LayerShell
-import           GI.Gtk4LayerShell          ( Layer(..), Edge(..) )
+import           Foreign.C.Types           ( CInt )
 
+import qualified GI.Gdk                    as Gdk
 -- X11 imports (always available)
-import qualified GI.GdkX11                  as GdkX11
-import           Graphics.X11.Xlib          ( openDisplay, closeDisplay
-                                            , defaultScreen, rootWindow
-                                            , internAtom, flush, allocaXEvent
-                                            , sendEvent, substructureNotifyMask
-                                            , substructureRedirectMask
-                                            , clientMessage )
-import qualified Graphics.X11.Xlib          as X11
-import           Graphics.X11.Xlib.Extras   ( setEventType, setClientMessageEvent' )
+import qualified GI.GdkX11                 as GdkX11
+import qualified GI.Gio                    as Gio
+import qualified GI.Gtk                    as Gtk
+import qualified GI.Gtk4LayerShell         as LayerShell
+import           GI.Gtk4LayerShell         ( Edge(..), Layer(..) )
+
+import           Graphics.X11.Xlib         ( allocaXEvent
+                                           , clientMessage
+                                           , closeDisplay
+                                           , defaultScreen
+                                           , flush
+                                           , internAtom
+                                           , openDisplay
+                                           , rootWindow
+                                           , sendEvent
+                                           , substructureNotifyMask
+                                           , substructureRedirectMask
+                                           )
+import qualified Graphics.X11.Xlib         as X11
+import           Graphics.X11.Xlib.Extras  ( setClientMessageEvent', setEventType )
 
 --------------------------------------------------------------------------------
 -- Types
@@ -98,7 +105,10 @@ detectBackend = do
     then return BackendWayland
     else do
       x11Available <- checkX11Available
-      return $ if x11Available then BackendX11 else BackendUnknown
+      return
+        $ if x11Available
+          then BackendX11
+          else BackendUnknown
 
 -- | Check if layer-shell is supported on the current platform.
 -- Returns True only if running on Wayland and the compositor supports
@@ -118,7 +128,7 @@ checkX11Available = do
     closeDisplay dpy
   case result of
     Left (_ :: SomeException) -> return False
-    Right ()                  -> return True
+    Right () -> return True
 
 --------------------------------------------------------------------------------
 -- Window Initialization
@@ -155,7 +165,7 @@ initLayerShellWindow window = do
         LayerShell.setExclusiveZone window 0
       case result of
         Left (_ :: SomeException) -> return False
-        Right ()                  -> return True
+        Right () -> return True
     else return False
 
 -- | Check if a window has been initialized for platform-specific features.
@@ -185,7 +195,7 @@ setWindowAlwaysOnTop window setAbove = do
       if setAbove
         then setWindowLayer window LayerTop >> return True
         else setWindowLayer window LayerBottom >> return True
-    BackendX11 -> setWindowAboveX11 window setAbove
+    BackendX11     -> setWindowAboveX11 window setAbove
     BackendUnknown -> return False
 
 -- | Set always-on-top via X11 (internal).
@@ -196,7 +206,7 @@ setWindowAboveX11 gtkWindow setAbove = do
     x11Surface <- MaybeT $ Gdk.castTo GdkX11.X11Surface surface
     xid <- MaybeT $ Just <$> GdkX11.x11SurfaceGetXid x11Surface
     MaybeT $ Just <$> setWindowAboveRaw (fromIntegral xid) setAbove
-    
+
   return $ result == Just True
 
 -- | Set window above state via raw X11 (internal).
@@ -204,29 +214,32 @@ setWindowAboveRaw :: X11.Window -> Bool -> IO Bool
 setWindowAboveRaw win setAbove = do
   result <- try $ do
     dpy <- openDisplay ""
-    
+
     atomNetWmState <- internAtom dpy "_NET_WM_STATE" False
     atomNetWmStateAbove <- internAtom dpy "_NET_WM_STATE_ABOVE" False
-    
+
     let screen = defaultScreen dpy
     root <- rootWindow dpy screen
-    
+
     let action :: CInt
-        action = if setAbove then 1 else 0
-    
+        action
+          = if setAbove
+            then 1
+            else 0
+
     allocaXEvent $ \ev -> do
       setEventType ev clientMessage
-      setClientMessageEvent' ev win atomNetWmState 32
-        [ action
-        , fromIntegral atomNetWmStateAbove
-        , 0, 1, 0
-        ]
-      sendEvent dpy root False 
-        (substructureNotifyMask .|. substructureRedirectMask) ev
-    
+      setClientMessageEvent'
+        ev
+        win
+        atomNetWmState
+        32
+        [ action, fromIntegral atomNetWmStateAbove, 0, 1, 0 ]
+      sendEvent dpy root False (substructureNotifyMask .|. substructureRedirectMask) ev
+
     flush dpy
     closeDisplay dpy
-    
+
   case result of
     Left (_ :: SomeException) -> return False
     Right () -> return True
@@ -255,44 +268,44 @@ setWindowPosition window x y = do
 setPositionLayerShell :: Gtk.Window -> Int32 -> Int32 -> IO ()
 setPositionLayerShell window x y = do
   -- Get the monitor origin to convert global coords to monitor-relative
-  (monX, monY) <- getMonitorOriginForPoint x y
+  ( monX, monY ) <- getMonitorOriginForPoint x y
   let relX = x - monX
       relY = y - monY
   LayerShell.setMargin window EdgeLeft relX
   LayerShell.setMargin window EdgeTop relY
 
 -- | Get the origin of the monitor containing the given point.
-getMonitorOriginForPoint :: Int32 -> Int32 -> IO (Int32, Int32)
+getMonitorOriginForPoint :: Int32 -> Int32 -> IO ( Int32, Int32 )
 getMonitorOriginForPoint px py = do
   display <- Gdk.displayGetDefault
   case display of
-    Nothing -> return (0, 0)
+    Nothing   -> return ( 0, 0 )
     Just disp -> do
       monitors <- Gdk.displayGetMonitors disp
       n <- Gio.listModelGetNItems monitors
       findContainingMonitor monitors n 0
   where
-    findContainingMonitor :: Gio.ListModel -> Word32 -> Word32 -> IO (Int32, Int32)
+    findContainingMonitor :: Gio.ListModel -> Word32 -> Word32 -> IO ( Int32, Int32 )
     findContainingMonitor monitors total idx
-      | idx >= total = return (0, 0)  -- fallback if no monitor contains point
+      | idx >= total = return ( 0, 0 )  -- fallback if no monitor contains point
       | otherwise = do
-          mObj <- Gio.listModelGetItem monitors idx
-          case mObj of
-            Nothing -> findContainingMonitor monitors total (idx + 1)
-            Just obj -> do
-              mMon <- Gdk.castTo Gdk.Monitor obj
-              case mMon of
-                Nothing -> findContainingMonitor monitors total (idx + 1)
-                Just mon -> do
-                  rect <- Gdk.monitorGetGeometry mon
-                  mx <- Gdk.getRectangleX rect
-                  my <- Gdk.getRectangleY rect
-                  mw <- Gdk.getRectangleWidth rect
-                  mh <- Gdk.getRectangleHeight rect
-                  -- Check if point is inside this monitor
-                  if px >= mx && px < mx + mw && py >= my && py < my + mh
-                    then return (mx, my)
-                    else findContainingMonitor monitors total (idx + 1)
+        mObj <- Gio.listModelGetItem monitors idx
+        case mObj of
+          Nothing  -> findContainingMonitor monitors total (idx + 1)
+          Just obj -> do
+            mMon <- Gdk.castTo Gdk.Monitor obj
+            case mMon of
+              Nothing  -> findContainingMonitor monitors total (idx + 1)
+              Just mon -> do
+                rect <- Gdk.monitorGetGeometry mon
+                mx <- Gdk.getRectangleX rect
+                my <- Gdk.getRectangleY rect
+                mw <- Gdk.getRectangleWidth rect
+                mh <- Gdk.getRectangleHeight rect
+                -- Check if point is inside this monitor
+                if px >= mx && px < mx + mw && py >= my && py < my + mh
+                  then return ( mx, my )
+                  else findContainingMonitor monitors total (idx + 1)
 
 -- | Set position via X11 (internal).
 setPositionX11 :: Gtk.Window -> Int32 -> Int32 -> IO Bool
@@ -302,7 +315,7 @@ setPositionX11 gtkWindow x y = do
     x11Surface <- MaybeT $ Gdk.castTo GdkX11.X11Surface surface
     xid <- MaybeT $ Just <$> GdkX11.x11SurfaceGetXid x11Surface
     MaybeT $ Just <$> moveWindowRaw (fromIntegral xid) x y
-    
+
   return $ result == Just True
 
 -- | Move window via raw X11 (internal).
@@ -313,7 +326,7 @@ moveWindowRaw win x y = do
     X11.moveWindow dpy win (fromIntegral x) (fromIntegral y)
     flush dpy
     closeDisplay dpy
-    
+
   case result of
     Left (_ :: SomeException) -> return False
     Right () -> return True
@@ -322,19 +335,19 @@ moveWindowRaw win x y = do
 --
 -- On Wayland: Returns the layer-shell margins.
 -- On X11: Returns (0, 0) as X11 doesn't have a simple way to query position.
-getWindowPosition :: Gtk.Window -> IO (Int32, Int32)
+getWindowPosition :: Gtk.Window -> IO ( Int32, Int32 )
 getWindowPosition window = do
   backend <- detectBackend
   case backend of
     BackendWayland -> getPositionLayerShell window
-    _              -> return (0, 0)
+    _ -> return ( 0, 0 )
 
 -- | Get position from layer-shell margins (internal).
-getPositionLayerShell :: Gtk.Window -> IO (Int32, Int32)
+getPositionLayerShell :: Gtk.Window -> IO ( Int32, Int32 )
 getPositionLayerShell window = do
   x <- LayerShell.getMargin window EdgeLeft
   y <- LayerShell.getMargin window EdgeTop
-  return (x, y)
+  return ( x, y )
 
 --------------------------------------------------------------------------------
 -- Layer-Shell Specific
@@ -355,4 +368,4 @@ setWindowLayer window layer = do
   backend <- detectBackend
   case backend of
     BackendWayland -> LayerShell.setLayer window layer
-    _              -> return ()
+    _ -> return ()

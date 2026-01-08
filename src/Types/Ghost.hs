@@ -20,21 +20,21 @@ module Types.Ghost
   , loadGhost
   ) where
 
-import           Control.Exception          ( SomeException, try )
-import           Control.Monad              ( filterM, forM )
+import           Control.Exception    ( SomeException, try )
+import           Control.Monad        ( filterM, forM )
 
-import           Data.Maybe                 ( catMaybes )
+import           Data.Maybe           ( catMaybes )
 
-import           System.Directory           ( doesDirectoryExist, doesFileExist, listDirectory )
-import           System.FilePath            ( (</>) )
-
--- Re-export modules
-import           Utils.Charset
-import           Utils.Text
+import           System.Directory     ( doesDirectoryExist, doesFileExist, listDirectory )
+import           System.FilePath      ( (</>) )
 
 import           Types.Ghost.Descript
 import           Types.Ghost.Shell
 import           Types.Ghost.Surface
+
+-- Re-export modules
+import           Utils.Charset
+import           Utils.Text
 
 -- | Shell data structure with descript, surfaces, and path
 data Shell

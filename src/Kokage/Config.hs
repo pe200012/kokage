@@ -19,18 +19,18 @@ module Kokage.Config
   , isFirstBoot
   ) where
 
-import           Control.Exception          ( SomeException, try )
+import           Control.Exception ( SomeException, try )
 
-import           Data.Maybe                 ( fromMaybe )
-import qualified Data.Text                  as T
-import qualified Data.Text.IO               as TIO
+import           Data.Maybe        ( fromMaybe )
+import qualified Data.Text         as T
+import qualified Data.Text.IO      as TIO
 
-import           System.Directory           ( XdgDirectory(..)
-                                            , createDirectoryIfMissing
-                                            , doesFileExist
-                                            , getXdgDirectory
-                                            )
-import           System.FilePath            ( (</>), takeDirectory )
+import           System.Directory  ( XdgDirectory(..)
+                                   , createDirectoryIfMissing
+                                   , doesFileExist
+                                   , getXdgDirectory
+                                   )
+import           System.FilePath   ( (</>), takeDirectory )
 
 -- | Base directory for ghost/balloon/shell resources.
 newtype BaseDir = BaseDir { unBaseDir :: FilePath }
@@ -39,10 +39,10 @@ newtype BaseDir = BaseDir { unBaseDir :: FilePath }
 -- | Configuration for the Kokage application.
 data KokageConfig
   = KokageConfig
-  { kcGhostDir    :: !BaseDir        -- ^ Directory containing ghost subdirectories
-  , kcBalloonDir  :: !BaseDir        -- ^ Directory containing balloon resources
-  , kcGhostPath   :: !(Maybe FilePath)  -- ^ Specific ghost path to load (overrides default)
-  , kcDebug       :: !Bool           -- ^ Enable debug logging
+  { kcGhostDir   :: !BaseDir        -- ^ Directory containing ghost subdirectories
+  , kcBalloonDir :: !BaseDir        -- ^ Directory containing balloon resources
+  , kcGhostPath  :: !(Maybe FilePath)  -- ^ Specific ghost path to load (overrides default)
+  , kcDebug      :: !Bool           -- ^ Enable debug logging
   }
   deriving ( Show, Eq )
 
@@ -51,12 +51,9 @@ data KokageConfig
 defaultConfig :: IO KokageConfig
 defaultConfig = do
   baseDir <- getDefaultBaseDir
-  return KokageConfig
-    { kcGhostDir   = baseDir
-    , kcBalloonDir = baseDir
-    , kcGhostPath  = Nothing
-    , kcDebug      = False
-    }
+  return
+    KokageConfig
+    { kcGhostDir = baseDir, kcBalloonDir = baseDir, kcGhostPath = Nothing, kcDebug = False }
 
 -- | Get the default base directories for NAR installation.
 -- Uses ~/.local/share/ukagaka/ on Linux.
@@ -68,11 +65,10 @@ getDefaultBaseDir = do
 
 -- | Ghost history data stored in HISTORY file.
 data GhostHistory
-  = GhostHistory
-  { ghBootCount    :: !Int      -- ^ Number of times ghost has been booted
-  , ghTotalRuntime :: !Int      -- ^ Total runtime in seconds
-  , ghLastBoot     :: !T.Text   -- ^ Last boot timestamp
-  }
+  = GhostHistory { ghBootCount    :: !Int      -- ^ Number of times ghost has been booted
+                 , ghTotalRuntime :: !Int      -- ^ Total runtime in seconds
+                 , ghLastBoot     :: !T.Text   -- ^ Last boot timestamp
+                 }
   deriving ( Show, Eq )
 
 -- | Default history for a new ghost.
@@ -105,28 +101,29 @@ parseHistory :: T.Text -> GhostHistory
 parseHistory content = foldr parseLine defaultGhostHistory (T.lines content)
   where
     parseLine line hist = case T.breakOn "," line of
-      ("boot_count", rest)    -> hist { ghBootCount = readInt (T.drop 1 rest) }
-      ("total_runtime", rest) -> hist { ghTotalRuntime = readInt (T.drop 1 rest) }
-      ("last_boot", rest)     -> hist { ghLastBoot = T.drop 1 rest }
-      _                       -> hist
+      ( "boot_count", rest ) -> hist { ghBootCount = readInt (T.drop 1 rest) }
+      ( "total_runtime", rest ) -> hist { ghTotalRuntime = readInt (T.drop 1 rest) }
+      ( "last_boot", rest ) -> hist { ghLastBoot = T.drop 1 rest }
+      _ -> hist
 
     readInt :: T.Text -> Int
     readInt t = fromMaybe 0 (readMaybe (T.unpack t))
 
     readMaybe :: Read a => String -> Maybe a
     readMaybe s = case reads s of
-      [(x, "")] -> Just x
-      _         -> Nothing
+      [ ( x, "" ) ] -> Just x
+      _ -> Nothing
 
 -- | Save ghost history to HISTORY file.
 saveGhostHistory :: FilePath -> GhostHistory -> IO ()
 saveGhostHistory ghostPath hist = do
   let path    = historyFilePath ghostPath
-      content = T.unlines
-        [ "boot_count," <> T.pack (show $ ghBootCount hist)
-        , "total_runtime," <> T.pack (show $ ghTotalRuntime hist)
-        , "last_boot," <> ghLastBoot hist
-        ]
+      content
+        = T.unlines
+          [ "boot_count," <> T.pack (show $ ghBootCount hist)
+          , "total_runtime," <> T.pack (show $ ghTotalRuntime hist)
+          , "last_boot," <> ghLastBoot hist
+          ]
   createDirectoryIfMissing True (takeDirectory path)
   TIO.writeFile path content
 

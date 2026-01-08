@@ -32,6 +32,7 @@ module Kokage.Balloon.Surface
 
 import qualified Data.Map.Strict     as Map
 import           Data.Map.Strict     ( Map )
+import           Data.Maybe          ( isJust )
 import qualified Data.Text           as T
 import           Data.Text           ( Text )
 
@@ -41,8 +42,6 @@ import           Kokage.Transparency ( loadWithTransparency )
 
 import           System.Directory    ( doesFileExist )
 import           System.FilePath     ( (</>) )
-import Data.Maybe (isJust)
-
 
 -- | Direction the balloon faces (left or right).
 -- Even numbers (0, 2, 4, ...) are typically left-facing.
@@ -125,13 +124,13 @@ loadSstpSurface balloonDir = do
 loadBalloonSurfaces :: FilePath -> IO BalloonSurfaces
 loadBalloonSurfaces balloonDir = do
   -- Load sakura surfaces (balloons0..9)
-  sakuraSurfaces <- loadSurfaceRange balloonDir "s" [0..9]
+  sakuraSurfaces <- loadSurfaceRange balloonDir "s" [ 0 .. 9 ]
 
   -- Load kero surfaces (balloonk0..9)
-  keroSurfaces <- loadSurfaceRange balloonDir "k" [0..9]
+  keroSurfaces <- loadSurfaceRange balloonDir "k" [ 0 .. 9 ]
 
   -- Load communicate box surfaces (balloonc0..9)
-  communicateSurfaces <- loadSurfaceRange balloonDir "c" [0..9]
+  communicateSurfaces <- loadSurfaceRange balloonDir "c" [ 0 .. 9 ]
 
   -- Load arrow images
   arrowUp <- loadArrowSurface balloonDir 0
@@ -140,7 +139,8 @@ loadBalloonSurfaces balloonDir = do
   -- Load SSTP marker
   sstp <- loadSstpSurface balloonDir
 
-  return BalloonSurfaces
+  return
+    BalloonSurfaces
     { bsSakura      = sakuraSurfaces
     , bsKero        = keroSurfaces
     , bsCommunicate = communicateSurfaces
@@ -153,8 +153,8 @@ loadBalloonSurfaces balloonDir = do
 loadSurfaceRange :: FilePath -> Text -> [ Int ] -> IO (Map Int Pixbuf.Pixbuf)
 loadSurfaceRange balloonDir charType indices = do
   pairs <- mapM loadOne indices
-  return $ Map.fromList [ (i, pb) | (i, Just pb) <- pairs ]
+  return $ Map.fromList [ ( i, pb ) | ( i, Just pb ) <- pairs ]
   where
     loadOne i = do
       mPb <- loadBalloonSurface balloonDir charType i
-      return (i, mPb)
+      return ( i, mPb )
