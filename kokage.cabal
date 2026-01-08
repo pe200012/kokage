@@ -100,6 +100,7 @@ library
     , random
     , reactive-banana
     , reactive-banana-gi-gtk
+    , relude
     , text
     , text-builder
     , time
@@ -148,6 +149,7 @@ executable animation-test
     , random
     , reactive-banana
     , reactive-banana-gi-gtk
+    , relude
     , text
     , text-builder
     , time
@@ -196,6 +198,7 @@ executable balloon-test
     , random
     , reactive-banana
     , reactive-banana-gi-gtk
+    , relude
     , text
     , text-builder
     , time
@@ -245,6 +248,7 @@ executable kokage
     , random
     , reactive-banana
     , reactive-banana-gi-gtk
+    , relude
     , text
     , text-builder
     , time
@@ -293,6 +297,7 @@ executable shiori-test
     , random
     , reactive-banana
     , reactive-banana-gi-gtk
+    , relude
     , text
     , text-builder
     , time
@@ -353,6 +358,7 @@ test-suite kokage-test
     , random
     , reactive-banana
     , reactive-banana-gi-gtk
+    , relude
     , temporary
     , text
     , text-builder
