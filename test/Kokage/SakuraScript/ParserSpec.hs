@@ -142,6 +142,14 @@ choiceSpec = describe "choice commands" $ do
     parseScript "\\_a[link1,Click here]" `shouldParse`
       [SSChoice (Anchor "link1" "Click here")]
 
+  it "parses anchor with URL containing percent-encoded characters" $
+    parseScript "\\_a[https://ja.wikipedia.org/wiki/%E3%81%95%E3%82%8F%E3%82%84%E3%81%8B3%E7%B5%84,さわやか三組]" `shouldParse`
+      [SSChoice (Anchor "https://ja.wikipedia.org/wiki/%E3%81%95%E3%82%8F%E3%82%84%E3%81%8B3%E7%B5%84" "さわやか三組")]
+
+  it "parses anchor start/end markers \\_a[id]text\\_a" $
+    parseScript "\\_a[GHOST_床さくら]床さくらちゃん\\_a" `shouldParse`
+      [SSChoice (Anchor "GHOST_床さくら" "床さくらちゃん")]
+
 --------------------------------------------------------------------------------
 -- Font Commands
 --------------------------------------------------------------------------------
