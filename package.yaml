@@ -108,6 +108,22 @@ executables:
       - haskell-gi-base
       - transformers
 
+  balloon-test:
+    main: Main.hs
+    source-dirs: app-balloon-test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - kokage
+      - text
+      - gi-gtk4
+      - gi-gdk4
+      - gi-gio
+      - gi-glib
+      - haskell-gi-base
+
 tests:
   kokage-test:
     main: Spec.hs

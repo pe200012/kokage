@@ -156,6 +156,54 @@ executable animation-test
     , zip-archive
   default-language: Haskell2010
 
+executable balloon-test
+  main-is: Main.hs
+  other-modules:
+      Paths_kokage
+  autogen-modules:
+      Paths_kokage
+  hs-source-dirs:
+      app-balloon-test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      X11
+    , aeson
+    , async
+    , base >=4.7 && <5
+    , base64-bytestring
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , gi-cairo
+    , gi-cairo-connector
+    , gi-cairo-render
+    , gi-gdk4
+    , gi-gdkpixbuf
+    , gi-gdkx114
+    , gi-gio
+    , gi-glib
+    , gi-gtk4
+    , gi-gtk4-layer-shell
+    , gi-pango
+    , gi-pangocairo
+    , haskell-gi-base
+    , iconv
+    , kokage
+    , megaparsec
+    , mtl
+    , process
+    , random
+    , reactive-banana
+    , reactive-banana-gi-gtk
+    , text
+    , text-builder
+    , time
+    , transformers
+    , vector
+    , zip-archive
+  default-language: Haskell2010
+
 executable kokage
   main-is: Main.hs
   other-modules:
