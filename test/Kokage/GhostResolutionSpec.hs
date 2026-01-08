@@ -16,7 +16,7 @@ import           Kokage                     ( scanGhosts
                                             , loadLastGhost
                                             , KokageConfig(..)
                                             )
-import           Kokage.Install             ( BaseDir(..) )
+import           Kokage.Config              ( BaseDir(..) )
 
 -- | Main spec
 spec :: Spec
@@ -42,7 +42,7 @@ scanGhostsSpec = describe "scanGhosts" $ do
   it "returns empty list for empty ghost directory" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
-      createDirectoryIfMissing True (bdGhost baseDir)
+      createDirectoryIfMissing True (unBaseDir baseDir)
       ghosts <- scanGhosts baseDir
       ghosts `shouldBe` []
 
@@ -50,8 +50,8 @@ scanGhostsSpec = describe "scanGhosts" $ do
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
       -- Create two valid ghosts
-      createValidGhost (bdGhost baseDir </> "ghost_a")
-      createValidGhost (bdGhost baseDir </> "ghost_b")
+      createValidGhost (ghostDir baseDir </> "ghost_a")
+      createValidGhost (ghostDir baseDir </> "ghost_b")
       
       ghosts <- scanGhosts baseDir
       length ghosts `shouldBe` 2
@@ -60,9 +60,9 @@ scanGhostsSpec = describe "scanGhosts" $ do
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
       -- Create ghosts in non-alphabetical order
-      createValidGhost (bdGhost baseDir </> "zebra")
-      createValidGhost (bdGhost baseDir </> "alpha")
-      createValidGhost (bdGhost baseDir </> "middle")
+      createValidGhost (ghostDir baseDir </> "zebra")
+      createValidGhost (ghostDir baseDir </> "alpha")
+      createValidGhost (ghostDir baseDir </> "middle")
       
       ghosts <- scanGhosts baseDir
       map takeBaseName ghosts `shouldBe` ["alpha", "middle", "zebra"]
@@ -71,9 +71,9 @@ scanGhostsSpec = describe "scanGhosts" $ do
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
       -- Create a valid ghost
-      createValidGhost (bdGhost baseDir </> "valid_ghost")
+      createValidGhost (ghostDir baseDir </> "valid_ghost")
       -- Create an invalid directory (no ghost/master)
-      createDirectoryIfMissing True (bdGhost baseDir </> "not_a_ghost")
+      createDirectoryIfMissing True (ghostDir baseDir </> "not_a_ghost")
       
       ghosts <- scanGhosts baseDir
       length ghosts `shouldBe` 1
@@ -81,9 +81,9 @@ scanGhostsSpec = describe "scanGhosts" $ do
   it "ignores files in ghost directory" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
-      createValidGhost (bdGhost baseDir </> "valid_ghost")
+      createValidGhost (ghostDir baseDir </> "valid_ghost")
       -- Create a file (not a directory)
-      TIO.writeFile (bdGhost baseDir </> "some_file.txt") "not a ghost"
+      TIO.writeFile (ghostDir baseDir </> "some_file.txt") "not a ghost"
       
       ghosts <- scanGhosts baseDir
       length ghosts `shouldBe` 1
@@ -97,9 +97,9 @@ resolveGhostSpec = describe "resolveGhost" $ do
   it "returns explicit configGhostPath when valid" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
-      let explicitPath = bdGhost baseDir </> "explicit_ghost"
+      let explicitPath = unBaseDir baseDir </> "explicit_ghost"
       createValidGhost explicitPath
-      createValidGhost (bdGhost baseDir </> "other_ghost")
+      createValidGhost (unBaseDir baseDir </> "other_ghost")
       
       let config = mkConfig tmpDir (Just explicitPath) Nothing
       result <- resolveGhost config
@@ -108,7 +108,7 @@ resolveGhostSpec = describe "resolveGhost" $ do
   it "falls back to lastGhost when configGhostPath is invalid" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
-      let lastPath = bdGhost baseDir </> "last_ghost"
+      let lastPath = unBaseDir baseDir </> "last_ghost"
       createValidGhost lastPath
       
       let config = mkConfig tmpDir (Just "/nonexistent/ghost") (Just lastPath)
@@ -118,7 +118,7 @@ resolveGhostSpec = describe "resolveGhost" $ do
   it "returns lastGhost when configGhostPath is Nothing" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
-      let lastPath = bdGhost baseDir </> "last_ghost"
+      let lastPath = unBaseDir baseDir </> "last_ghost"
       createValidGhost lastPath
       
       let config = mkConfig tmpDir Nothing (Just lastPath)
@@ -128,21 +128,21 @@ resolveGhostSpec = describe "resolveGhost" $ do
   it "falls back to first available ghost when lastGhost is invalid" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
-      createValidGhost (bdGhost baseDir </> "available_ghost")
+      createValidGhost (ghostDir baseDir </> "available_ghost")
       
       let config = mkConfig tmpDir Nothing (Just "/nonexistent/last")
       result <- resolveGhost config
-      result `shouldBe` Just (bdGhost baseDir </> "available_ghost")
+      result `shouldBe` Just (ghostDir baseDir </> "available_ghost")
 
   it "returns first ghost alphabetically when no preferences" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
       let baseDir = mkBaseDir tmpDir
-      createValidGhost (bdGhost baseDir </> "zebra")
-      createValidGhost (bdGhost baseDir </> "alpha")
+      createValidGhost (ghostDir baseDir </> "zebra")
+      createValidGhost (ghostDir baseDir </> "alpha")
       
       let config = mkConfig tmpDir Nothing Nothing
       result <- resolveGhost config
-      result `shouldBe` Just (bdGhost baseDir </> "alpha")
+      result `shouldBe` Just (ghostDir baseDir </> "alpha")
 
   it "returns Nothing when no ghosts available" $ 
     withSystemTempDirectory "kokage-test" $ \tmpDir -> do
@@ -212,14 +212,11 @@ lastGhostPersistenceSpec = describe "lastGhost persistence" $ do
 
 -- | Create a BaseDir in a temp directory
 mkBaseDir :: FilePath -> BaseDir
-mkBaseDir tmpDir = BaseDir
-  { bdGhost = tmpDir </> "ghost"
-  , bdBalloon = tmpDir </> "balloon"
-  , bdPlugin = tmpDir </> "plugin"
-  , bdHeadline = tmpDir </> "headline"
-  , bdCalendar = tmpDir </> "calendar"
-  , bdCalendarSkin = tmpDir </> "calendar" </> "skin"
-  }
+mkBaseDir tmpDir = BaseDir tmpDir
+
+-- | Get the ghost directory path where ghosts should be created
+ghostDir :: BaseDir -> FilePath
+ghostDir baseDir = unBaseDir baseDir </> "ghost"
 
 -- | Create a minimal config for testing
 mkConfig :: FilePath -> Maybe FilePath -> Maybe FilePath -> KokageConfig
