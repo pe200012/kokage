@@ -37,7 +37,7 @@ data SoundState
   { ssCurrentProcess :: !(IORef (Maybe ProcessHandle))  -- ^ Currently playing process
   , ssCurrentFile    :: !(IORef (Maybe T.Text))         -- ^ Currently playing file
   , ssVolume         :: !(IORef Double)                 -- ^ Volume (0.0-1.0)
-  , ssPlayerCmd      :: !(IORef (Maybe String))         -- ^ Detected audio player command
+  , ssPlayerCmd      :: !(Maybe String)                 -- ^ Detected audio player command
   }
 
 -- | Create a new sound state and detect available audio player
@@ -60,13 +60,11 @@ newSoundState = do
         ( _, _, _, Just p ) -> Just p
         _ -> Nothing
 
-  playerRef <- newIORef player
-
   return
     SoundState { ssCurrentProcess = procRef
                , ssCurrentFile    = fileRef
                , ssVolume         = volRef
-               , ssPlayerCmd      = playerRef
+               , ssPlayerCmd      = player
                }
 
 -- | Play a sound file
@@ -75,7 +73,7 @@ playSound ss file = do
   -- Stop any currently playing sound
   stopSound ss
 
-  mPlayer <- readIORef (ssPlayerCmd ss)
+  let mPlayer = ssPlayerCmd ss
   case mPlayer of
     Nothing     -> putStrLn "[Sound] No audio player found (tried paplay, aplay, mpv, ffplay)"
     Just player -> do

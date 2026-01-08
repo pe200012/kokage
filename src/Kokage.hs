@@ -1549,7 +1549,7 @@ runGtkApp
           collisions = maybe [] sdCollisions (findSurfaceById currentSurfId surfaces)
 
       -- Create move mode based on layer-shell status
-      isLayerShell <- readIORef (csLayerShell cs)
+      let isLayerShell = csLayerShell cs
       moveMode <- if isLayerShell
         then do
           let updatePosition :: Double -> Double -> IO ()

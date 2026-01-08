@@ -97,7 +97,7 @@ data CharacterState
   , csDefaultSurface   :: !Int                    -- ^ Default surface ID for this character
   , csVisible          :: !(IORef Bool)           -- ^ Whether character is currently shown
   , csScopeId          :: !Int                    -- ^ Scope index (0=sakura, 1=kero, etc.)
-  , csLayerShell       :: !(IORef Bool)           -- ^ Whether layer-shell is active
+  , csLayerShell       :: !Bool                   -- ^ Whether layer-shell is active
   , csAnimState        :: !AnimationState         -- ^ Animation state manager
   , csSurfaceLifeTimer :: !(IORef (Maybe Word32)) -- ^ Active surface_life timer source ID
   }
@@ -177,7 +177,6 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
                   else BalloonLeft
           dirRef <- newIORef defaultDir
           visibleRef <- newIORef False
-          layerShellRef <- newIORef False
 
           -- Initialize animation state
           animState <- newAnimationState
@@ -212,7 +211,6 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
 
           -- Try to initialize platform (layer-shell on Wayland)
           layerShellSuccess <- initPlatformWindow window
-          writeIORef layerShellRef layerShellSuccess
 
           -- Initialize surface life timer ref
           surfaceLifeTimerRef <- newIORef Nothing
@@ -229,7 +227,7 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
                 , csDefaultSurface   = defaultSurfId
                 , csVisible          = visibleRef
                 , csScopeId          = scopeId
-                , csLayerShell       = layerShellRef
+                , csLayerShell       = layerShellSuccess
                 , csAnimState        = animState
                 , csSurfaceLifeTimer = surfaceLifeTimerRef
                 }
@@ -258,7 +256,7 @@ showCharacter :: CharacterState -> IO ()
 showCharacter cs = do
   visible <- readIORef (csVisible cs)
   unless visible $ do
-    isLayerShell <- readIORef (csLayerShell cs)
+    let isLayerShell = csLayerShell cs
     if isLayerShell
       then do
         setWindowLayer (csWindow cs) LayerTop
@@ -439,7 +437,7 @@ initBalloonPosition cs shell = do
         putStrLn
           $ "[Character " <> show (csScopeId cs) <> "] Flipping balloon to left (edge detection)"
         return ( BalloonLeft, leftPosX )
-      else 
+      else
         -- Keep right, clamp if needed
         return ( BalloonRight, max monX (min rightPosX (monX + monW - balloonW)) )
     BalloonLeft  -> if leftPosX < monX && rightPosX + balloonW <= monX + monW
@@ -448,7 +446,7 @@ initBalloonPosition cs shell = do
         putStrLn
           $ "[Character " <> show (csScopeId cs) <> "] Flipping balloon to right (edge detection)"
         return ( BalloonRight, rightPosX )
-      else 
+      else
         -- Keep left, clamp if needed
         return ( BalloonLeft, max monX (min leftPosX (monX + monW - balloonW)) )
 
@@ -676,7 +674,7 @@ getBalloonOffset shell scopeId surfId dir
         Nothing -> case snd charOffset of
           Just y  -> y
           Nothing -> fromMaybe 0 (snd genericOffset)
-    in 
+    in
       ( resolveX, resolveY )
 
 -- | Start a surface life timer for OnSurfaceRestore event.
