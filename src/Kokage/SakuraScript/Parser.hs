@@ -308,6 +308,7 @@ pBalloonCmd
   = choice
     [ pBalloonChange
     , pNewline
+    , ClearQuick <$ char 'C'
     , Clear <$ char 'c'
     , pClearChars
     , pCursorMove

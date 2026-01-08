@@ -51,7 +51,7 @@ import           Control.Exception               ( Exception
                                                  , throwIO
                                                  , try
                                                  )
-import           Control.Monad                   ( filterM, forM_, join, unless, void, when )
+import           Control.Monad                   ( filterM, forM, forM_, join, unless, void, when )
 import           Control.Monad.Trans.Class       ( lift )
 import           Control.Monad.Trans.Maybe       ( MaybeT(runMaybeT, MaybeT) )
 
@@ -131,6 +131,7 @@ import           Kokage.Character                ( CharacterState(..)
                                                  , cancelSurfaceLifeTimer
                                                  , createCharacter
                                                  , getCharacterBalloon
+                                                 , getCharacterSurface
                                                  , initBalloonPosition
                                                  , setCharacterPosition
                                                  , setCharacterSurface
@@ -315,7 +316,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
               (descriptSakuraDefaultLeft descript)
           relY
             = maybe (screenH - fromIntegral surfH) fromIntegral (descriptSakuraDefaultTop descript)
-        in 
+        in
           ( monX + relX, monY + relY )
     _    -- Kero and others: default to left of sakura position
       -> let
@@ -324,7 +325,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
           defaultY = screenH - fromIntegral surfH
           relX     = maybe defaultX fromIntegral (descriptKeroDefaultLeft descript)
           relY     = maybe defaultY fromIntegral (descriptKeroDefaultTop descript)
-        in 
+        in
           ( monX + relX, monY + relY )
 
 --------------------------------------------------------------------------------
@@ -468,7 +469,7 @@ parseHistory content
         Just v  -> case reads (T.unpack v) of
           [ ( n, "" ) ] -> n
           _ -> def
-    in 
+    in
       GhostHistory { ghTime = lookupInt "time" 0, ghVanishedCount = lookupInt "vanished_count" 0 }
 
 -- | Save ghost history to HISTORY file.
@@ -821,47 +822,36 @@ runGtkApp
         changeSurface scope newSurfaceId = do
           case Map.lookup scope characters of
             Nothing -> putStrLn $ "[Surface] Scope " <> show scope <> " not found"
-            Just cs -> do
-              setCharacterSurface cs shell newSurfaceId
-              -- Handle surface_life timer for OnSurfaceRestore
-              -- When surface changes to non-default, start a timer (20-30 seconds)
-              -- When timer expires, fire OnSurfaceRestore event
-              let defaultSurfId = csDefaultSurface cs
-              if newSurfaceId == defaultSurfId
-                then do
-                  -- Returning to default surface, cancel any timer
-                  cancelSurfaceLifeTimer cs
-                else do
-                  -- Non-default surface, start timer with random 20-30 second delay
-                  -- Use configured surface_life if available, otherwise default to 20-30 seconds
-                  let shellDesc    = shellDescript shell
-                      charSettings = getCharSettings scope shellDesc
-                  delayMs <- case csSurfaceLife charSettings of
-                    Just configuredMs -> return $ fromIntegral configuredMs
-                    Nothing           -> do
-                      -- Random delay between 20000-30000 ms (20-30 seconds)
-                      randomDelay <- randomRIO ( 20000, 30000 ) :: IO Int
-                      return $ fromIntegral randomDelay
-                  onSurfaceRestore <- readIORef surfaceRestoreCallbackRef
-                  startSurfaceLifeTimer cs delayMs onSurfaceRestore
-                  putStrLn
-                    $ "[SurfaceLife] Started timer ("
-                    <> show delayMs
-                    <> "ms) for scope "
-                    <> show scope
+            Just cs -> setCharacterSurface cs shell newSurfaceId
 
-    -- Helper to hide all balloons if none have choices
     let hideBalloonIfNoChoices :: IO ()
         hideBalloonIfNoChoices = do
-          -- Check if any balloon has choices
           anyHasChoices <- or <$> mapM (hasChoices . getCharacterBalloon) (Map.elems characters)
           unless anyHasChoices $ do
-            -- wait for a short moment to ensure user sees the completed text
             _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
               putStrLn "[Script] No pending choices, hiding balloons"
               forM_ (Map.elems characters) $ \cs -> hideBalloon (getCharacterBalloon cs)
+              startOnSurfaceRestoreTimer
               return False
             pure ()
+
+        startOnSurfaceRestoreTimer :: IO ()
+        startOnSurfaceRestoreTimer = do
+          forM_ (Map.elems characters) cancelSurfaceLifeTimer
+          -- Check if any character is on a non-default surface
+          anyNonDefault <- or <$> forM (Map.elems characters) (\cs -> do
+            currentSurf <- getCharacterSurface cs
+            return $ currentSurf /= csDefaultSurface cs)
+          when anyNonDefault $ do
+            let shellDesc    = shellDescript shell
+                charSettings = getCharSettings 0 shellDesc
+                delayMs      = fromIntegral $ fromMaybe 15000 (csSurfaceLife charSettings)
+            case Map.lookup 0 characters of
+              Nothing -> return ()
+              Just sakura -> do
+                onSurfaceRestore <- readIORef surfaceRestoreCallbackRef
+                startSurfaceLifeTimer sakura delayMs onSurfaceRestore
+                putStrLn $ "[SurfaceLife] Started OnSurfaceRestore timer (" <> show delayMs <> "ms)"
 
     -- Create interpreter callbacks that interact with the balloon and surface
     let interpreterCallbacks
@@ -1309,9 +1299,19 @@ runGtkApp
               -- Save the interrupt function for this script
               writeIORef currentScriptInterruptRef interruptAction
 
+    -- Collect current surface IDs for OnSurfaceRestore event
+    let collectSurfaceRefs :: IO (Map.Map Int T.Text)
+        collectSurfaceRefs = do
+          surfacePairs <- forM (Map.toList characters) $ \(scopeId, cs) -> do
+            surfId <- getCharacterSurface cs
+            return (scopeId, T.pack $ show surfId)
+          return $ Map.fromList surfacePairs
+
     -- Fill in the surface restore callback now that displayScript is defined
-    writeIORef surfaceRestoreCallbackRef
-      $ sendShioriWithCallback mShioriConfig OnSurfaceRestore Map.empty displayScript
+    -- Per UKADOC: Reference0 = sakura surface, Reference1 = kero surface
+    writeIORef surfaceRestoreCallbackRef $ do
+      surfaceRefs <- collectSurfaceRefs
+      sendShioriWithCallback mShioriConfig OnSurfaceRestore surfaceRefs displayScript
 
     -- Set up choice callback on sakura's balloon
     case Map.lookup 0 characters of

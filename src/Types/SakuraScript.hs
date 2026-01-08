@@ -199,6 +199,7 @@ data BalloonCmd
   | NewlineHalf                                     -- ^ \n[half] - Half newline
   | NewlinePercent !Int                             -- ^ \n[percent,n] - Percent newline
   | Clear                                           -- ^ \c - Clear balloon
+  | ClearQuick                                      -- ^ \C - Clear balloon and enable quick mode
   | ClearChars !Int                                 -- ^ \_c - Clear n characters
   | ClearLines !Int                                 -- ^ Clear n lines
   | CursorMove !CursorPos !CursorPos                -- ^ \_l[x,y] - Move cursor

@@ -455,6 +455,10 @@ handleBalloon state balloonCmd = do
 
     Clear -> cbClear (esCallbacks state)
 
+    ClearQuick -> do
+      cbClear (esCallbacks state)
+      writeIORef (esQuickMode state) True
+
     ClearChars n -> cbClearChars (esCallbacks state) n
 
     ClearLines _n ->
