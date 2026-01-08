@@ -80,6 +80,7 @@ import           Kokage.Surface     ( compositeSurface, findSurfaceById )
 import           Types.Ghost        ( CharacterSettings(..)
                                     , GhostDescript(..)
                                     , Shell(..)
+                                    , ShellDescript(..)
                                     , SurfaceDefinition(..)
                                     , getCharSettings
                                     )
@@ -120,128 +121,141 @@ createCharacter :: Gtk.Application  -- ^ Parent application
                 -> IO (Maybe CharacterState)
 createCharacter app shell ghostDesc scopeId mBalloonDir = do
   -- Determine default surface ID and character name
-  let ( defaultSurfId, charName ) = getDefaultSurfaceId ghostDesc scopeId
+  let ( defaultSurfId, charName ) = getDefaultSurfaceId ghostDesc (shellDescript shell) scopeId
       surfaces = shellSurfaces shell
 
-  -- Find and composite the default surface
-  case findSurfaceById defaultSurfId surfaces of
-    Nothing      -> do
-      putStrLn
-        $ "[Character " <> show scopeId <> "] Surface " <> show defaultSurfId <> " not found"
-      return Nothing
+  -- Try to find and composite the default surface
+  -- If not found, create a transparent placeholder (1x1 pixel)
+  (pixbuf, actualSurfId) <- case findSurfaceById defaultSurfId surfaces of
+    Nothing -> do
+      putStrLn $ "[Character " <> show scopeId <> "] Default surface " <> show defaultSurfId
+              <> " not found, using transparent placeholder"
+      -- Create 1x1 transparent pixbuf as placeholder
+      placeholder <- Pixbuf.pixbufNew Pixbuf.ColorspaceRgb True 8 1 1
+      case placeholder of
+        Nothing -> error "Failed to create placeholder pixbuf"
+        Just pb -> do
+          Pixbuf.pixbufFill pb 0x00000000  -- Fully transparent (RGBA)
+          return (pb, defaultSurfId)
     Just surfDef -> do
       mPixbuf <- compositeSurface (shellPath shell) surfDef
       case mPixbuf of
-        Nothing     -> do
-          putStrLn $ "[Character " <> show scopeId <> "] Failed to composite surface"
-          return Nothing
-        Just pixbuf -> do
-          width <- Pixbuf.pixbufGetWidth pixbuf
-          height <- Pixbuf.pixbufGetHeight pixbuf
+        Nothing -> do
+          putStrLn $ "[Character " <> show scopeId <> "] Failed to composite surface, using placeholder"
+          placeholder <- Pixbuf.pixbufNew Pixbuf.ColorspaceRgb True 8 1 1
+          case placeholder of
+            Nothing -> error "Failed to create placeholder pixbuf"
+            Just pb -> do
+              Pixbuf.pixbufFill pb 0x00000000  -- Fully transparent (RGBA)
+              return (pb, defaultSurfId)
+        Just pb -> return (pb, defaultSurfId)
 
-          -- Create the surface window
-          window <- new
-            Gtk.Window
-            [ #application := app
-            , #title := charName
-            , #defaultWidth := width
-            , #defaultHeight := height
-            , #resizable := False
-            , #decorated := False
-            ]
+  width <- Pixbuf.pixbufGetWidth pixbuf
+  height <- Pixbuf.pixbufGetHeight pixbuf
 
-          -- Make window transparent
-          cssProvider <- new Gtk.CssProvider []
-          Gtk.cssProviderLoadFromString
-            cssProvider
-            "window.transparent { background-color: transparent; }"
-          display <- Gdk.displayGetDefault
-          case display of
-            Nothing -> return ()
-            Just d  -> Gtk.styleContextAddProviderForDisplay d cssProvider 800
-          Gtk.widgetAddCssClass window "transparent"
+  -- Create the surface window
+  window <- new
+    Gtk.Window
+    [ #application := app
+    , #title := charName
+    , #defaultWidth := width
+    , #defaultHeight := height
+    , #resizable := False
+    , #decorated := False
+    ]
 
-          -- Create texture and picture
-          texture <- Gdk.textureNewForPixbuf pixbuf
-          picture <- new Gtk.Picture [ #paintable := texture, #canShrink := False ]
-          Gtk.windowSetChild window (Just picture)
+  -- Make window transparent
+  cssProvider <- new Gtk.CssProvider []
+  Gtk.cssProviderLoadFromString
+    cssProvider
+    "window.transparent { background-color: transparent; }"
+  display <- Gdk.displayGetDefault
+  case display of
+    Nothing -> return ()
+    Just d  -> Gtk.styleContextAddProviderForDisplay d cssProvider 800
+  Gtk.widgetAddCssClass window "transparent"
 
-          -- Initialize state refs
-          surfaceRef <- newIORef defaultSurfId
-          surfaceSizeRef <- newIORef ( fromIntegral width, fromIntegral height )
-          posRef <- newIORef ( 0, 0 )
-          -- Default balloon direction: sakura=right, others=left
-          let defaultDir
-                = if scopeId == 0
-                  then BalloonRight
-                  else BalloonLeft
-          dirRef <- newIORef defaultDir
-          visibleRef <- newIORef False
+  -- Create texture and picture
+  texture <- Gdk.textureNewForPixbuf pixbuf
+  picture <- new Gtk.Picture [ #paintable := texture, #canShrink := False ]
+  Gtk.windowSetChild window (Just picture)
 
-          -- Initialize animation state
-          animState <- newAnimationState
-          -- Set the initial base pixbuf
-          writeIORef (asBasePixbuf animState) (Just pixbuf)
+  -- Initialize state refs
+  surfaceRef <- newIORef actualSurfId
+  surfaceSizeRef <- newIORef ( fromIntegral width, fromIntegral height )
+  posRef <- newIORef ( 0, 0 )
+  -- Default balloon direction: sakura=right, others=left
+  let defaultDir
+        = if scopeId == 0
+          then BalloonRight
+          else BalloonLeft
+  dirRef <- newIORef defaultDir
+  visibleRef <- newIORef False
 
-          -- Determine character type for balloon surface
-          -- Scope 0 = sakura -> "s", Scope 1+ = kero -> "k"
-          let charType
-                = if scopeId == 0
-                  then "s"
-                  else "k"
+  -- Initialize animation state
+  animState <- newAnimationState
+  -- Set the initial base pixbuf
+  writeIORef (asBasePixbuf animState) (Just pixbuf)
 
-          -- Create balloon for this character
-          -- If balloon directory is provided, load the appropriate surface
-          balloon <- case mBalloonDir of
-            Just balloonDir -> do
-              putStrLn
-                $ "[Character "
-                <> show scopeId
-                <> "] Loading balloon surface from: "
-                <> balloonDir
-                <> " (type="
-                <> T.unpack charType
-                <> ")"
-              newBalloonStateWithSurface app balloonDir charType
-            Nothing         -> do
-              putStrLn
-                $ "[Character " <> show scopeId <> "] No balloon directory, using default balloon"
-              newBalloonState app
-          _ <- initBalloonAlwaysOnTop balloon
+  -- Determine character type for balloon surface
+  -- Scope 0 = sakura -> "s", Scope 1+ = kero -> "k"
+  let charType
+        = if scopeId == 0
+          then "s"
+          else "k"
 
-          -- Try to initialize platform (layer-shell on Wayland)
-          layerShellSuccess <- initPlatformWindow window
+  -- Create balloon for this character
+  -- If balloon directory is provided, load the appropriate surface
+  balloon <- case mBalloonDir of
+    Just balloonDir -> do
+      putStrLn
+        $ "[Character "
+        <> show scopeId
+        <> "] Loading balloon surface from: "
+        <> balloonDir
+        <> " (type="
+        <> T.unpack charType
+        <> ")"
+      newBalloonStateWithSurface app balloonDir charType
+    Nothing         -> do
+      putStrLn
+        $ "[Character " <> show scopeId <> "] No balloon directory, using default balloon"
+      newBalloonState app
+  _ <- initBalloonAlwaysOnTop balloon
 
-          -- Initialize surface life timer ref
-          surfaceLifeTimerRef <- newIORef Nothing
+  -- Try to initialize platform (layer-shell on Wayland)
+  layerShellSuccess <- initPlatformWindow window
 
-          let charState
-                = CharacterState
-                { csWindow           = window
-                , csPicture          = picture
-                , csCurrentSurface   = surfaceRef
-                , csSurfaceSize      = surfaceSizeRef
-                , csBalloon          = balloon
-                , csPosition         = posRef
-                , csBalloonDir       = dirRef
-                , csDefaultSurface   = defaultSurfId
-                , csVisible          = visibleRef
-                , csScopeId          = scopeId
-                , csLayerShell       = layerShellSuccess
-                , csAnimState        = animState
-                , csSurfaceLifeTimer = surfaceLifeTimerRef
-                }
+  -- Initialize surface life timer ref
+  surfaceLifeTimerRef <- newIORef Nothing
 
-          putStrLn
-            $ "[Character "
-            <> show scopeId
-            <> "] Created: "
-            <> T.unpack charName
-            <> " (surface "
-            <> show defaultSurfId
-            <> ")"
+  let charState
+        = CharacterState
+        { csWindow           = window
+        , csPicture          = picture
+        , csCurrentSurface   = surfaceRef
+        , csSurfaceSize      = surfaceSizeRef
+        , csBalloon          = balloon
+        , csPosition         = posRef
+        , csBalloonDir       = dirRef
+        , csDefaultSurface   = actualSurfId
+        , csVisible          = visibleRef
+        , csScopeId          = scopeId
+        , csLayerShell       = layerShellSuccess
+        , csAnimState        = animState
+        , csSurfaceLifeTimer = surfaceLifeTimerRef
+        }
 
-          return $ Just charState
+  putStrLn
+    $ "[Character "
+    <> show scopeId
+    <> "] Created: "
+    <> T.unpack charName
+    <> " (surface "
+    <> show actualSurfId
+    <> ")"
+
+  return $ Just charState
 
 -- | Destroy a character's windows and resources.
 destroyCharacter :: CharacterState -> IO ()
@@ -257,6 +271,11 @@ showCharacter cs = do
   visible <- readIORef (csVisible cs)
   unless visible $ do
     let isLayerShell = csLayerShell cs
+    (posX, posY) <- readIORef (csPosition cs)
+    (sizeW, sizeH) <- readIORef (csSurfaceSize cs)
+    putStrLn $ "[Character " <> show (csScopeId cs) <> "] Showing at position ("
+            <> show posX <> ", " <> show posY <> ") size (" 
+            <> show sizeW <> "x" <> show sizeH <> ")"
     if isLayerShell
       then do
         setWindowLayer (csWindow cs) LayerTop
@@ -322,6 +341,8 @@ setCharacterSurface cs shell newSurfId = do
             _ <- GLib.idleAdd GLib.PRIORITY_HIGH $ do
               texture <- Gdk.textureNewForPixbuf pixbuf
               Gtk.pictureSetPaintable (csPicture cs) (Just texture)
+              -- Update window size to match new surface
+              Gtk.windowSetDefaultSize (csWindow cs) (fromIntegral w) (fromIntegral h)
               -- Update input region
               mSurface <- Gtk.nativeGetSurface (csWindow cs)
               case mSurface of
@@ -630,11 +651,15 @@ getCharacterPosition :: CharacterState -> IO ( Int32, Int32 )
 getCharacterPosition = readIORef . csPosition
 
 -- | Get the default surface ID and character name for a scope.
-getDefaultSurfaceId :: GhostDescript -> Int -> ( Int, T.Text )
-getDefaultSurfaceId desc scopeId = case scopeId of
-  0 -> ( descriptSakuraSerikoDefaultSurface desc, descriptSakuraName desc )
-  1 -> ( descriptKeroSerikoDefaultSurface desc, descriptKeroName desc )
-  n -> ( 10 + n * 10, "char" <> T.pack (show n) )  -- Default: char2=30, char3=40, etc.
+-- For scope 0/1, uses ghost descript. For scope >= 2, uses shell descript.
+getDefaultSurfaceId :: GhostDescript -> ShellDescript -> Int -> ( Int, T.Text )
+getDefaultSurfaceId ghostDesc shellDesc scopeId = case scopeId of
+  0 -> ( descriptSakuraSerikoDefaultSurface ghostDesc, descriptSakuraName ghostDesc )
+  1 -> ( descriptKeroSerikoDefaultSurface ghostDesc, descriptKeroName ghostDesc )
+  n -> let charSettings = getCharSettings n shellDesc
+           defaultSurf  = fromMaybe (10 + n * 10) (csSerikoDefaultSurface charSettings)
+           charName     = fromMaybe ("char" <> T.pack (show n)) (csName charSettings)
+       in  ( defaultSurf, charName )
 
 -- | Get balloon offset for a character/surface combination.
 -- Checks surface-specific offsets first, then falls back to shell descript.

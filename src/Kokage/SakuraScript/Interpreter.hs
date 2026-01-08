@@ -38,7 +38,7 @@ import           Control.Concurrent       ( MVar
 import           Control.Concurrent.Async ( race )
 import           Control.Monad            ( forM_, unless, void, when )
 
-import           Data.IORef               ( IORef, newIORef, readIORef, writeIORef )
+import           Data.IORef               ( IORef, modifyIORef', newIORef, readIORef, writeIORef )
 import qualified Data.Text                as T
 import           Data.Time.Clock          ( getCurrentTime )
 import           Data.Time.Clock.POSIX    ( utcTimeToPOSIXSeconds )
@@ -83,6 +83,7 @@ data InterpreterCallbacks
   , cbClearChars :: Int -> IO ()               -- ^ Clear n characters
   , cbSetScope :: Int -> IO ()                -- ^ Switch to character scope (0=sakura, 1=kero, etc.)
   , cbSetSurface :: Int -> Int -> IO ()         -- ^ Set surface (scope, surfaceId)
+  , cbHideCharacter :: Int -> IO ()             -- ^ Hide character (scope) - triggered by \s[-1]
   , cbSetBalloon :: Int -> Int -> IO ()         -- ^ Set balloon (scope, balloonId)
   , cbHideBalloon :: Int -> IO ()                -- ^ Hide balloon for scope
   , cbShowBalloon :: Int -> IO ()                -- ^ Show balloon for scope
@@ -102,6 +103,8 @@ data InterpreterCallbacks
     -- Sound callbacks
   , cbPlaySound :: T.Text -> IO ()             -- ^ Play sound file
   , cbStopSound :: IO ()                       -- ^ Stop all sounds
+    -- Time-critical callback
+  , cbSetTimeCritical :: Bool -> IO ()          -- ^ Set time-critical mode (blocks mouse events)
   , cbSoundAction :: SoundAction -> T.Text -> IO ()  -- ^ Sound action
     -- Event callbacks
   , cbRaiseEvent :: T.Text -> [ T.Text ] -> IO () -- ^ Raise event (name, refs)
@@ -145,6 +148,7 @@ defaultCallbacks
   , cbClearChars = \_ -> return ()
   , cbSetScope = \_ -> return ()
   , cbSetSurface = \_ _ -> return ()
+  , cbHideCharacter = \_ -> return ()
   , cbSetBalloon = \_ _ -> return ()
   , cbHideBalloon = \_ -> return ()
   , cbShowBalloon = \_ -> return ()
@@ -160,6 +164,7 @@ defaultCallbacks
   , cbSetFont = \_ -> return ()
   , cbPlaySound = \_ -> return ()
   , cbStopSound = return ()
+  , cbSetTimeCritical = \_ -> return ()
   , cbSoundAction = \_ _ -> return ()
   , cbRaiseEvent = \_ _ -> return ()
   , cbNotify = \_ _ -> return ()
@@ -196,7 +201,8 @@ data InterpreterState
   , esCallbacks    :: !InterpreterCallbacks     -- ^ UI callbacks
   , esCurrentScope :: !(IORef Int)              -- ^ Current character scope (0=sakura, 1=kero)
   , esInterrupted  :: !(IORef Bool)             -- ^ Interrupt flag
-  , esQuickMode    :: !(IORef Bool)             -- ^ Quick mode flag (runtime toggle)
+  , esQuickMode    :: !(IORef Bool)             -- ^ Quick mode flag (\_q toggle)
+  , esTimeCritical :: !(IORef Bool)             -- ^ Time-critical section (\t) - blocks mouse events
   , esScriptStart  :: !(IORef Integer)          -- ^ Script start time in ms (for \__w)
   , esCharCount    :: !(IORef Int)              -- ^ Character count for talk animations
   , esNoUserBreak  :: !(IORef Bool)             -- ^ User break disabled flag
@@ -209,6 +215,7 @@ newInterpreterState config callbacks = do
   scopeRef <- newIORef 0
   interruptRef <- newIORef False
   quickRef <- newIORef (ecQuickMode config)
+  timeCriticalRef <- newIORef False
   now <- getCurrentTime
   let startMs = round (utcTimeToPOSIXSeconds now * 1000)
   startRef <- newIORef startMs
@@ -222,6 +229,7 @@ newInterpreterState config callbacks = do
     , esCurrentScope = scopeRef
     , esInterrupted  = interruptRef
     , esQuickMode    = quickRef
+    , esTimeCritical = timeCriticalRef
     , esScriptStart  = startRef
     , esCharCount    = charCountRef
     , esNoUserBreak  = noBreakRef
@@ -352,7 +360,9 @@ handleSurface :: InterpreterState -> SurfaceCmd -> IO ()
 handleSurface state surfaceCmd = do
   scope <- readIORef (esCurrentScope state)
   case surfaceCmd of
-    SurfaceChange surfaceId -> cbSetSurface (esCallbacks state) scope surfaceId
+    SurfaceChange surfaceId
+      | surfaceId < 0 -> cbHideCharacter (esCallbacks state) scope  -- \s[-1] hides character
+      | otherwise     -> cbSetSurface (esCallbacks state) scope surfaceId
 
     SurfaceChangeAlias _alias ->
       -- Alias lookup should be done at a higher level
@@ -436,7 +446,7 @@ handleBalloon state balloonCmd = do
       -- etc.
       let
           balloonId = n `div` 2
-        in 
+        in
           cbSetBalloon (esCallbacks state) scope balloonId
 
     BalloonHide -> cbHideBalloon (esCallbacks state) scope
@@ -533,13 +543,16 @@ handleWait state waitCmd = case waitCmd of
   -- \_q - Wait for click, no clear (also quick session)
   ClickWaitNoClear -> cbOnClickWait (esCallbacks state)
 
-  -- \t - Start/end time-critical section
-  TimeCriticalStart -> writeIORef (esQuickMode state) True
+  -- \t - Time-critical section (NOT a toggle, cannot be disabled)
+  -- Blocks mouse events until \e or script break
+  TimeCriticalStart -> do
+    writeIORef (esTimeCritical state) True
+    cbSetTimeCritical (esCallbacks state) True
 
-  TimeCriticalEnd -> writeIORef (esQuickMode state) (ecQuickMode (esConfig state))
+  TimeCriticalEnd -> return ()  -- \t cannot be disabled by another \t
 
-  -- Quick session start/end
-  QuickStart -> writeIORef (esQuickMode state) True
+  -- \_q - Toggle quick session (text displays immediately)
+  QuickStart -> modifyIORef' (esQuickMode state) not
   QuickEnd -> writeIORef (esQuickMode state) (ecQuickMode (esConfig state))
 
   -- Sync commands

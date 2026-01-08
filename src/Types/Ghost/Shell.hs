@@ -9,6 +9,7 @@ module Types.Ghost.Shell
   , emptyShellDescript
   , readShellDescript
   , getCharSettings
+  , getDefinedScopes
   , updateCharSettings
     -- * Character settings
   , CharacterSettings(..)
@@ -89,6 +90,7 @@ data CharacterSettings
   , csBalloonAlignment :: Maybe Text    -- ^ Balloon alignment (none/left/right)
   , csBalloonDontMove :: Maybe Bool    -- ^ Restrict balloon movement
   , csBalloonSyncScale :: Maybe Bool    -- ^ Sync balloon scale with ghost
+  , csSerikoDefaultSurface :: Maybe Int -- ^ Default surface ID (char{N}.seriko.defaultsurface)
   , csBindGroups :: Map Int BindGroup   -- ^ Costume bindings by animation ID
   , csBindOptions :: [ BindOption ]      -- ^ Category options
   , csMenuItems :: [ MenuItem ]        -- ^ Menu items (by order)
@@ -102,28 +104,29 @@ data CharacterSettings
 emptyCharacterSettings :: CharacterSettings
 emptyCharacterSettings
   = CharacterSettings
-  { csName = Nothing
-  , csName2 = Nothing
+  { csName                    = Nothing
+  , csName2                   = Nothing
   , csSerikoAlignmentToDesktop = Nothing
-  , csDefaultX = Nothing
-  , csDefaultY = Nothing
-  , csDefaultLeft = Nothing
-  , csDefaultTop = Nothing
-  , csBalloonOffsetX = Nothing
-  , csBalloonOffsetY = Nothing
-  , csBalloonOffsetXL = Nothing
-  , csBalloonOffsetXR = Nothing
-  , csBalloonOffsetYL = Nothing
-  , csBalloonOffsetYR = Nothing
-  , csBalloonAlignment = Nothing
-  , csBalloonDontMove = Nothing
-  , csBalloonSyncScale = Nothing
-  , csBindGroups = Map.empty
-  , csBindOptions = []
-  , csMenuItems = []
-  , csMenuItemsEx = []
-  , csMenu = Nothing
-  , csSurfaceLife = Nothing
+  , csDefaultX                = Nothing
+  , csDefaultY                = Nothing
+  , csDefaultLeft             = Nothing
+  , csDefaultTop              = Nothing
+  , csBalloonOffsetX          = Nothing
+  , csBalloonOffsetY          = Nothing
+  , csBalloonOffsetXL         = Nothing
+  , csBalloonOffsetXR         = Nothing
+  , csBalloonOffsetYL         = Nothing
+  , csBalloonOffsetYR         = Nothing
+  , csBalloonAlignment        = Nothing
+  , csBalloonDontMove         = Nothing
+  , csBalloonSyncScale        = Nothing
+  , csSerikoDefaultSurface    = Nothing
+  , csBindGroups              = Map.empty
+  , csBindOptions             = []
+  , csMenuItems               = []
+  , csMenuItemsEx             = []
+  , csMenu                    = Nothing
+  , csSurfaceLife             = Nothing
   }
 
 data ShellDescript
@@ -263,6 +266,10 @@ emptyShellDescript
 getCharSettings :: Int -> ShellDescript -> CharacterSettings
 getCharSettings idx desc
   = Map.findWithDefault emptyCharacterSettings idx (shellDescriptCharacters desc)
+
+-- | Get all defined character scope indices from shell config
+getDefinedScopes :: ShellDescript -> [Int]
+getDefinedScopes desc = Map.keys (shellDescriptCharacters desc)
 
 -- | Update character settings for a scope index
 updateCharSettings
@@ -445,6 +452,8 @@ readShellDescript path = do
         -> updateCharSettings idx (\cs -> cs { csBalloonDontMove = readMaybeBool val }) desc
       "balloon.syncscale"
         -> updateCharSettings idx (\cs -> cs { csBalloonSyncScale = readMaybeBool val }) desc
+      "seriko.defaultsurface"
+        -> updateCharSettings idx (\cs -> cs { csSerikoDefaultSurface = readMaybeInt val }) desc
       "menu" -> updateCharSettings idx (\cs -> cs { csMenu = Just val }) desc
       "surface_life"
         -> updateCharSettings idx (\cs -> cs { csSurfaceLife = readMaybeInt val }) desc

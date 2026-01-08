@@ -66,7 +66,7 @@ import           Data.GI.Base                    ( AttrOp((:=))
 import           Data.GI.Base.GValue             ( get_object )
 import           Data.IORef                      ( newIORef, readIORef, writeIORef )
 import           Data.Int                        ( Int32 )
-import           Data.List                       ( sort )
+import           Data.List                       ( nub, sort )
 import qualified Data.Map.Strict                 as Map
 import           Data.Maybe                      ( fromMaybe, listToMaybe )
 import qualified Data.Set                        as Set
@@ -132,6 +132,7 @@ import           Kokage.Character                ( CharacterState(..)
                                                  , createCharacter
                                                  , getCharacterBalloon
                                                  , getCharacterSurface
+                                                 , hideCharacter
                                                  , initBalloonPosition
                                                  , setCharacterPosition
                                                  , setCharacterSurface
@@ -223,6 +224,7 @@ import           Types.Ghost                     ( CharacterSettings(..)
                                                  , SurfaceDefinition(..)
                                                  , Surfaces(..)
                                                  , getCharSettings
+                                                 , getDefinedScopes
                                                  , ghostShells
                                                  , loadGhost
                                                  , shellDescriptName
@@ -781,16 +783,25 @@ runGtkApp
 
   -- Connect activate signal
   _ <- on app #activate $ do
-    -- Create characters using the Character module
-    -- Scope 0 = Sakura, Scope 1 = Kero
-    -- Pass balloon directory so each character loads the correct balloon surface
-    mSakura <- createCharacter app shell ghostDesc 0 mBalloonDir
-    mKero <- createCharacter app shell ghostDesc 1 mBalloonDir
+    -- Create all characters defined in shell config
+    -- Scope 0 = Sakura, Scope 1 = Kero, Scope 2+ = extra characters
+    let shellDesc = shellDescript shell
+        -- Get all defined scopes, ensure 0 and 1 are always included
+        definedScopes = nub $ [0, 1] ++ getDefinedScopes shellDesc
+
+    -- Create each character
+    putStrLn $ "[Startup] Defined scopes: " <> show definedScopes
+    characterPairs <- forM definedScopes $ \scopeId -> do
+      mChar <- createCharacter app shell ghostDesc scopeId mBalloonDir
+      case mChar of
+        Just _  -> putStrLn $ "[Startup] Created character for scope " <> show scopeId
+        Nothing -> putStrLn $ "[Startup] Failed to create character for scope " <> show scopeId
+      return (scopeId, mChar)
 
     -- Build character map from successfully created characters
     let characters
           = Map.fromList
-          $ maybe [] (\c -> [ ( 0, c ) ]) mSakura ++ maybe [] (\c -> [ ( 1, c ) ]) mKero
+          $ [(scopeId, c) | (scopeId, Just c) <- characterPairs]
 
     when (Map.null characters) $ do
       putStrLn "Error: No characters could be created"
@@ -822,7 +833,24 @@ runGtkApp
         changeSurface scope newSurfaceId = do
           case Map.lookup scope characters of
             Nothing -> putStrLn $ "[Surface] Scope " <> show scope <> " not found"
-            Just cs -> setCharacterSurface cs shell newSurfaceId
+            Just cs -> do
+              setCharacterSurface cs shell newSurfaceId
+              -- For extra characters (scope >= 2), show after surface is set
+              -- Use idleAdd to ensure this runs after setCharacterSurface's idleAdd
+              when (scope >= 2) $ void $ GLib.idleAdd GLib.PRIORITY_DEFAULT_IDLE $ do
+                visible <- readIORef (csVisible cs)
+                unless visible $ do
+                  -- Recalculate position with actual surface size
+                  mScreenGeom <- getScreenGeometry
+                  case mScreenGeom of
+                    Just screenGeom -> do
+                      surfSize <- readIORef (csSurfaceSize cs)
+                      let pos = calcInitialPosition ghostDesc scope surfSize screenGeom
+                      putStrLn $ "[Position] Repositioning char" <> show scope <> " to " <> show pos
+                      uncurry (setCharacterPosition cs) pos
+                    Nothing -> return ()
+                  showCharacter cs
+                return False
 
     let hideBalloonIfNoChoices :: IO ()
         hideBalloonIfNoChoices = do
@@ -866,7 +894,13 @@ runGtkApp
           , cbSetScope = \scope -> do
               writeIORef currentScopeRef scope
               putStrLn $ "[Scope] Switched to scope " <> show scope
+              -- Don't show extra characters here - wait for \s[n] to set a valid surface
           , cbSetSurface = changeSurface
+          , cbHideCharacter = \scope -> do
+              putStrLn $ "[Character] Hiding scope " <> show scope
+              case Map.lookup scope characters of
+                Just cs -> hideCharacter cs
+                Nothing -> putStrLn $ "[Character] Scope " <> show scope <> " not found"
           , cbSetBalloon = \scope balloonId -> do
               putStrLn $ "[Balloon] Set balloon " <> show balloonId <> " for scope " <> show scope
               case Map.lookup scope characters of
@@ -1282,6 +1316,9 @@ runGtkApp
           join $ readIORef currentScriptInterruptRef
           -- Cancel all surface life timers when new script starts
           forM_ (Map.elems characters) cancelSurfaceLifeTimer
+          -- Hide extra characters (scope >= 2) at script start
+          forM_ (Map.toList characters) $ \(scopeId, cs) ->
+            when (scopeId >= 2) $ hideCharacter cs
           -- Reset scope to sakura (0) at start of each new script
           writeIORef currentScopeRef 0
           -- Parse the SakuraScript
@@ -1655,8 +1692,9 @@ runGtkApp
       Nothing
        -> putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
 
-    -- Show all characters and set always-on-top
-    forM_ (Map.elems characters) showCharacter
+    -- Show only main characters (scope 0 and 1), keep extra characters (scope >= 2) hidden
+    forM_ (Map.toList characters) $ \(scopeId, cs) ->
+      when (scopeId < 2) $ showCharacter cs
 
     -- Position balloons relative to their characters
     -- This needs a small delay to ensure windows are realized
