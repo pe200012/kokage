@@ -186,6 +186,7 @@ data BalloonState
   , bsChoiceRects    :: !(IORef [(BalloonChoice, Double, Double, Double, Double)]) -- ^ Choice hit boxes (choice, x, y, w, h)
   , bsBalloonDir     :: !(IORef (Maybe FilePath))                                -- ^ Balloon directory path for surface loading
   , bsCharType       :: !(IORef T.Text)                                          -- ^ Character type: "s" (sakura), "k" (kero), "c" (communicate)
+  , bsBalloonId      :: !(IORef Int)                                             -- ^ Current balloon ID: 0=default, 1=choice surface, etc.
   , bsPosition       :: !(IORef (Int, Int))                                      -- ^ Current balloon position (x, y)
   , bsAutoScroll     :: !(IORef Bool)                                            -- ^ Whether to auto-scroll when text overflows (default: True)
   , bsDescript       :: !(IORef (Maybe BalloonDescript))                         -- ^ Balloon descript.txt settings

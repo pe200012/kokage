@@ -129,6 +129,7 @@ import           Kokage.Balloon                  ( BalloonChoice(..)
                                                  , setFontSub
                                                  , setFontSup
                                                  , resetFont
+                                                 , setBalloonId
                                                  , showBalloon
                                                  )
 import           Kokage.Character                ( CharacterState(..)
@@ -851,8 +852,9 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           , cbSetSurface   = changeSurface
           , cbSetBalloon   = \scope balloonId -> do
               putStrLn $ "[Balloon] Set balloon " <> show balloonId <> " for scope " <> show scope
-              -- Balloon style switching would require loading different balloon surfaces
-              -- For now, log the request - full implementation needs balloon directory access
+              case Map.lookup scope characters of
+                Just cs -> setBalloonId (getCharacterBalloon cs) balloonId
+                Nothing -> putStrLn $ "[Balloon] Scope " <> show scope <> " not found"
           , cbHideBalloon  = \scope -> do
               case Map.lookup scope characters of
                 Just cs -> hideBalloon (getCharacterBalloon cs)
@@ -1241,14 +1243,19 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
         displayScript (Just scriptText) = do
           -- Interrupt any currently running script first
           join $ readIORef currentScriptInterruptRef
+          -- Cancel all surface life timers when new script starts
+          forM_ (Map.elems characters) cancelSurfaceLifeTimer
           -- Reset scope to sakura (0) at start of each new script
           writeIORef currentScopeRef 0
           -- Parse the SakuraScript
           case parseScript scriptText of
             Left err     -> putStrLn $ "[Balloon] Parse error: " <> show err
             Right script -> do
-              -- Clear all balloons before new script
-              forM_ (Map.elems characters) $ \cs -> clearBalloon (getCharacterBalloon cs)
+              -- Clear all balloons and reset to default balloon surface before new script
+              forM_ (Map.elems characters) $ \cs -> do
+                let balloon = getCharacterBalloon cs
+                clearBalloon balloon
+                setBalloonId balloon 0  -- Reset to default balloon surface
               -- Execute script asynchronously with animation
               interruptAction
                 <- executeScriptAsync defaultInterpreterConfig interpreterCallbacks script

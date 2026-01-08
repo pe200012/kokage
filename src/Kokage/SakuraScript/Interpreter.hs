@@ -422,8 +422,13 @@ handleBalloon :: InterpreterState -> BalloonCmd -> IO ()
 handleBalloon state balloonCmd = do
   scope <- readIORef (esCurrentScope state)
   case balloonCmd of
-    BalloonChange balloonId ->
-      cbSetBalloon (esCallbacks state) scope balloonId
+    BalloonChange n ->
+      -- Balloon ID calculation: balloonId = n / 2
+      -- \b[0], \b[1] -> balloonId = 0 (default)
+      -- \b[2], \b[3] -> balloonId = 1 (choice surface)
+      -- etc.
+      let balloonId = n `div` 2
+      in  cbSetBalloon (esCallbacks state) scope balloonId
 
     BalloonHide ->
       cbHideBalloon (esCallbacks state) scope

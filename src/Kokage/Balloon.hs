@@ -25,6 +25,7 @@ module Kokage.Balloon
   , moveCursor
   , setBalloonSurface
   , loadAndSetBalloonSurface
+  , setBalloonId
   , setBalloonPosition
   , updateBalloonPosition
   , updateBalloonPositionWithChar
@@ -271,6 +272,7 @@ data BalloonState
   , bsChoiceRects   :: !(IORef [(BalloonChoice, Double, Double, Double, Double)]) -- ^ Choice hit boxes (choice, x, y, w, h)
   , bsBalloonDir    :: !(IORef (Maybe FilePath))  -- ^ Balloon directory path for surface loading
   , bsCharType      :: !(IORef T.Text)            -- ^ Character type: "s" (sakura), "k" (kero), "c" (communicate)
+  , bsBalloonId     :: !(IORef Int)               -- ^ Current balloon ID: 0=default, 1=choice surface, etc.
   , bsPosition      :: !(IORef (Int, Int))        -- ^ Current balloon position (x, y)
   , bsAutoScroll    :: !(IORef Bool)              -- ^ Whether to auto-scroll when text overflows (default: True)
   , bsDescript      :: !(IORef (Maybe BalloonDescript))  -- ^ Balloon descript.txt settings
@@ -299,6 +301,7 @@ newBalloonStateWithConfig app config = do
   choiceRectsRef <- newIORef []
   balloonDirRef <- newIORef Nothing
   charTypeRef <- newIORef "s"  -- Default to sakura
+  balloonIdRef <- newIORef 0   -- Default balloon ID: 0=default, 1=choice surface
   positionRef <- newIORef (bcOriginX config, bcOriginY config) -- Initial balloon position
   autoScrollRef <- newIORef True  -- Auto-scroll enabled by default
   descriptRef <- newIORef Nothing  -- Balloon descript (loaded later)
@@ -402,6 +405,7 @@ newBalloonStateWithConfig app config = do
     , bsChoiceRects    = choiceRectsRef
     , bsBalloonDir     = balloonDirRef
     , bsCharType       = charTypeRef
+    , bsBalloonId      = balloonIdRef
     , bsPosition       = positionRef
         , bsAutoScroll = autoScrollRef
         , bsDescript = descriptRef
@@ -1108,6 +1112,29 @@ loadAndSetBalloonSurface bs balloonDir charType index = do
       putStrLn $ "[Balloon] Failed to load: balloon" <> T.unpack charType <> show index
       return False
 
+-- | Set the balloon ID and load the corresponding surface.
+-- Balloon ID determines which surface set to use:
+--   0 = default balloon (surface 0,1)
+--   1 = choice/selection balloon (surface 2,3)
+--   etc.
+-- Surface index is calculated as: balloonId * 2 + direction
+-- where direction is 0 (left) or 1 (right)
+setBalloonId :: BalloonState -> Int -> IO ()
+setBalloonId bs newBalloonId = do
+  currentId <- readIORef (bsBalloonId bs)
+  when (currentId /= newBalloonId) $ do
+    writeIORef (bsBalloonId bs) newBalloonId
+    -- Reload surface with new balloon ID
+    mBalloonDir <- readIORef (bsBalloonDir bs)
+    case mBalloonDir of
+      Nothing -> putStrLn $ "[Balloon] Cannot set balloon ID " <> show newBalloonId <> ": no balloon dir"
+      Just balloonDir -> do
+        charType <- readIORef (bsCharType bs)
+        direction <- readIORef (bsDirection bs)
+        let surfaceIndex = newBalloonId * 2 + direction
+        _ <- loadAndSetBalloonSurface bs balloonDir charType surfaceIndex
+        putStrLn $ "[Balloon] Set balloon ID to " <> show newBalloonId <> " (surface index " <> show surfaceIndex <> ")"
+
 -- | Convert a GdkPixbuf to a Cairo ImageSurface.
 -- GdkPixbuf stores data as RGB(A) with 8 bits per channel.
 -- Cairo ARGB32 format expects pre-multiplied ARGB in native byte order.
@@ -1231,14 +1258,16 @@ updateBalloonPositionWithChar bs dx dy charX charW = do
       -- Switch surface if direction changed
       when (newDir /= currentDir) $ do
         writeIORef (bsDirection bs) newDir
-        -- Surface 0 = balloon on left (balloons0.png)
-        -- Surface 1 = balloon on right (balloons1.png)
+        -- Surface index = balloonId * 2 + direction
+        -- direction: 0 = left, 1 = right
         mBalloonDir <- readIORef (bsBalloonDir bs)
         charType <- readIORef (bsCharType bs)
+        balloonId <- readIORef (bsBalloonId bs)
+        let surfaceIndex = balloonId * 2 + newDir
         case mBalloonDir of
           Just balloonDir -> do
-            _ <- loadAndSetBalloonSurface bs balloonDir charType newDir
-            putStrLn $ "[Balloon] Direction changed to: " <> show newDir
+            _ <- loadAndSetBalloonSurface bs balloonDir charType surfaceIndex
+            putStrLn $ "[Balloon] Direction changed to: " <> show newDir <> " (surface index " <> show surfaceIndex <> ")"
           Nothing -> pure ()
 
       -- Move the window using unified Platform API
