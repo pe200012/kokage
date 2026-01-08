@@ -140,6 +140,8 @@ import           Kokage.Character                ( CharacterState(..)
                                                  , showCharacter
                                                  , tickCharacter
                                                  , updateBalloonPosition
+                                                 , startSurfaceLifeTimer
+                                                 , cancelSurfaceLifeTimer
                                                  )
 import           Kokage.Collision
 import           Kokage.Event                    ( BalloonMoveMode(..)
@@ -211,6 +213,7 @@ import           System.Directory                ( XdgDirectory(..)
 import           System.FilePath                 ( (</>), takeExtension )
 
 import           Types.Ghost                     ( CollisionRegion(..)
+                                                 , CharacterSettings(..)
                                                  , DrawMethod(..)
                                                  , Element(..)
                                                  , Ghost(..)
@@ -222,6 +225,7 @@ import           Types.Ghost                     ( CollisionRegion(..)
                                                  , ghostShells
                                                  , loadGhost
                                                  , shellDescriptName
+                                                 , getCharSettings
                                                  )
 import           Types.Shiori                    ( ShioriEvent(..) )
 
@@ -792,12 +796,30 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
           scope <- readIORef currentScopeRef
           return $ getBalloon scope
 
+    -- IORef to hold surface restore callback (filled after displayScript is defined)
+    surfaceRestoreCallbackRef <- newIORef (return () :: IO ())
+
     -- Surface change function using Character module
     let changeSurface :: Int -> Int -> IO ()
         changeSurface scope newSurfaceId = do
           case Map.lookup scope characters of
             Nothing -> putStrLn $ "[Surface] Scope " <> show scope <> " not found"
-            Just cs -> setCharacterSurface cs shell newSurfaceId
+            Just cs -> do
+              setCharacterSurface cs shell newSurfaceId
+              -- Handle surface_life timer for OnSurfaceRestore
+              let shellDesc = shellDescript shell
+                  charSettings = getCharSettings scope shellDesc
+                  defaultSurfId = csDefaultSurface cs
+              case csSurfaceLife charSettings of
+                Nothing -> return ()  -- No surface_life configured
+                Just surfaceLifeMs
+                  | newSurfaceId == defaultSurfId -> do
+                      -- Returning to default surface, cancel any timer
+                      cancelSurfaceLifeTimer cs
+                  | otherwise -> do
+                      -- Non-default surface, start timer
+                      onSurfaceRestore <- readIORef surfaceRestoreCallbackRef
+                      startSurfaceLifeTimer cs (fromIntegral surfaceLifeMs) onSurfaceRestore
 
     -- Helper to hide all balloons if none have choices
     let hideBalloonIfNoChoices :: IO ()
@@ -1232,6 +1254,10 @@ runGtkApp ghost shell initialSurfaceId mShiori ghostPath' firstBoot vanishedCoun
                 <- executeScriptAsync defaultInterpreterConfig interpreterCallbacks script
               -- Save the interrupt function for this script
               writeIORef currentScriptInterruptRef interruptAction
+
+    -- Fill in the surface restore callback now that displayScript is defined
+    writeIORef surfaceRestoreCallbackRef $
+      sendShioriWithCallback mShioriConfig OnSurfaceRestore Map.empty displayScript
 
     -- Set up choice callback on sakura's balloon
     case Map.lookup 0 characters of

@@ -30,6 +30,9 @@ module Kokage.Character
     -- * Utilities
   , getDefaultSurfaceId
   , getBalloonOffset
+    -- * Surface Life Timer
+  , startSurfaceLifeTimer
+  , cancelSurfaceLifeTimer
   ) where
 
 import           Control.Monad              ( void, when )
@@ -80,6 +83,7 @@ data CharacterState = CharacterState
   , csScopeId        :: !Int                    -- ^ Scope index (0=sakura, 1=kero, etc.)
   , csLayerShell     :: !(IORef Bool)           -- ^ Whether layer-shell is active
   , csAnimState      :: !AnimationState         -- ^ Animation state manager
+  , csSurfaceLifeTimer :: !(IORef (Maybe Word32)) -- ^ Active surface_life timer source ID
   }
 
 -- | Map from scope ID to character state.
@@ -180,6 +184,9 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
           layerShellSuccess <- initPlatformWindow window
           writeIORef layerShellRef layerShellSuccess
 
+          -- Initialize surface life timer ref
+          surfaceLifeTimerRef <- newIORef Nothing
+
           let charState = CharacterState
                 { csWindow = window
                 , csPicture = picture
@@ -193,6 +200,7 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
                 , csScopeId = scopeId
                 , csLayerShell = layerShellRef
                 , csAnimState = animState
+                , csSurfaceLifeTimer = surfaceLifeTimerRef
                 }
 
           putStrLn $ "[Character " <> show scopeId <> "] Created: "
@@ -576,3 +584,26 @@ getBalloonOffset shell scopeId surfId dir =
           Nothing -> maybe 0 id (snd genericOffset)
 
   in (resolveX, resolveY)
+
+-- | Start a surface life timer for OnSurfaceRestore event.
+-- After the specified delay, the callback will be invoked to restore the default surface.
+-- Any existing timer is cancelled before starting a new one.
+startSurfaceLifeTimer :: CharacterState -> Word32 -> IO () -> IO ()
+startSurfaceLifeTimer cs delayMs callback = do
+  -- Cancel any existing timer first
+  cancelSurfaceLifeTimer cs
+  -- Start new timer
+  sourceId <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT delayMs $ do
+    callback
+    return False  -- One-shot timer
+  writeIORef (csSurfaceLifeTimer cs) (Just sourceId)
+
+-- | Cancel the surface life timer if one is active.
+cancelSurfaceLifeTimer :: CharacterState -> IO ()
+cancelSurfaceLifeTimer cs = do
+  mSourceId <- readIORef (csSurfaceLifeTimer cs)
+  case mSourceId of
+    Nothing -> return ()
+    Just sourceId -> do
+      _ <- GLib.sourceRemove sourceId
+      writeIORef (csSurfaceLifeTimer cs) Nothing

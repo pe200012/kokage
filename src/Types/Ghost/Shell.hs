@@ -95,6 +95,7 @@ data CharacterSettings
   , csMenuItems :: [ MenuItem ]        -- ^ Menu items (by order)
   , csMenuItemsEx :: [ MenuItemEx ]      -- ^ Extended menu items with hierarchy
   , csMenu :: Maybe Text          -- ^ Menu display (auto/hidden)
+  , csSurfaceLife :: Maybe Int    -- ^ Surface life in milliseconds (for OnSurfaceRestore)
   }
   deriving ( Show, Eq )
 
@@ -123,6 +124,7 @@ emptyCharacterSettings
   , csMenuItems = []
   , csMenuItemsEx = []
   , csMenu = Nothing
+  , csSurfaceLife = Nothing
   }
 
 data ShellDescript
@@ -445,6 +447,7 @@ readShellDescript path = do
       "balloon.syncscale"
         -> updateCharSettings idx (\cs -> cs { csBalloonSyncScale = readMaybeBool val }) desc
       "menu" -> updateCharSettings idx (\cs -> cs { csMenu = Just val }) desc
+      "surface_life" -> updateCharSettings idx (\cs -> cs { csSurfaceLife = readMaybeInt val }) desc
 
       -- Bind group settings: bindgroup<N>.name, bindgroup<N>.default, bindgroup<N>.addid
       _
