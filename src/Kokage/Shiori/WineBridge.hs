@@ -36,6 +36,7 @@ module Kokage.Shiori.WineBridge
   , unloadShiori
   , sendRequest
   , sendEvent
+  , sendNotify
     -- * Internal (exported for testing)
   , toWinePath
   ) where
@@ -76,6 +77,7 @@ import           Types.Shiori           ( ShioriEvent(..)
                                         , ShioriResponse(..)
                                         , emptyResponse
                                         , eventToId
+                                        , mkNotify
                                         , mkRequest
                                         , parseShioriResponseBS
                                         , serializeShioriRequestBS
@@ -296,6 +298,18 @@ sendEvent :: WineShiori
 sendEvent ws event refs = do
   let sender = wbcSenderName (wsConfig ws)
       req    = mkRequest sender (eventToId event) refs
+  sendRequest ws req
+
+-- | Send a SHIORI NOTIFY event (no response expected)
+-- Creates a NOTIFY request for the event with the given references
+-- NOTIFY events inform SHIORI of state changes but don't expect script responses
+sendNotify :: WineShiori
+           -> Text             -- ^ Event ID (e.g., "OnInitialize", "basewareversion")
+           -> Map.Map Int Text -- ^ Reference parameters
+           -> IO (Either String ShioriResponse)
+sendNotify ws eventId refs = do
+  let sender = wbcSenderName (wsConfig ws)
+      req    = mkNotify sender eventId refs
   sendRequest ws req
 
 --------------------------------------------------------------------------------

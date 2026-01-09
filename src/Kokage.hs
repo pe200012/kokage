@@ -73,6 +73,8 @@ import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as TIO
 import           Data.Time                       ( getCurrentTime
                                                 , getCurrentTimeZone
+                                                , timeZoneMinutes
+                                                , timeZoneSummerOnly
                                                 , utcToLocalTime
                                                 )
 
@@ -151,6 +153,7 @@ import           Kokage.Shiori.WineBridge        ( WineBridgeConfig(..)
                                                  , defaultWineBridgeConfig
                                                  , loadShiori
                                                  , sendEvent
+                                                 , sendNotify
                                                  , sendRequest
                                                  , startWineBridge
                                                  , stopWineBridge
@@ -181,6 +184,7 @@ import           Types.Ghost                     ( CharacterSettings(..)
                                                 , Shell(..)
                                                 , descriptKeroDefaultLeft
                                                 , descriptKeroDefaultTop
+                                                , descriptName
                                                 , descriptSakuraDefaultLeft
                                                 , descriptSakuraDefaultTop
                                                 , descriptShiori
@@ -554,7 +558,13 @@ kokageMain config = do
       -- Use the shiori path from ghost's descript.txt
       let ghostMasterPath = gPath </> "ghost" </> "master"
           shioriName      = descriptShiori (ghostDescript ghost)
+          ghostName       = descriptName (ghostDescript ghost)
       mShiori <- initializeShiori ghostMasterPath shioriName
+
+      -- Send boot NOTIFY sequence if SHIORI is available
+      case mShiori of
+        Just shiori -> sendBootNotifySequence shiori ghostName
+        Nothing     -> return ()
 
       -- Check if this is first boot (no HISTORY file)
       firstBoot <- isFirstBoot gPath
@@ -636,6 +646,87 @@ cleanupShiori (Just shiori) = do
   putStrLn "[SHIORI] Stopping bridge..."
   stopWineBridge shiori
   putStrLn "[SHIORI] Cleanup complete"
+
+-- | Send boot sequence NOTIFY events to SHIORI.
+-- These are informational events sent before OnBoot/OnFirstBoot.
+-- Per UKADOC and SSP behavior, the sequence is:
+--   1. OnInitialize
+--   2. ownerghostname
+--   3. basewareversion
+--   4. capability
+--   5. OnNotifyOSInfo
+--   6. OnNotifyInternationalInfo
+sendBootNotifySequence :: WineShiori -> T.Text -> IO ()
+sendBootNotifySequence shiori ghostName = do
+  putStrLn "[SHIORI] Sending boot NOTIFY sequence..."
+
+  -- 1. OnInitialize - signals SHIORI initialization complete
+  _ <- sendNotify shiori "OnInitialize" (Map.fromList [(0, "")])
+  putStrLn "[SHIORI] Sent OnInitialize"
+
+  -- 2. ownerghostname - the name of this ghost
+  _ <- sendNotify shiori "ownerghostname" (Map.fromList [(0, ghostName)])
+  putStrLn $ "[SHIORI] Sent ownerghostname: " <> T.unpack ghostName
+
+  -- 3. basewareversion - baseware version info
+  let version     = "0.1.0" :: T.Text
+      basewareName = "Kokage" :: T.Text
+      fullVersion = "0.1.0.0" :: T.Text
+  _ <- sendNotify shiori "basewareversion"
+    (Map.fromList [(0, version), (1, basewareName), (2, fullVersion)])
+  putStrLn "[SHIORI] Sent basewareversion"
+
+  -- 4. capability - list of supported features
+  -- For now, we support minimal capabilities
+  -- Full capability list matching SSP behavior
+  -- This helps identify which features are not yet implemented
+  let capabilities = Map.fromList
+        [ (0, "request.status" :: T.Text)
+        , (1, "request.securitylevel")
+        , (2, "request.baseid")
+        , (3, "request.sendertype")
+        , (4, "request.x-sstp-passthru")
+        , (5, "response.marker")
+        , (6, "response.markersend")
+        , (7, "response.errorlevel")
+        , (8, "response.errordescription")
+        , (9, "response.balloonoffset")
+        , (10, "response.age")
+        , (11, "response.x-sstp-passthru")
+        , (12, "response.valuenotify")
+        , (13, "response.securitylevel")
+        , (14, "response.requestcharset")
+        ]
+  _ <- sendNotify shiori "capability" capabilities
+  putStrLn "[SHIORI] Sent capability (15 features)"
+
+  -- 5. OnNotifyOSInfo - OS information
+  -- Reference0: OS type and version
+  -- Reference1: CPU info (simplified)
+  -- Reference2: Memory info (simplified)
+  -- Reference3: Display count
+  let osInfo = "Linux" :: T.Text  -- Simplified for now
+  _ <- sendNotify shiori "OnNotifyOSInfo"
+    (Map.fromList [(0, osInfo), (1, ""), (2, ""), (3, "1")])
+  putStrLn "[SHIORI] Sent OnNotifyOSInfo"
+
+  -- 6. OnNotifyInternationalInfo - timezone and locale
+  -- Reference0: timezone offset in minutes from UTC
+  -- Reference1: daylight saving time flag (0 or 1)
+  -- Reference2: country code
+  -- Reference3: language code
+  tz <- getCurrentTimeZone
+  let tzOffsetMins = negate $ timeZoneMinutes tz  -- SHIORI expects negated offset
+  _ <- sendNotify shiori "OnNotifyInternationalInfo"
+    (Map.fromList
+      [ (0, T.pack $ show tzOffsetMins)
+      , (1, if timeZoneSummerOnly tz then "1" else "0")
+      , (2, "")  -- Country code - would need locale detection
+      , (3, "")  -- Language code - would need locale detection
+      ])
+  putStrLn "[SHIORI] Sent OnNotifyInternationalInfo"
+
+  putStrLn "[SHIORI] Boot NOTIFY sequence complete"
 
 -- | Run the GTK application with the given shell.
 -- The shell contains surface definitions for dynamic surface switching.
