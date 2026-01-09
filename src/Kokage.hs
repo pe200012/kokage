@@ -66,7 +66,7 @@ import           Data.GI.Base                    ( AttrOp((:=))
 import           Data.GI.Base.GValue             ( get_object )
 import           Data.IORef                      ( newIORef, readIORef, writeIORef )
 import           Data.Int                        ( Int32 )
-import           Data.List                       ( nub, sort )
+import           Data.List                       ( foldl', nub, sort )
 import qualified Data.Map.Strict                 as Map
 import           Data.Maybe                      ( fromMaybe, listToMaybe )
 import qualified Data.Text                       as T
@@ -85,6 +85,8 @@ import qualified GI.Gdk                          as Gdk
 import qualified GI.GdkPixbuf                    as Pixbuf
 import qualified GI.Gio                          as Gio
 import qualified GI.Gtk                          as Gtk
+import qualified GI.Pango                        as Pango
+import qualified GI.PangoCairo                   as PangoCairo
 
 import           Kokage.Balloon                  ( BalloonChoice(..)
                                                 , bsDrawArea
@@ -176,7 +178,8 @@ import           System.Directory                ( XdgDirectory(..)
                                                  , getXdgDirectory
                                                  , listDirectory
                                                  )
-import           System.FilePath                 ( (</>), takeExtension )
+import           System.Environment              ( lookupEnv )
+import           System.FilePath                 ( (</>), takeBaseName, takeExtension )
 
 import           Types.Ghost                     ( CharacterSettings(..)
                                                 , Ghost(..)
@@ -184,9 +187,13 @@ import           Types.Ghost                     ( CharacterSettings(..)
                                                 , Shell(..)
                                                 , descriptKeroDefaultLeft
                                                 , descriptKeroDefaultTop
+                                                , descriptKeroName
+                                                , descriptKeroSerikoDefaultSurface
                                                 , descriptName
                                                 , descriptSakuraDefaultLeft
                                                 , descriptSakuraDefaultTop
+                                                , descriptSakuraName
+                                                , descriptSakuraSerikoDefaultSurface
                                                 , descriptShiori
                                                 , loadGhost
                                                 , shellDescriptName
@@ -558,13 +565,7 @@ kokageMain config = do
       -- Use the shiori path from ghost's descript.txt
       let ghostMasterPath = gPath </> "ghost" </> "master"
           shioriName      = descriptShiori (ghostDescript ghost)
-          ghostName       = descriptName (ghostDescript ghost)
       mShiori <- initializeShiori ghostMasterPath shioriName
-
-      -- Send boot NOTIFY sequence if SHIORI is available
-      case mShiori of
-        Just shiori -> sendBootNotifySequence shiori ghostName
-        Nothing     -> return ()
 
       -- Check if this is first boot (no HISTORY file)
       firstBoot <- isFirstBoot gPath
@@ -575,6 +576,20 @@ kokageMain config = do
 
       -- Find balloon directory for the ghost
       mBalloonDir <- findBalloonDir gPath (configBaseDir config)
+
+      -- Send boot NOTIFY sequence if SHIORI is available
+      case mShiori of
+        Just shiori -> do
+          let bootCtx = BootNotifyContext
+                { bncShiori     = shiori
+                , bncGhost      = ghost
+                , bncShell      = shell
+                , bncGhostPath  = gPath
+                , bncBalloonDir = mBalloonDir
+                , bncBaseDir    = configBaseDir config
+                }
+          sendBootNotifySequence bootCtx
+        Nothing     -> return ()
 
       -- Create Install.BaseDir from config's base directory
       let configDir  = unBaseDir (configBaseDir config)
@@ -649,26 +664,39 @@ cleanupShiori (Just shiori) = do
 
 -- | Send boot sequence NOTIFY events to SHIORI.
 -- These are informational events sent before OnBoot/OnFirstBoot.
--- Per UKADOC and SSP behavior, the sequence is:
---   1. OnInitialize
---   2. ownerghostname
---   3. basewareversion
---   4. capability
---   5. OnNotifyOSInfo
---   6. OnNotifyInternationalInfo
-sendBootNotifySequence :: WineShiori -> T.Text -> IO ()
-sendBootNotifySequence shiori ghostName = do
+-- Per UKADOC, the full sequence includes system info, installed items, and current state.
+data BootNotifyContext = BootNotifyContext
+  { bncShiori      :: !WineShiori
+  , bncGhost       :: !Ghost
+  , bncShell       :: !Shell
+  , bncGhostPath   :: !FilePath
+  , bncBalloonDir  :: !(Maybe FilePath)
+  , bncBaseDir     :: !BaseDir
+  }
+
+sendBootNotifySequence :: BootNotifyContext -> IO ()
+sendBootNotifySequence ctx = do
+  let shiori    = bncShiori ctx
+      ghost     = bncGhost ctx
+      shell     = bncShell ctx
+      ghostPath = bncGhostPath ctx
+      mBalloonDir = bncBalloonDir ctx
+      baseDir   = bncBaseDir ctx
+      ghostDesc = ghostDescript ghost
+      shellDesc = shellDescript shell
+      ghostName = descriptName ghostDesc
+      sakuraName = descriptSakuraName ghostDesc
+      keroName  = descriptKeroName ghostDesc
+      shellName = shellDescriptName shellDesc
+
   putStrLn "[SHIORI] Sending boot NOTIFY sequence..."
 
   -- 1. OnInitialize - signals SHIORI initialization complete
-  _ <- sendNotify shiori "OnInitialize" (Map.fromList [(0, "")])
+  -- Reference0: empty for normal boot, "reload" for reload
+  _ <- sendNotify shiori "OnInitialize" (Map.fromList [(0, "" :: T.Text)])
   putStrLn "[SHIORI] Sent OnInitialize"
 
-  -- 2. ownerghostname - the name of this ghost
-  _ <- sendNotify shiori "ownerghostname" (Map.fromList [(0, ghostName)])
-  putStrLn $ "[SHIORI] Sent ownerghostname: " <> T.unpack ghostName
-
-  -- 3. basewareversion - baseware version info
+  -- 2. basewareversion - baseware version info
   let version     = "0.1.0" :: T.Text
       basewareName = "Kokage" :: T.Text
       fullVersion = "0.1.0.0" :: T.Text
@@ -676,10 +704,17 @@ sendBootNotifySequence shiori ghostName = do
     (Map.fromList [(0, version), (1, basewareName), (2, fullVersion)])
   putStrLn "[SHIORI] Sent basewareversion"
 
-  -- 4. capability - list of supported features
-  -- For now, we support minimal capabilities
-  -- Full capability list matching SSP behavior
-  -- This helps identify which features are not yet implemented
+  -- 3. hwnd - window handle (Windows-specific, send 0 on Linux)
+  _ <- sendNotify shiori "hwnd" (Map.fromList [(0, "0" :: T.Text)])
+  putStrLn "[SHIORI] Sent hwnd"
+
+  -- 4. uniqueid - unique identifier for this ghost instance
+  -- Use ghost path hash as a simple unique ID
+  let uniqueId = T.pack $ show $ abs $ simpleHash ghostPath
+  _ <- sendNotify shiori "uniqueid" (Map.fromList [(0, uniqueId)])
+  putStrLn "[SHIORI] Sent uniqueid"
+
+  -- 5. capability - list of supported features (full SSP list)
   let capabilities = Map.fromList
         [ (0, "request.status" :: T.Text)
         , (1, "request.securitylevel")
@@ -700,33 +735,253 @@ sendBootNotifySequence shiori ghostName = do
   _ <- sendNotify shiori "capability" capabilities
   putStrLn "[SHIORI] Sent capability (15 features)"
 
-  -- 5. OnNotifyOSInfo - OS information
-  -- Reference0: OS type and version
-  -- Reference1: CPU info (simplified)
-  -- Reference2: Memory info (simplified)
-  -- Reference3: Display count
-  let osInfo = "Linux" :: T.Text  -- Simplified for now
+  -- 6. ownerghostname - the name of this ghost
+  _ <- sendNotify shiori "ownerghostname" (Map.fromList [(0, ghostName)])
+  putStrLn $ "[SHIORI] Sent ownerghostname: " <> T.unpack ghostName
+
+  -- 7. otherghostname - names of other running ghosts (not implemented, send empty)
+  _ <- sendNotify shiori "otherghostname" Map.empty
+  putStrLn "[SHIORI] Sent otherghostname (empty - single ghost mode)"
+
+  -- 8. installedghostname - list of all installed ghost names
+  installedGhosts <- scanGhosts baseDir
+  ghostNames <- forM installedGhosts $ \gp -> do
+    mG <- loadGhost gp
+    return $ maybe (T.pack $ takeBaseName gp) (descriptName . ghostDescript) mG
+  let installedGhostRefs = Map.fromList $ zip [0..] ghostNames
+  _ <- sendNotify shiori "installedghostname" installedGhostRefs
+  putStrLn $ "[SHIORI] Sent installedghostname (" <> show (length ghostNames) <> " ghosts)"
+
+  -- 9. installedshellname - list of shell names for current ghost
+  let shellNames = map (shellDescriptName . shellDescript) (ghostShells ghost)
+      installedShellRefs = Map.fromList $ zip [0..] shellNames
+  _ <- sendNotify shiori "installedshellname" installedShellRefs
+  putStrLn $ "[SHIORI] Sent installedshellname (" <> show (length shellNames) <> " shells)"
+
+  -- 10. installedballoonname - list of all installed balloon names
+  balloonNames <- listAvailableBalloonNames baseDir
+  let installedBalloonRefs = Map.fromList $ zip [0..] balloonNames
+  _ <- sendNotify shiori "installedballoonname" installedBalloonRefs
+  putStrLn $ "[SHIORI] Sent installedballoonname (" <> show (length balloonNames) <> " balloons)"
+
+  -- 11. installedheadlinename - list of headline names (not implemented yet)
+  _ <- sendNotify shiori "installedheadlinename" Map.empty
+  putStrLn "[SHIORI] Sent installedheadlinename (empty)"
+
+  -- 12. installedplugin - list of plugin names (not implemented yet)
+  _ <- sendNotify shiori "installedplugin" Map.empty
+  putStrLn "[SHIORI] Sent installedplugin (empty)"
+
+  -- 13. ghostpathlist - paths to all installed ghosts
+  let ghostPathRefs = Map.fromList $ zip [0..] (map T.pack installedGhosts)
+  _ <- sendNotify shiori "ghostpathlist" ghostPathRefs
+  putStrLn $ "[SHIORI] Sent ghostpathlist (" <> show (length installedGhosts) <> " paths)"
+
+  -- 14. balloonpathlist - paths to all installed balloons
+  balloonPaths <- listAvailableBalloonPaths baseDir
+  let balloonPathRefs = Map.fromList $ zip [0..] (map T.pack balloonPaths)
+  _ <- sendNotify shiori "balloonpathlist" balloonPathRefs
+  putStrLn $ "[SHIORI] Sent balloonpathlist (" <> show (length balloonPaths) <> " paths)"
+
+  -- 15. headlinepathlist (not implemented)
+  _ <- sendNotify shiori "headlinepathlist" Map.empty
+  putStrLn "[SHIORI] Sent headlinepathlist (empty)"
+
+  -- 16. pluginpathlist (not implemented)
+  _ <- sendNotify shiori "pluginpathlist" Map.empty
+  putStrLn "[SHIORI] Sent pluginpathlist (empty)"
+
+  -- 17. calendarskinpathlist (not implemented)
+  _ <- sendNotify shiori "calendarskinpathlist" Map.empty
+  putStrLn "[SHIORI] Sent calendarskinpathlist (empty)"
+
+  -- 18. calendarpluginpathlist (not implemented)
+  _ <- sendNotify shiori "calendarpluginpathlist" Map.empty
+  putStrLn "[SHIORI] Sent calendarpluginpathlist (empty)"
+
+  -- 19. rateofusegraph - usage statistics (not implemented)
+  _ <- sendNotify shiori "rateofusegraph" Map.empty
+  putStrLn "[SHIORI] Sent rateofusegraph (empty)"
+
+  -- 20. OnNotifySelfInfo - current ghost/shell/balloon info
+  let balloonName = maybe "" (T.pack . takeBaseName) mBalloonDir
+      balloonPath = maybe "" T.pack mBalloonDir
+  _ <- sendNotify shiori "OnNotifySelfInfo"
+    (Map.fromList
+      [ (0, ghostName)
+      , (1, sakuraName)
+      , (2, keroName)
+      , (3, T.pack ghostPath)
+      , (4, shellName)
+      , (5, T.pack $ shellPath shell)
+      , (6, balloonName)
+      , (7, balloonPath)
+      ])
+  putStrLn "[SHIORI] Sent OnNotifySelfInfo"
+
+  -- 21. OnNotifyBalloonInfo - current balloon dimensions
+  -- Reference0=name, Ref1=path, Ref2=sakura_w, Ref3=sakura_h, Ref4=kero_w, Ref5=kero_h
+  _ <- sendNotify shiori "OnNotifyBalloonInfo"
+    (Map.fromList
+      [ (0, balloonName)
+      , (1, balloonPath)
+      , (2, "200")  -- Default balloon width (would need actual measurement)
+      , (3, "150")  -- Default balloon height
+      , (4, "200")  -- Kero balloon width
+      , (5, "150")  -- Kero balloon height
+      ])
+  putStrLn "[SHIORI] Sent OnNotifyBalloonInfo"
+
+  -- 22. OnNotifyShellInfo - current shell info
+  -- Ref0=name, Ref1=path, Ref2=sakura_w, Ref3=sakura_h, Ref4=kero_w, Ref5=kero_h,
+  -- Ref6=author, Ref7=sakura_default_surface, Ref8=kero_default_surface
+  let sakuraDefaultSurf = descriptSakuraSerikoDefaultSurface ghostDesc
+      keroDefaultSurf = descriptKeroSerikoDefaultSurface ghostDesc
+  _ <- sendNotify shiori "OnNotifyShellInfo"
+    (Map.fromList
+      [ (0, shellName)
+      , (1, T.pack $ shellPath shell)
+      , (2, "200")  -- Sakura surface width (would need actual measurement)
+      , (3, "400")  -- Sakura surface height
+      , (4, "150")  -- Kero surface width
+      , (5, "300")  -- Kero surface height
+      , (6, "")     -- Shell author (from shell descript if available)
+      , (7, T.pack $ show sakuraDefaultSurf)
+      , (8, T.pack $ show keroDefaultSurf)
+      ])
+  putStrLn "[SHIORI] Sent OnNotifyShellInfo"
+
+  -- 23. OnNotifyDressupInfo - dressup/clothing info (not implemented)
+  _ <- sendNotify shiori "OnNotifyDressupInfo" Map.empty
+  putStrLn "[SHIORI] Sent OnNotifyDressupInfo (empty)"
+
+  -- 24. OnNotifyUserInfo - user information
+  -- Reference0=user name, Reference1=default charset
+  userName <- getEffectiveUserName
+  _ <- sendNotify shiori "OnNotifyUserInfo"
+    (Map.fromList [(0, T.pack userName), (1, "UTF-8")])
+  putStrLn "[SHIORI] Sent OnNotifyUserInfo"
+
+  -- 25. OnNotifyOSInfo - OS information
+  -- Ref0=OS type/version, Ref1=CPU info, Ref2=memory info, Ref3=display count
+  osInfo <- getOSInfo
   _ <- sendNotify shiori "OnNotifyOSInfo"
-    (Map.fromList [(0, osInfo), (1, ""), (2, ""), (3, "1")])
+    (Map.fromList
+      [ (0, osInfo)
+      , (1, "")  -- CPU info (complex to get portably)
+      , (2, "")  -- Memory info
+      , (3, "1") -- Display count
+      ])
   putStrLn "[SHIORI] Sent OnNotifyOSInfo"
 
-  -- 6. OnNotifyInternationalInfo - timezone and locale
-  -- Reference0: timezone offset in minutes from UTC
-  -- Reference1: daylight saving time flag (0 or 1)
-  -- Reference2: country code
-  -- Reference3: language code
+  -- 26. OnNotifyFontInfo - list of available system fonts
+  fontNames <- getSystemFontNames
+  let fontRefs = Map.fromList $ zip [0..] fontNames
+  _ <- sendNotify shiori "OnNotifyFontInfo" fontRefs
+  putStrLn $ "[SHIORI] Sent OnNotifyFontInfo (" <> show (length fontNames) <> " fonts)"
+
+  -- 27. OnNotifyInternationalInfo - timezone and locale
   tz <- getCurrentTimeZone
-  let tzOffsetMins = negate $ timeZoneMinutes tz  -- SHIORI expects negated offset
+  let tzOffsetMins = negate $ timeZoneMinutes tz
+  locale <- getLocaleInfo
   _ <- sendNotify shiori "OnNotifyInternationalInfo"
     (Map.fromList
       [ (0, T.pack $ show tzOffsetMins)
       , (1, if timeZoneSummerOnly tz then "1" else "0")
-      , (2, "")  -- Country code - would need locale detection
-      , (3, "")  -- Language code - would need locale detection
+      , (2, fst locale)  -- Country code
+      , (3, snd locale)  -- Language code
       ])
   putStrLn "[SHIORI] Sent OnNotifyInternationalInfo"
 
-  putStrLn "[SHIORI] Boot NOTIFY sequence complete"
+  putStrLn "[SHIORI] Boot NOTIFY sequence complete (27 events)"
+
+-- | Get OS information string.
+getOSInfo :: IO T.Text
+getOSInfo = do
+  -- Try to read /etc/os-release for Linux distro info
+  exists <- doesFileExist "/etc/os-release"
+  if exists
+    then do
+      content <- TIO.readFile "/etc/os-release"
+      let lines' = T.lines content
+          prettyName = listToMaybe
+            [ T.drop 13 (T.filter (/= '"') l)
+            | l <- lines'
+            , "PRETTY_NAME=" `T.isPrefixOf` l
+            ]
+      return $ fromMaybe "Linux" prettyName
+    else return "Linux"
+
+-- | Get effective user name.
+getEffectiveUserName :: IO String
+getEffectiveUserName = do
+  mUser <- lookupEnv "USER"
+  return $ fromMaybe "user" mUser
+
+-- | Get locale information (country code, language code).
+getLocaleInfo :: IO (T.Text, T.Text)
+getLocaleInfo = do
+  mLang <- lookupEnv "LANG"
+  case mLang of
+    Nothing -> return ("", "")
+    Just lang ->
+      -- Parse LANG format: "en_US.UTF-8" -> ("US", "en")
+      let langPart = takeWhile (/= '.') lang
+          parts = break (== '_') langPart
+      in case parts of
+        (langCode, '_':countryCode) -> return (T.pack countryCode, T.pack langCode)
+        (langCode, _) -> return ("", T.pack langCode)
+
+-- | Simple hash function for strings (DJB2 algorithm).
+simpleHash :: String -> Int
+simpleHash = foldl' (\h c -> 33 * h + fromEnum c) 5381
+
+-- | List available balloon names from base directory.
+listAvailableBalloonNames :: BaseDir -> IO [T.Text]
+listAvailableBalloonNames (BaseDir baseDirPath) = do
+  let balloonDir = baseDirPath </> "balloon"
+  exists <- doesDirectoryExist balloonDir
+  if not exists
+    then return []
+    else do
+      entries <- listDirectory balloonDir
+      let fullPaths = map (balloonDir </>) entries
+      validBalloons <- filterM isBalloonDir fullPaths
+      return $ map (T.pack . takeBaseName) validBalloons
+  where
+    isBalloonDir path = do
+      isDir <- doesDirectoryExist path
+      if not isDir
+        then return False
+        else doesFileExist (path </> "balloons0.png")
+
+-- | List available balloon paths from base directory.
+listAvailableBalloonPaths :: BaseDir -> IO [FilePath]
+listAvailableBalloonPaths (BaseDir baseDirPath) = do
+  let balloonDir = baseDirPath </> "balloon"
+  exists <- doesDirectoryExist balloonDir
+  if not exists
+    then return []
+    else do
+      entries <- listDirectory balloonDir
+      let fullPaths = map (balloonDir </>) entries
+      filterM isBalloonDir fullPaths
+  where
+    isBalloonDir path = do
+      isDir <- doesDirectoryExist path
+      if not isDir
+        then return False
+        else doesFileExist (path </> "balloons0.png")
+
+-- | Get list of system font family names using Pango.
+getSystemFontNames :: IO [T.Text]
+getSystemFontNames = do
+  -- Get the default Pango font map
+  fontMap <- PangoCairo.fontMapGetDefault
+  -- List all font families
+  families <- Pango.fontMapListFamilies fontMap
+  -- Get the name of each family
+  forM families Pango.fontFamilyGetName
 
 -- | Run the GTK application with the given shell.
 -- The shell contains surface definitions for dynamic surface switching.
