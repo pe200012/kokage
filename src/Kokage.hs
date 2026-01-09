@@ -829,7 +829,8 @@ runGtkApp
     surfaceRestoreCallbackRef <- newIORef (return () :: IO ())
 
     -- Time-critical mode: when True, mouse events are blocked (set by \t tag)
-    timeCriticalRef <- newIORef False
+    -- Using AddHandler for FRP integration instead of IORef
+    (timeCriticalHandler, fireTimeCritical) <- newAddHandler
 
     -- Surface change function using Character module
     let changeSurface :: Int -> Int -> IO ()
@@ -1297,9 +1298,11 @@ runGtkApp
                   return ""
             -- Completion callbacks
           , cbOnComplete = do
+              fireTimeCritical False  -- Reset time-critical on completion
               putStrLn "[Script] Execution complete"
               hideBalloonIfNoChoices
           , cbOnInterrupt = do
+              fireTimeCritical False  -- Reset time-critical on interrupt
               putStrLn "[Script] Execution interrupted"
               hideBalloonIfNoChoices
           , cbOnClickWait = do
@@ -1308,7 +1311,7 @@ runGtkApp
               putStrLn "[Script] Click wait triggered"
             -- Time-critical mode callback (blocks mouse events during \t sections)
           , cbSetTimeCritical = \enabled -> do
-              writeIORef timeCriticalRef enabled
+              fireTimeCritical enabled
               putStrLn $ "[Script] Time-critical mode: " <> show enabled
           }
 
@@ -1670,8 +1673,8 @@ runGtkApp
                 , ihLeftClick  = balloonLeftClickHandler
                 }
             , cncBalloonMoveMode = balloonMoveMode
-              -- Time-critical mode ref (blocks mouse events during \t sections)
-            , cncTimeCriticalRef = timeCriticalRef
+              -- Time-critical mode handler (blocks mouse events during \t sections)
+            , cncTimeCriticalHandler = timeCriticalHandler
             }
 
       -- Compile and activate unified character+balloon network

@@ -23,9 +23,8 @@ module Kokage.Event
   , handleClick
   ) where
 
-import           Control.Monad              ( unless, when )
+import           Control.Monad              ( when )
 
-import           Data.IORef                 ( readIORef )
 import qualified Data.Map.Strict            as Map
 import qualified Data.Text                  as T
 import           Data.Time.Clock            ( getCurrentTime )
@@ -46,6 +45,7 @@ import           Reactive.Banana            ( (<@)
                                             , filterE
                                             , stepper
                                             , unionWith
+                                            , whenE
                                             )
 import           Reactive.Banana.Frameworks ( MomentIO, fromAddHandler, reactimate )
 import           Reactive.Banana.GI.Gtk     ( signalE0R )
@@ -243,7 +243,11 @@ setupCharacterNetwork config = do
       handler         = cncScriptHandler config
       contextMenu     = cncContextMenu config
       motionTick      = cncMotionTick config
-      timeCriticalRef = cncTimeCriticalRef config
+      timeCriticalHandler = cncTimeCriticalHandler config
+
+  -- Create Behavior for time-critical state from AddHandler
+  eTimeCritical <- fromAddHandler timeCriticalHandler
+  bTimeCritical <- stepper False eTimeCritical
 
   closeE <- signalE0R window #closeRequest False
   reactimate $ sendShioriWithCallback mShiori OnClose Map.empty handler <$ closeE
@@ -295,6 +299,10 @@ setupCharacterNetwork config = do
   reactimate $ updateCursor <$> motionE
 
   -- Send OnMouseMove only on tick, only if motion was fresh
+  -- Filter by time-critical state at FRP level (not inside reactimate)
+  let notTimeCriticalB = not <$> bTimeCritical
+      filteredMotionE = whenE notTimeCriticalB sampledMotionE
+
   let handleSampledMotion ( mPos, wasFresh ) = case mPos of
         Nothing       -> return ()
         Just ( x, y ) -> when wasFresh $ do
@@ -312,12 +320,10 @@ setupCharacterNetwork config = do
                       , ( 4, crName cr )
                       , ( 5, T.pack $ show surfId )
                       ]
-              isTimeCritical <- readIORef timeCriticalRef
-              unless isTimeCritical $
-                sendShioriWithCallback mShiori OnMouseMove refs handler
+              sendShioriWithCallback mShiori OnMouseMove refs handler
             Nothing -> return ()
 
-  reactimate $ handleSampledMotion <$> sampledMotionE
+  reactimate $ handleSampledMotion <$> filteredMotionE
 
   dragStartB :: Behavior ( Double, Double ) <- stepper ( 0, 0 ) dragBeginE
 
@@ -342,14 +348,12 @@ setupCharacterNetwork config = do
   let singleHitE = handleClick collisions <$> singleClickE
       doubleHitE = handleClick collisions <$> doubleClickE
 
-  -- Unified click handlers using handleMouseClick from Event.Shiori
-  -- Time-critical mode blocks mouse click events
-  let guardedClick eventType hit = do
-        isTimeCritical <- readIORef timeCriticalRef
-        unless isTimeCritical $
-          handleMouseClick mShiori eventType scopeId hit handler
-  reactimate $ guardedClick OnMouseClick <$> singleHitE
-  reactimate $ guardedClick OnMouseDoubleClick <$> doubleHitE
+  -- Filter click events by time-critical state at FRP level
+  let filteredSingleHitE = whenE notTimeCriticalB singleHitE
+      filteredDoubleHitE = whenE notTimeCriticalB doubleHitE
+
+  reactimate $ (\hit -> handleMouseClick mShiori OnMouseClick scopeId hit handler) <$> filteredSingleHitE
+  reactimate $ (\hit -> handleMouseClick mShiori OnMouseDoubleClick scopeId hit handler) <$> filteredDoubleHitE
   reactimate $ putStrLn "[Click] Suppressed (drag exceeded threshold)" <$ suppressedE
 
   -- Drag logging
