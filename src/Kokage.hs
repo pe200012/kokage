@@ -828,6 +828,9 @@ runGtkApp
     -- IORef to hold surface restore callback (filled after displayScript is defined)
     surfaceRestoreCallbackRef <- newIORef (return () :: IO ())
 
+    -- Time-critical mode: when True, mouse events are blocked (set by \t tag)
+    timeCriticalRef <- newIORef False
+
     -- Surface change function using Character module
     let changeSurface :: Int -> Int -> IO ()
         changeSurface scope newSurfaceId = do
@@ -1303,6 +1306,10 @@ runGtkApp
               -- Click wait is handled by the FRP network
               -- The interpreter pauses until a click event is received
               putStrLn "[Script] Click wait triggered"
+            -- Time-critical mode callback (blocks mouse events during \t sections)
+          , cbSetTimeCritical = \enabled -> do
+              writeIORef timeCriticalRef enabled
+              putStrLn $ "[Script] Time-critical mode: " <> show enabled
           }
 
     -- IORef to hold the current script's interrupt function
@@ -1663,6 +1670,8 @@ runGtkApp
                 , ihLeftClick  = balloonLeftClickHandler
                 }
             , cncBalloonMoveMode = balloonMoveMode
+              -- Time-critical mode ref (blocks mouse events during \t sections)
+            , cncTimeCriticalRef = timeCriticalRef
             }
 
       -- Compile and activate unified character+balloon network

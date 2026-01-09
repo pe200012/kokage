@@ -23,7 +23,7 @@ module Kokage.Event
   , handleClick
   ) where
 
-import           Control.Monad              ( when )
+import           Control.Monad              ( unless, when )
 
 import           Data.IORef                 ( newIORef, readIORef, writeIORef )
 import qualified Data.Map.Strict            as Map
@@ -251,15 +251,16 @@ setupNetwork config = do
 -- | Set up the FRP network for a single character window.
 setupCharacterNetwork :: CharacterNetworkConfig -> MomentIO ()
 setupCharacterNetwork config = do
-  let window      = cncWindow config
-      inputs      = cncInputs config
-      collisions  = cncCollisions config
-      moveMode    = cncMoveMode config
-      scopeId     = cncScopeId config
-      mShiori     = cncShiori config
-      handler     = cncScriptHandler config
-      contextMenu = cncContextMenu config
-      motionTick  = cncMotionTick config
+  let window          = cncWindow config
+      inputs          = cncInputs config
+      collisions      = cncCollisions config
+      moveMode        = cncMoveMode config
+      scopeId         = cncScopeId config
+      mShiori         = cncShiori config
+      handler         = cncScriptHandler config
+      contextMenu     = cncContextMenu config
+      motionTick      = cncMotionTick config
+      timeCriticalRef = cncTimeCriticalRef config
 
   closeE <- signalE0R window #closeRequest False
   reactimate $ sendShioriWithCallback mShiori OnClose Map.empty handler <$ closeE
@@ -337,7 +338,10 @@ setupCharacterNetwork config = do
                             , ( 4, crName cr )
                             , ( 5, T.pack $ show surfId )
                             ]
-                    sendShioriWithCallback mShiori OnMouseMove refs handler
+                    do
+                      isTimeCritical <- readIORef timeCriticalRef
+                      unless isTimeCritical $
+                        sendShioriWithCallback mShiori OnMouseMove refs handler
                   Nothing -> return ()
 
   reactimate $ handleSampledMotion <$> sampledMotionE
@@ -366,9 +370,13 @@ setupCharacterNetwork config = do
       doubleHitE = handleClick collisions <$> doubleClickE
 
   -- Unified click handlers using handleMouseClick from Event.Shiori
-  reactimate $ (\hit -> handleMouseClick mShiori OnMouseClick scopeId hit handler) <$> singleHitE
-  reactimate
-    $ (\hit -> handleMouseClick mShiori OnMouseDoubleClick scopeId hit handler) <$> doubleHitE
+  -- Time-critical mode blocks mouse click events
+  let guardedClick eventType hit = do
+        isTimeCritical <- readIORef timeCriticalRef
+        unless isTimeCritical $
+          handleMouseClick mShiori eventType scopeId hit handler
+  reactimate $ guardedClick OnMouseClick <$> singleHitE
+  reactimate $ guardedClick OnMouseDoubleClick <$> doubleHitE
   reactimate $ putStrLn "[Click] Suppressed (drag exceeded threshold)" <$ suppressedE
 
   -- Drag logging

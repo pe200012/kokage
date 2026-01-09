@@ -543,13 +543,15 @@ handleWait state waitCmd = case waitCmd of
   -- \_q - Wait for click, no clear (also quick session)
   ClickWaitNoClear -> cbOnClickWait (esCallbacks state)
 
-  -- \t - Time-critical section (NOT a toggle, cannot be disabled)
-  -- Blocks mouse events until \e or script break
+  -- \t - Time-critical section
+  -- Blocks all OnMouse* events when enabled
   TimeCriticalStart -> do
-    writeIORef (esTimeCritical state) True
-    cbSetTimeCritical (esCallbacks state) True
+    current <- readIORef (esTimeCritical state)
+    let newVal = not current
+    writeIORef (esTimeCritical state) newVal
+    cbSetTimeCritical (esCallbacks state) newVal
 
-  TimeCriticalEnd -> return ()  -- \t cannot be disabled by another \t
+  TimeCriticalEnd -> return ()  -- Only TimeCriticalStart toggles; this is a no-op
 
   -- \_q - Toggle quick session (text displays immediately)
   QuickStart -> modifyIORef' (esQuickMode state) not

@@ -18,6 +18,7 @@ module Kokage.Event.Config
   ) where
 
 import qualified Data.Text                  as T
+import           Data.IORef                 ( IORef )
 import           Data.Time.Clock            ( UTCTime )
 import           Data.Time.LocalTime        ( LocalTime )
 
@@ -113,6 +114,8 @@ data CharacterNetworkConfig
   , cncBalloonWindow   :: !Gtk.Window           -- ^ The balloon window
   , cncBalloonInputs   :: !InputHandlers        -- ^ Input event handlers for balloon
   , cncBalloonMoveMode :: !BalloonMoveMode      -- ^ How to handle balloon window movement
+    -- Time-critical mode (blocks mouse events during \t sections)
+  , cncTimeCriticalRef :: !(IORef Bool)        -- ^ Shared ref: True when mouse events should be blocked
   }
 
 -- | Configuration for the global FRP network (timers).
