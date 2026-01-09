@@ -23,9 +23,6 @@ module Kokage.SakuraScript.Interpreter
     -- * Execution
   , executeScript
   , executeScriptAsync
-    -- * Callbacks
-  , InterpreterCallbacks(..)
-  , defaultCallbacks
   ) where
 
 import           Control.Concurrent       ( MVar
@@ -43,6 +40,8 @@ import qualified Data.Text                as T
 import           Data.Time.Clock          ( getCurrentTime )
 import           Data.Time.Clock.POSIX    ( utcTimeToPOSIXSeconds )
 
+import           Kokage.Callbacks         ( CallbackEnv(..) )
+import qualified Kokage.Callbacks         as CB
 import           Types.SakuraScript
 
 --------------------------------------------------------------------------------
@@ -67,130 +66,6 @@ defaultInterpreterConfig
                       }
 
 --------------------------------------------------------------------------------
--- Callbacks
---------------------------------------------------------------------------------
-
--- | Callbacks for interpreter actions
--- The interpreter calls these when it needs to update the UI or state.
-data InterpreterCallbacks
-  = InterpreterCallbacks
-  { cbAppendChar :: Char -> IO ()              -- ^ Append a single character to balloon
-  , cbAppendText :: T.Text -> IO ()            -- ^ Append text to balloon (for quick mode)
-  , cbNewline :: IO ()                       -- ^ Insert a newline
-  , cbNewlineHalf :: IO ()                       -- ^ Insert a half-height newline
-  , cbNewlinePercent :: Int -> IO ()              -- ^ Insert a percentage newline
-  , cbClear :: IO ()                       -- ^ Clear the balloon
-  , cbClearChars :: Int -> IO ()               -- ^ Clear n characters
-  , cbSetScope :: Int -> IO ()                -- ^ Switch to character scope (0=sakura, 1=kero, etc.)
-  , cbSetSurface :: Int -> Int -> IO ()         -- ^ Set surface (scope, surfaceId)
-  , cbHideCharacter :: Int -> IO ()             -- ^ Hide character (scope) - triggered by \s[-1]
-  , cbSetBalloon :: Int -> Int -> IO ()         -- ^ Set balloon (scope, balloonId)
-  , cbHideBalloon :: Int -> IO ()                -- ^ Hide balloon for scope
-  , cbShowBalloon :: Int -> IO ()                -- ^ Show balloon for scope
-  , cbMoveCursor :: Int -> Int -> IO ()         -- ^ Move cursor to position (x, y)
-  , cbAddChoice :: T.Text -> T.Text -> T.Text -> IO ()  -- ^ Add a choice (id, text, action)
-  , cbClearChoices :: IO ()                       -- ^ Clear all choices
-    -- Animation callbacks
-  , cbAnimStart :: Int -> Int -> IO ()         -- ^ Start animation (scope, animId)
-  , cbAnimStop :: Int -> Int -> IO ()         -- ^ Stop animation (scope, animId)
-  , cbAnimWait :: Int -> Int -> IO ()         -- ^ Wait for animation (scope, animId)
-  , cbAnimClear :: Int -> Maybe Int -> IO ()   -- ^ Clear animations (scope, Maybe animId)
-  , cbBindToggle :: Int -> T.Text -> T.Text -> Bool -> IO ()  -- ^ Toggle bind (scope, category, part, enabled)
-    -- Move callbacks
-  , cbMove :: Int -> Int -> Int -> Maybe Int -> Bool -> IO ()  -- ^ Move (scope, x, y, time, async)
-    -- Font callbacks
-  , cbSetFont :: FontCmd -> IO ()            -- ^ Set font properties
-    -- Sound callbacks
-  , cbPlaySound :: T.Text -> IO ()             -- ^ Play sound file
-  , cbStopSound :: IO ()                       -- ^ Stop all sounds
-    -- Time-critical callback
-  , cbSetTimeCritical :: Bool -> IO ()          -- ^ Set time-critical mode (blocks mouse events)
-  , cbSoundAction :: SoundAction -> T.Text -> IO ()  -- ^ Sound action
-    -- Event callbacks
-  , cbRaiseEvent :: T.Text -> [ T.Text ] -> IO () -- ^ Raise event (name, refs)
-  , cbNotify :: T.Text -> [ T.Text ] -> IO () -- ^ Send notification
-  , cbTimerRaise :: T.Text -> Int -> IO ()      -- ^ Set timed event (name, ms)
-  , cbTimerCancel :: T.Text -> IO ()             -- ^ Cancel timer
-  , cbGhostChange :: T.Text -> IO ()             -- ^ Change to another ghost
-  , cbShellChange :: T.Text -> IO ()             -- ^ Change shell
-  , cbBalloonStyleChange :: T.Text -> IO ()        -- ^ Change balloon style
-    -- Open callbacks
-  , cbOpenURL :: T.Text -> IO ()             -- ^ Open URL in browser
-  , cbOpenFile :: T.Text -> IO ()             -- ^ Open file
-  , cbOpenInputBox :: T.Text -> [ InputBoxOpt ] -> IO ()  -- ^ Open input dialog
-  , cbOpenDialog :: T.Text -> DialogOpt -> IO () -- ^ Open dialog
-    -- Meta callbacks
-  , cbSetProperty :: SetProperty -> IO ()        -- ^ Set property
-  , cbGetProperty :: GetProperty -> IO T.Text    -- ^ Get property value
-  , cbReload :: ReloadTarget -> IO ()       -- ^ Reload target
-  , cbExecute :: ExecuteCmd -> IO ()         -- ^ Execute command
-  , cbSetPassiveMode :: Bool -> IO ()              -- ^ Set passive mode
-  , cbLock :: T.Text -> IO ()             -- ^ Lock component
-  , cbUnlock :: T.Text -> IO ()             -- ^ Unlock component
-    -- EnvVar callback
-  , cbGetEnvVar :: EnvVar -> IO T.Text         -- ^ Get environment variable value
-    -- Completion callbacks
-  , cbOnComplete :: IO ()                       -- ^ Called when script execution completes
-  , cbOnInterrupt :: IO ()                       -- ^ Called when script is interrupted
-  , cbOnClickWait :: IO ()                       -- ^ Called when waiting for click
-  }
-
--- | Default callbacks that do nothing
-defaultCallbacks :: InterpreterCallbacks
-defaultCallbacks
-  = InterpreterCallbacks
-  { cbAppendChar = \_ -> return ()
-  , cbAppendText = \_ -> return ()
-  , cbNewline = return ()
-  , cbNewlineHalf = return ()
-  , cbNewlinePercent = \_ -> return ()
-  , cbClear = return ()
-  , cbClearChars = \_ -> return ()
-  , cbSetScope = \_ -> return ()
-  , cbSetSurface = \_ _ -> return ()
-  , cbHideCharacter = \_ -> return ()
-  , cbSetBalloon = \_ _ -> return ()
-  , cbHideBalloon = \_ -> return ()
-  , cbShowBalloon = \_ -> return ()
-  , cbMoveCursor = \_ _ -> return ()
-  , cbAddChoice = \_ _ _ -> return ()
-  , cbClearChoices = return ()
-  , cbAnimStart = \_ _ -> return ()
-  , cbAnimStop = \_ _ -> return ()
-  , cbAnimWait = \_ _ -> return ()
-  , cbAnimClear = \_ _ -> return ()
-  , cbBindToggle = \_ _ _ _ -> return ()
-  , cbMove = \_ _ _ _ _ -> return ()
-  , cbSetFont = \_ -> return ()
-  , cbPlaySound = \_ -> return ()
-  , cbStopSound = return ()
-  , cbSetTimeCritical = \_ -> return ()
-  , cbSoundAction = \_ _ -> return ()
-  , cbRaiseEvent = \_ _ -> return ()
-  , cbNotify = \_ _ -> return ()
-  , cbTimerRaise = \_ _ -> return ()
-  , cbTimerCancel = \_ -> return ()
-  , cbGhostChange = \_ -> return ()
-  , cbShellChange = \_ -> return ()
-  , cbBalloonStyleChange = \_ -> return ()
-  , cbOpenURL = \_ -> return ()
-  , cbOpenFile = \_ -> return ()
-  , cbOpenInputBox = \_ _ -> return ()
-  , cbOpenDialog = \_ _ -> return ()
-  , cbSetProperty = \_ -> return ()
-  , cbGetProperty = \_ -> return ""
-  , cbReload = \_ -> return ()
-  , cbExecute = \_ -> return ()
-  , cbSetPassiveMode = \_ -> return ()
-  , cbLock = \_ -> return ()
-  , cbUnlock = \_ -> return ()
-  , cbGetEnvVar = \_ -> return ""
-  , cbOnComplete = return ()
-  , cbOnInterrupt = return ()
-  , cbOnClickWait = return ()
-  }
-
---------------------------------------------------------------------------------
 -- Interpreter State
 --------------------------------------------------------------------------------
 
@@ -198,7 +73,7 @@ defaultCallbacks
 data InterpreterState
   = InterpreterState
   { esConfig       :: !InterpreterConfig        -- ^ Configuration
-  , esCallbacks    :: !InterpreterCallbacks     -- ^ UI callbacks
+  , esCallbackEnv  :: !CallbackEnv              -- ^ Callback environment
   , esCurrentScope :: !(IORef Int)              -- ^ Current character scope (0=sakura, 1=kero)
   , esInterrupted  :: !(IORef Bool)             -- ^ Interrupt flag
   , esQuickMode    :: !(IORef Bool)             -- ^ Quick mode flag (\_q toggle)
@@ -210,8 +85,8 @@ data InterpreterState
   }
 
 -- | Create a new interpreter state
-newInterpreterState :: InterpreterConfig -> InterpreterCallbacks -> IO InterpreterState
-newInterpreterState config callbacks = do
+newInterpreterState :: InterpreterConfig -> CallbackEnv -> IO InterpreterState
+newInterpreterState config callbackEnv = do
   scopeRef <- newIORef 0
   interruptRef <- newIORef False
   quickRef <- newIORef (ecQuickMode config)
@@ -225,7 +100,7 @@ newInterpreterState config callbacks = do
   return
     InterpreterState
     { esConfig       = config
-    , esCallbacks    = callbacks
+    , esCallbackEnv  = callbackEnv
     , esCurrentScope = scopeRef
     , esInterrupted  = interruptRef
     , esQuickMode    = quickRef
@@ -241,24 +116,24 @@ newInterpreterState config callbacks = do
 --------------------------------------------------------------------------------
 
 -- | Execute a script synchronously (blocks until complete or interrupted)
-executeScript :: InterpreterConfig -> InterpreterCallbacks -> Script -> IO ()
-executeScript config callbacks script = do
-  state <- newInterpreterState config callbacks
+executeScript :: InterpreterConfig -> CallbackEnv -> Script -> IO ()
+executeScript config callbackEnv script = do
+  state <- newInterpreterState config callbackEnv
   runScript state script
-  cbOnComplete callbacks
+  CB.cbOnComplete callbackEnv
 
 -- | Execute a script asynchronously
 -- Returns an IO action to interrupt the execution
-executeScriptAsync :: InterpreterConfig -> InterpreterCallbacks -> Script -> IO (IO ())
-executeScriptAsync config callbacks script = do
-  state <- newInterpreterState config callbacks
+executeScriptAsync :: InterpreterConfig -> CallbackEnv -> Script -> IO (IO ())
+executeScriptAsync config callbackEnv script = do
+  state <- newInterpreterState config callbackEnv
   interruptVar <- newEmptyMVar :: IO (MVar ())
   -- Race between script execution and interrupt signal
   void $ forkIO $ do
     result <- race (takeMVar interruptVar) (runScript state script)
     case result of
-      Left ()  -> cbOnInterrupt callbacks  -- Interrupted
-      Right () -> cbOnComplete callbacks   -- Completed normally
+      Left ()  -> CB.cbOnInterrupt callbackEnv  -- Interrupted
+      Right () -> CB.cbOnComplete callbackEnv   -- Completed normally
   -- Return interrupt action that signals the MVar
   return $ putMVar interruptVar ()
 
@@ -323,7 +198,7 @@ displayText :: InterpreterState -> T.Text -> IO ()
 displayText state text = do
   quick <- readIORef (esQuickMode state)
   if quick
-    then cbAppendText (esCallbacks state) text
+    then CB.cbAppendText (esCallbackEnv state) text
     else forM_ (T.unpack text) $ \c -> do
       interrupted <- readIORef (esInterrupted state)
       unless interrupted $ displayChar state c
@@ -331,7 +206,7 @@ displayText state text = do
 -- | Display a single character with delay
 displayChar :: InterpreterState -> Char -> IO ()
 displayChar state c = do
-  cbAppendChar (esCallbacks state) c
+  CB.cbAppendChar (esCallbackEnv state) c
   quick <- readIORef (esQuickMode state)
   unless quick $ do
     let delayMs = ecCharDelay (esConfig state)
@@ -349,7 +224,7 @@ handleScope state scopeCmd = do
         ScopeKero    -> 1
         ScopeIndex n -> n
   writeIORef (esCurrentScope state) scopeIdx
-  cbSetScope (esCallbacks state) scopeIdx
+  CB.cbSetScope (esCallbackEnv state) scopeIdx
 
 --------------------------------------------------------------------------------
 -- Surface Handling
@@ -361,28 +236,28 @@ handleSurface state surfaceCmd = do
   scope <- readIORef (esCurrentScope state)
   case surfaceCmd of
     SurfaceChange surfaceId
-      | surfaceId < 0 -> cbHideCharacter (esCallbacks state) scope  -- \s[-1] hides character
-      | otherwise     -> cbSetSurface (esCallbacks state) scope surfaceId
+      | surfaceId < 0 -> CB.cbHideCharacter (esCallbackEnv state) scope  -- \s[-1] hides character
+      | otherwise     -> CB.cbSetSurface (esCallbackEnv state) scope surfaceId
 
     SurfaceChangeAlias _alias ->
       -- Alias lookup should be done at a higher level
       return ()
 
     SurfaceAnim animId action -> case action of
-      AnimStart  -> cbAnimStart (esCallbacks state) scope animId
-      AnimStop   -> cbAnimStop (esCallbacks state) scope animId
-      AnimPause  -> cbAnimStop (esCallbacks state) scope animId  -- Use stop for pause
-      AnimResume -> cbAnimStart (esCallbacks state) scope animId -- Use start for resume
+      AnimStart  -> CB.cbAnimStart (esCallbackEnv state) scope animId
+      AnimStop   -> CB.cbAnimStop (esCallbackEnv state) scope animId
+      AnimPause  -> CB.cbAnimStop (esCallbackEnv state) scope animId  -- Use stop for pause
+      AnimResume -> CB.cbAnimStart (esCallbackEnv state) scope animId -- Use start for resume
 
-    SurfaceAnimWait animId -> cbAnimWait (esCallbacks state) scope animId
+    SurfaceAnimWait animId -> CB.cbAnimWait (esCallbackEnv state) scope animId
 
-    SurfaceAnimClear mAnimId -> cbAnimClear (esCallbacks state) scope mAnimId
+    SurfaceAnimClear mAnimId -> CB.cbAnimClear (esCallbackEnv state) scope mAnimId
 
     SurfaceAnimPause mAnimId -> case mAnimId of
-      Just aid -> cbAnimStop (esCallbacks state) scope aid
-      Nothing  -> cbAnimClear (esCallbacks state) scope Nothing
+      Just aid -> CB.cbAnimStop (esCallbackEnv state) scope aid
+      Nothing  -> CB.cbAnimClear (esCallbackEnv state) scope Nothing
 
-    SurfaceAnimResume mAnimId -> forM_ mAnimId (cbAnimStart (esCallbacks state) scope)
+    SurfaceAnimResume mAnimId -> forM_ mAnimId (CB.cbAnimStart (esCallbackEnv state) scope)
 
     SurfaceAnimOffset _animId _x _y ->
       -- Animation offset is handled at rendering level
@@ -393,7 +268,7 @@ handleSurface state surfaceCmd = do
             BindClothes   -> "clothes"
             BindAccessory -> "accessory"
             BindOther t   -> t
-      cbBindToggle (esCallbacks state) scope catText part enabled
+      CB.cbBindToggle (esCallbackEnv state) scope catText part enabled
 
     SurfaceLockRepaint _locked ->
       -- Repaint locking is handled at rendering level
@@ -414,7 +289,7 @@ handleSurface state surfaceCmd = do
     SurfaceMove moveSpec -> do
       let x = cursorPosToInt (moveX moveSpec)
           y = cursorPosToInt (moveY moveSpec)
-      cbMove (esCallbacks state) scope x y (moveTime moveSpec) (moveAsync moveSpec)
+      CB.cbMove (esCallbackEnv state) scope x y (moveTime moveSpec) (moveAsync moveSpec)
 
     SurfaceOffset _x _y ->
       -- Offset is handled at rendering level
@@ -447,29 +322,29 @@ handleBalloon state balloonCmd = do
       let
           balloonId = n `div` 2
         in
-          cbSetBalloon (esCallbacks state) scope balloonId
+          CB.cbSetBalloon (esCallbackEnv state) scope balloonId
 
-    BalloonHide -> cbHideBalloon (esCallbacks state) scope
+    BalloonHide -> CB.cbHideBalloon (esCallbackEnv state) scope
 
-    BalloonShow -> cbShowBalloon (esCallbacks state) scope
+    BalloonShow -> CB.cbShowBalloon (esCallbackEnv state) scope
 
     BalloonImage _spec ->
       -- Image display is handled at balloon level
       return ()
 
-    Newline -> cbNewline (esCallbacks state)
+    Newline -> CB.cbNewline (esCallbackEnv state)
 
-    NewlineHalf -> cbNewlineHalf (esCallbacks state)
+    NewlineHalf -> CB.cbNewlineHalf (esCallbackEnv state)
 
-    NewlinePercent pct -> cbNewlinePercent (esCallbacks state) pct
+    NewlinePercent pct -> CB.cbNewlinePercent (esCallbackEnv state) pct
 
-    Clear -> cbClear (esCallbacks state)
+    Clear -> CB.cbClear (esCallbackEnv state)
 
     ClearQuick -> do
-      cbClear (esCallbacks state)
+      CB.cbClear (esCallbackEnv state)
       writeIORef (esQuickMode state) True
 
-    ClearChars n -> cbClearChars (esCallbacks state) n
+    ClearChars n -> CB.cbClearChars (esCallbackEnv state) n
 
     ClearLines _n ->
       -- Clear lines handled at balloon level
@@ -478,7 +353,7 @@ handleBalloon state balloonCmd = do
     CursorMove xPos yPos -> do
       let x = cursorPosToInt xPos
           y = cursorPosToInt yPos
-      cbMoveCursor (esCallbacks state) x y
+      CB.cbMoveCursor (esCallbackEnv state) x y
 
     AutoScrollDisable -> return ()
 
@@ -533,15 +408,15 @@ handleWait state waitCmd = case waitCmd of
   -- Wait for animation to complete
   WaitAnimComplete animId -> do
     scope <- readIORef (esCurrentScope state)
-    cbAnimWait (esCallbacks state) scope animId
+    CB.cbAnimWait (esCallbackEnv state) scope animId
 
   -- \x - Wait for click, then clear
   ClickWait -> do
-    cbOnClickWait (esCallbacks state)
-    cbClear (esCallbacks state)
+    CB.cbOnClickWait
+    CB.cbClear (esCallbackEnv state)
 
   -- \_q - Wait for click, no clear (also quick session)
-  ClickWaitNoClear -> cbOnClickWait (esCallbacks state)
+  ClickWaitNoClear -> CB.cbOnClickWait
 
   -- \t - Time-critical section
   -- Blocks all OnMouse* events when enabled
@@ -549,7 +424,7 @@ handleWait state waitCmd = case waitCmd of
     current <- readIORef (esTimeCritical state)
     let newVal = not current
     writeIORef (esTimeCritical state) newVal
-    cbSetTimeCritical (esCallbacks state) newVal
+    CB.cbSetTimeCritical (esCallbackEnv state) newVal
 
   TimeCriticalEnd -> return ()  -- Only TimeCriticalStart toggles; this is a no-op
 
@@ -595,31 +470,31 @@ handleEvent state eventCmd = case eventCmd of
   EventScript _ghost _script -> writeIORef (esInterrupted state) True
 
   -- \![raise,...] - Raise event
-  EventRaise eventName refs -> cbRaiseEvent (esCallbacks state) eventName refs
+  EventRaise eventName refs -> CB.cbRaiseEvent eventName refs
 
   -- \![embed,...] - Embed script (handled at parse level)
   EventEmbed _script -> return ()
 
   -- \![notify,...] - Send notification
-  EventNotify name refs _opts -> cbNotify (esCallbacks state) name refs
+  EventNotify name refs _opts -> CB.cbNotify name refs
 
   -- \![timerraise,...] - Timed event
-  EventTimerRaise name delayMs _opts -> cbTimerRaise (esCallbacks state) name delayMs
+  EventTimerRaise name delayMs _opts -> CB.cbTimerRaise name delayMs
 
   -- Cancel timer
-  EventTimerCancel name -> cbTimerCancel (esCallbacks state) name
+  EventTimerCancel name -> CB.cbTimerCancel name
 
   -- Update commands
   EventUpdate _updateCmd -> return ()
 
   -- Change ghost
-  EventGhostChange ghostName -> cbGhostChange (esCallbacks state) ghostName
+  EventGhostChange ghostName -> CB.cbGhostChange ghostName
 
   -- Change shell
-  EventShellChange shellName -> cbShellChange (esCallbacks state) shellName
+  EventShellChange shellName -> CB.cbShellChange shellName
 
   -- Change balloon
-  EventBalloonChange balloonName -> cbBalloonStyleChange (esCallbacks state) balloonName
+  EventBalloonChange balloonName -> CB.cbBalloonStyleChange balloonName
 
   -- \![vanish] - Vanish ghost (stop script)
   EventVanish -> writeIORef (esInterrupted state) True
@@ -630,7 +505,7 @@ handleEvent state eventCmd = case eventCmd of
 
 -- | Handle font commands
 handleFont :: InterpreterState -> FontCmd -> IO ()
-handleFont state = cbSetFont (esCallbacks state)
+handleFont state = CB.cbSetFont (esCallbackEnv state)
 
 --------------------------------------------------------------------------------
 -- Sound Handling
@@ -639,11 +514,11 @@ handleFont state = cbSetFont (esCallbacks state)
 -- | Handle sound commands
 handleSound :: InterpreterState -> SoundCmd -> IO ()
 handleSound state soundCmd = case soundCmd of
-  SoundPlay file -> cbPlaySound (esCallbacks state) file
+  SoundPlay file -> CB.cbPlaySound (esCallbackEnv state) file
 
-  SoundStop -> cbStopSound (esCallbacks state)
+  SoundStop -> CB.cbStopSound (esCallbackEnv state)
 
-  SoundAction action file _args -> cbSoundAction (esCallbacks state) action file
+  SoundAction action file _args -> CB.cbSoundAction (esCallbackEnv state) action file
 
 --------------------------------------------------------------------------------
 -- Open Handling
@@ -652,19 +527,19 @@ handleSound state soundCmd = case soundCmd of
 -- | Handle open commands
 handleOpen :: InterpreterState -> OpenCmd -> IO ()
 handleOpen state openCmd = case openCmd of
-  OpenURL url -> cbOpenURL (esCallbacks state) url
+  OpenURL url -> CB.cbOpenURL url
 
-  OpenBrowser url -> cbOpenURL (esCallbacks state) url
+  OpenBrowser url -> CB.cbOpenURL url
 
   OpenMailer _address -> return ()
 
-  OpenFile file -> cbOpenFile (esCallbacks state) file
+  OpenFile file -> CB.cbOpenFile file
 
-  OpenEditor file -> cbOpenFile (esCallbacks state) file
+  OpenEditor file -> CB.cbOpenFile file
 
-  OpenInputBox eventId opts -> cbOpenInputBox (esCallbacks state) eventId opts
+  OpenInputBox eventId opts -> CB.cbOpenInputBox eventId opts
 
-  OpenDialog msg opt -> cbOpenDialog (esCallbacks state) msg opt
+  OpenDialog msg opt -> CB.cbOpenDialog msg opt
 
   OpenCommunicate _ghost _opt -> return ()
 
@@ -679,23 +554,23 @@ handleOpen state openCmd = case openCmd of
 -- | Handle meta commands
 handleMeta :: InterpreterState -> MetaCmd -> IO ()
 handleMeta state metaCmd = case metaCmd of
-  MetaSet prop -> cbSetProperty (esCallbacks state) prop
+  MetaSet prop -> CB.cbSetProperty prop
 
   MetaGet _prop ->
     -- Get is typically handled inline, not as a command
     return ()
 
-  MetaReload target -> cbReload (esCallbacks state) target
+  MetaReload target -> CB.cbReload target
 
-  MetaExecute execCmd -> cbExecute (esCallbacks state) execCmd
+  MetaExecute execCmd -> CB.cbExecute execCmd
 
-  MetaPassiveMode enabled -> cbSetPassiveMode (esCallbacks state) enabled
+  MetaPassiveMode enabled -> CB.cbSetPassiveMode enabled
 
   MetaInductionMode _enabled -> return ()
 
-  MetaLock component -> cbLock (esCallbacks state) component
+  MetaLock component -> CB.cbLock component
 
-  MetaUnlock component -> cbUnlock (esCallbacks state) component
+  MetaUnlock component -> CB.cbUnlock component
 
 --------------------------------------------------------------------------------
 -- Environment Variable Handling
@@ -704,7 +579,7 @@ handleMeta state metaCmd = case metaCmd of
 -- | Handle environment variable substitution
 handleEnvVar :: InterpreterState -> EnvVar -> IO ()
 handleEnvVar state envVar = do
-  value <- cbGetEnvVar (esCallbacks state) envVar
+  value <- CB.cbGetEnvVar (esCallbackEnv state) envVar
   unless (T.null value) $ displayText state value
 
 -- | Handle choice commands (user-interactive menu items)
@@ -719,7 +594,7 @@ handleChoice state choiceCmd = case choiceCmd of
   ChoiceID choiceId text action -> addChoiceWithAction state choiceId text action
 
   -- \__q[text,script] - Script choice (execute script directly)
-  ChoiceScript text script -> cbAddChoice (esCallbacks state) text text ("script:" <> script)
+  ChoiceScript text script -> CB.cbAddChoice (esCallbackEnv state) text text ("script:" <> script)
 
   -- \_q[text,action] - No timeout choice (same as basic for now)
   ChoiceNoTimeout text action -> addChoiceWithAction state text text action
@@ -728,7 +603,7 @@ handleChoice state choiceCmd = case choiceCmd of
   ChoiceTimeout _ -> return ()
 
   -- \_a[id,text] - Named anchor (inline clickable link)
-  Anchor anchorId text -> cbAddChoice (esCallbacks state) anchorId text ("anchor:" <> anchorId)
+  Anchor anchorId text -> CB.cbAddChoice (esCallbackEnv state) anchorId text ("anchor:" <> anchorId)
 
   -- Anchor end marker - no action needed
   AnchorEnd -> return ()
@@ -744,7 +619,7 @@ handleChoice state choiceCmd = case choiceCmd of
 addChoiceWithAction :: InterpreterState -> T.Text -> T.Text -> ChoiceAction -> IO ()
 addChoiceWithAction state choiceId text action = do
   let actionStr = choiceActionToText action
-  cbAddChoice (esCallbacks state) choiceId text actionStr
+  CB.cbAddChoice (esCallbackEnv state) choiceId text actionStr
 
 -- | Convert ChoiceAction to a text representation for the callback
 choiceActionToText :: ChoiceAction -> T.Text

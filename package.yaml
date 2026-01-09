@@ -60,7 +60,8 @@ ghc-options:
   - -Wmissing-home-modules
   - -Wpartial-fields
   - -Wredundant-constraints
-  - -O0 # Disable optimizations for faster compile times during development
+  - -fllvm
+  - -O2
 
 library:
   source-dirs: src

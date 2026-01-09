@@ -31,13 +31,13 @@ library
       Kokage.Balloon.Render
       Kokage.Balloon.Surface
       Kokage.Balloon.Types
+      Kokage.Callbacks
       Kokage.Character
       Kokage.Collision
       Kokage.Config
       Kokage.Event
       Kokage.Event.Config
       Kokage.Event.Shiori
-      Kokage.Event.Types
       Kokage.Ghost
       Kokage.ImageCache
       Kokage.Init
@@ -53,6 +53,7 @@ library
       Kokage.Surface
       Kokage.Transparency
       Types.Balloon
+      Types.Event
       Types.Ghost
       Types.Ghost.Descript
       Types.Ghost.Shell
@@ -69,7 +70,7 @@ library
       Paths_kokage
   hs-source-dirs:
       src
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fllvm -O2
   build-depends:
       X11
     , aeson
@@ -117,7 +118,7 @@ executable animation-test
       Paths_kokage
   hs-source-dirs:
       app-animation-test
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fllvm -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       X11
     , aeson
@@ -166,7 +167,7 @@ executable balloon-test
       Paths_kokage
   hs-source-dirs:
       app-balloon-test
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fllvm -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       X11
     , aeson
@@ -215,7 +216,7 @@ executable kokage
       Paths_kokage
   hs-source-dirs:
       app
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fllvm -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       X11
     , aeson
@@ -265,7 +266,7 @@ executable shiori-test
       Paths_kokage
   hs-source-dirs:
       app-shiori-test
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fllvm -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       X11
     , aeson
@@ -322,7 +323,7 @@ test-suite kokage-test
       Paths_kokage
   hs-source-dirs:
       test
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -O0 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -fllvm -O2 -threaded -rtsopts -with-rtsopts=-N
   build-tool-depends:
       hspec-discover:hspec-discover
   build-depends:
