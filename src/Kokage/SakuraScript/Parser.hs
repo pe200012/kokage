@@ -646,8 +646,8 @@ pFontDefault = FontDefault <$ string "default"
 pFontToggle :: Parser FontToggle
 pFontToggle
   = choice
-    [ ToggleOn <$ (string "true" <|> string "on")
-    , ToggleOff <$ (string "false" <|> string "off")
+    [ ToggleOn <$ (string "true" <|> string "on" <|> string "1")
+    , ToggleOff <$ (string "false" <|> string "off" <|> string "0")
     , ToggleDefault <$ string "default"
     ]
 

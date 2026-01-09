@@ -1185,6 +1185,7 @@ loadAndSetBalloonSurface bs balloonDir charType index = do
 
 -- | Set the balloon ID and load the corresponding surface.
 -- Balloon ID determines which surface set to use:
+--   -1 = hide balloon (per UKADOC: \b[-1] hides the balloon)
 --   0 = default balloon (surface 0,1)
 --   1 = choice/selection balloon (surface 2,3)
 --   etc.
@@ -1195,22 +1196,28 @@ setBalloonId bs newBalloonId = do
   currentId <- readIORef (bsBalloonId bs)
   when (currentId /= newBalloonId) $ do
     writeIORef (bsBalloonId bs) newBalloonId
-    -- Reload surface with new balloon ID
-    mBalloonDir <- readIORef (bsBalloonDir bs)
-    case mBalloonDir of
-      Nothing
-        -> putStrLn $ "[Balloon] Cannot set balloon ID " <> show newBalloonId <> ": no balloon dir"
-      Just balloonDir -> do
-        charType <- readIORef (bsCharType bs)
-        direction <- readIORef (bsDirection bs)
-        let surfaceIndex = newBalloonId * 2 + direction
-        _ <- loadAndSetBalloonSurface bs balloonDir charType surfaceIndex
-        putStrLn
-          $ "[Balloon] Set balloon ID to "
-          <> show newBalloonId
-          <> " (surface index "
-          <> show surfaceIndex
-          <> ")"
+    -- Special case: -1 means hide the balloon
+    if newBalloonId < 0
+      then do
+        hideBalloon bs
+        putStrLn "[Balloon] Balloon hidden (ID < 0)"
+      else do
+        -- Reload surface with new balloon ID
+        mBalloonDir <- readIORef (bsBalloonDir bs)
+        case mBalloonDir of
+          Nothing
+            -> putStrLn $ "[Balloon] Cannot set balloon ID " <> show newBalloonId <> ": no balloon dir"
+          Just balloonDir -> do
+            charType <- readIORef (bsCharType bs)
+            direction <- readIORef (bsDirection bs)
+            let surfaceIndex = newBalloonId * 2 + direction
+            _ <- loadAndSetBalloonSurface bs balloonDir charType surfaceIndex
+            putStrLn
+              $ "[Balloon] Set balloon ID to "
+              <> show newBalloonId
+              <> " (surface index "
+              <> show surfaceIndex
+              <> ")"
 
 -- | Convert a GdkPixbuf to a Cairo ImageSurface.
 -- GdkPixbuf stores data as RGB(A) with 8 bits per channel.
