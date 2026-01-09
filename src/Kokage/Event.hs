@@ -25,10 +25,10 @@ module Kokage.Event
 
 import           Control.Monad              ( unless, when )
 
-import           Data.IORef                 ( newIORef, readIORef, writeIORef )
+import           Data.IORef                 ( readIORef )
 import qualified Data.Map.Strict            as Map
 import qualified Data.Text                  as T
-import           Data.Time.Clock            ( UTCTime, diffUTCTime, getCurrentTime )
+import           Data.Time.Clock            ( getCurrentTime )
 
 import qualified GI.Gdk                     as Gdk
 import qualified GI.Gtk                     as Gtk
@@ -42,12 +42,12 @@ import           Types.Event
 import           Reactive.Banana            ( (<@)
                                             , (<@>)
                                             , Behavior
-                                            , Event
+                                            , accumB
                                             , filterE
                                             , stepper
                                             , unionWith
                                             )
-import           Reactive.Banana.Frameworks ( MomentIO, fromAddHandler, liftIO, reactimate )
+import           Reactive.Banana.Frameworks ( MomentIO, fromAddHandler, reactimate )
 import           Reactive.Banana.GI.Gtk     ( signalE0R )
 
 import           Types.Ghost                ( CollisionRegion(..) )
@@ -130,57 +130,40 @@ setupNetwork config = do
   reactimate $ handleMinuteTick <$> minuteTickE
   reactimate $ handleHourTick <$> hourTickE
 
-  -- Handle mouse motion events with throttling via Behavior + sampling
+  -- Handle mouse motion events with throttling via pure FRP
   -- Instead of sending OnMouseMove on every motion event, we:
   -- 1. Store the latest motion position in a Behavior
-  -- 2. Track the last motion timestamp in an IORef
-  -- 3. Sample this Behavior on motionTickE (every 100ms)
-  -- 4. Only send OnMouseMove when sampled AND motion is fresh (< 1s old)
+  -- 2. Track freshness with accumB (True if motion since last tick)
+  -- 3. Sample on motionTickE (every 100ms), only send if fresh
 
-  -- IORef to track last motion timestamp
-  lastMotionTimeRef <- liftIO $ newIORef (Nothing :: Maybe UTCTime)
-
-  -- Create a Behavior that holds the latest mouse position
   motionB :: Behavior (Maybe ( Double, Double )) <- stepper Nothing (Just <$> motionE)
 
-  -- Update timestamp on every motion
-  let recordMotionTime _ = writeIORef lastMotionTimeRef . Just =<< getCurrentTime
-  reactimate $ recordMotionTime <$> motionE
+  -- Track freshness: motion sets True, tick resets to False
+  freshB <- accumB False $ unionWith const
+    (const True <$ motionE)
+    (const False <$ motionTickE)
 
-  -- Sample the motion position on each tick
-  let sampledMotionE = motionB <@ motionTickE
+  let sampledMotionE = (,) <$> motionB <*> freshB <@ motionTickE
 
-  -- Motion expiry threshold
-  let motionExpirySeconds :: Double
-      motionExpirySeconds = 0.1
-
-  let handleSampledMotion mPos = case mPos of
-        Nothing       -> return ()  -- No motion yet
-        Just ( x, y ) -> do
-          mLastTime <- readIORef lastMotionTimeRef
-          case mLastTime of
-            Nothing       -> return ()
-            Just lastTime -> do
-              now <- getCurrentTime
-              let age = realToFrac (diffUTCTime now lastTime) :: Double
-              -- Only send if motion is fresh
-              when (age < motionExpirySeconds) $ do
-                let ix     = floor x :: Int
-                    iy     = floor y :: Int
-                    surfId = maybe 0 scSurfaceId mShiori
-                case findCollisionAt ix iy collisions of
-                  Just cr -> do
-                    let refs
-                          = Map.fromList
-                            [ ( 0, T.pack $ show ix )
-                            , ( 1, T.pack $ show iy )
-                            , ( 2, "" )
-                            , ( 3, "0" )
-                            , ( 4, crName cr )
-                            , ( 5, T.pack $ show surfId )
-                            ]
-                    sendShioriAndLog mShiori OnMouseMove refs
-                  Nothing -> return ()
+  let handleSampledMotion ( mPos, wasFresh ) = case mPos of
+        Nothing       -> return ()
+        Just ( x, y ) -> when wasFresh $ do
+          let ix     = floor x :: Int
+              iy     = floor y :: Int
+              surfId = maybe 0 scSurfaceId mShiori
+          case findCollisionAt ix iy collisions of
+            Just cr -> do
+              let refs
+                    = Map.fromList
+                      [ ( 0, T.pack $ show ix )
+                      , ( 1, T.pack $ show iy )
+                      , ( 2, "" )
+                      , ( 3, "0" )
+                      , ( 4, crName cr )
+                      , ( 5, T.pack $ show surfId )
+                      ]
+              sendShioriAndLog mShiori OnMouseMove refs
+            Nothing -> return ()
 
   reactimate $ handleSampledMotion <$> sampledMotionE
 
@@ -286,22 +269,21 @@ setupCharacterNetwork config = do
   reactimate $ handleRightClick <$> rightClickE
 
   -- Mouse motion with cursor change and throttled OnMouseMove
-  -- Use Behavior + sampling to throttle OnMouseMove events (every 100ms)
-  -- Also check that the motion event is fresh (< 1 second old)
-
-  -- IORef to track last motion timestamp
-  lastMotionTimeRef <- liftIO $ newIORef (Nothing :: Maybe UTCTime)
+  -- Use pure FRP: accumB tracks if motion occurred since last tick
 
   motionB :: Behavior (Maybe ( Double, Double )) <- stepper Nothing (Just <$> motionE)
-  let sampledMotionE = motionB <@ motionTickE
 
-  -- Motion expiry threshold (1 second)
-  let motionExpirySeconds :: Double
-      motionExpirySeconds = 1.0
+  -- Track freshness: motion sets True, tick resets to False
+  -- accumB samples BEFORE applying update from same event
+  freshB <- accumB False $ unionWith const
+    (const True <$ motionE)
+    (const False <$ motionTickE)
 
-  -- Update cursor on every motion (immediate feedback) and record timestamp
+  -- Sample both on tick - wasFresh is True if any motion occurred since last tick
+  let sampledMotionE = (,) <$> motionB <*> freshB <@ motionTickE
+
+  -- Update cursor on every motion (immediate feedback)
   let updateCursor ( x, y ) = do
-        writeIORef lastMotionTimeRef . Just =<< getCurrentTime
         let ix = floor x :: Int
             iy = floor y :: Int
         case findCollisionAt ix iy collisions of
@@ -312,37 +294,28 @@ setupCharacterNetwork config = do
 
   reactimate $ updateCursor <$> motionE
 
-  -- Send OnMouseMove only on sampled ticks (throttled) and if fresh
-  let handleSampledMotion mPos = case mPos of
+  -- Send OnMouseMove only on tick, only if motion was fresh
+  let handleSampledMotion ( mPos, wasFresh ) = case mPos of
         Nothing       -> return ()
-        Just ( x, y ) -> do
-          mLastTime <- readIORef lastMotionTimeRef
-          case mLastTime of
-            Nothing       -> return ()
-            Just lastTime -> do
-              now <- getCurrentTime
-              let age = realToFrac (diffUTCTime now lastTime) :: Double
-              -- Only send if motion is fresh (< 1 second old)
-              when (age < motionExpirySeconds) $ do
-                let ix     = floor x :: Int
-                    iy     = floor y :: Int
-                    surfId = maybe 0 scSurfaceId mShiori
-                case findCollisionAt ix iy collisions of
-                  Just cr -> do
-                    let refs
-                          = Map.fromList
-                            [ ( 0, T.pack $ show ix )
-                            , ( 1, T.pack $ show iy )
-                            , ( 2, "" )
-                            , ( 3, T.pack $ show scopeId )
-                            , ( 4, crName cr )
-                            , ( 5, T.pack $ show surfId )
-                            ]
-                    do
-                      isTimeCritical <- readIORef timeCriticalRef
-                      unless isTimeCritical $
-                        sendShioriWithCallback mShiori OnMouseMove refs handler
-                  Nothing -> return ()
+        Just ( x, y ) -> when wasFresh $ do
+          let ix     = floor x :: Int
+              iy     = floor y :: Int
+              surfId = maybe 0 scSurfaceId mShiori
+          case findCollisionAt ix iy collisions of
+            Just cr -> do
+              let refs
+                    = Map.fromList
+                      [ ( 0, T.pack $ show ix )
+                      , ( 1, T.pack $ show iy )
+                      , ( 2, "" )
+                      , ( 3, T.pack $ show scopeId )
+                      , ( 4, crName cr )
+                      , ( 5, T.pack $ show surfId )
+                      ]
+              isTimeCritical <- readIORef timeCriticalRef
+              unless isTimeCritical $
+                sendShioriWithCallback mShiori OnMouseMove refs handler
+            Nothing -> return ()
 
   reactimate $ handleSampledMotion <$> sampledMotionE
 
