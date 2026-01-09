@@ -815,16 +815,33 @@ runGtkApp
                   showCharacter cs
                 return False
 
+    -- Track balloon hide timer to prevent race conditions
+    balloonHideTimerRef <- newIORef Nothing
+
+    let cancelBalloonHideTimer :: IO ()
+        cancelBalloonHideTimer = do
+          mTimerId <- readIORef balloonHideTimerRef
+          case mTimerId of
+            Just timerId -> do
+              _ <- GLib.sourceRemove timerId
+              writeIORef balloonHideTimerRef Nothing
+              putStrLn "[Balloon] Cancelled pending hide timer"
+            Nothing -> return ()
+
     let hideBalloonIfNoChoices :: IO ()
         hideBalloonIfNoChoices = do
           anyHasChoices <- or <$> mapM (hasChoices . getCharacterBalloon) (Map.elems characters)
           unless anyHasChoices $ do
-            _ <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
+            -- Cancel any existing timer first to prevent stacking
+            cancelBalloonHideTimer
+            -- Start new timer and track its ID
+            timerId <- GLib.timeoutAdd GLib.PRIORITY_DEFAULT 3000 $ do
               putStrLn "[Script] No pending choices, hiding balloons"
               forM_ (Map.elems characters) $ \cs -> hideBalloon (getCharacterBalloon cs)
+              writeIORef balloonHideTimerRef Nothing  -- Clear ref when timer fires
               startOnSurfaceRestoreTimer
               return False
-            pure ()
+            writeIORef balloonHideTimerRef (Just timerId)
 
         startOnSurfaceRestoreTimer :: IO ()
         startOnSurfaceRestoreTimer = do
@@ -852,6 +869,7 @@ runGtkApp
           , ceFireTimeCritical = fireTimeCritical
           , ceChangeSurface    = changeSurface
           , ceHideBalloonIfNoChoices = hideBalloonIfNoChoices
+          , ceCancelBalloonHideTimer = cancelBalloonHideTimer
           }
 
     -- IORef to hold the current script's interrupt function
@@ -874,6 +892,8 @@ runGtkApp
           case parseScript scriptText of
             Left err     -> putStrLn $ "[Balloon] Parse error: " <> show err
             Right script -> do
+              -- Cancel any pending balloon hide timer before new script
+              cancelBalloonHideTimer
               -- Clear all balloons and reset to default balloon surface before new script
               forM_ (Map.elems characters) $ \cs -> do
                 let balloon = getCharacterBalloon cs

@@ -158,6 +158,8 @@ data CallbackEnv = CallbackEnv
     -- ^ Change surface for a scope
   , ceHideBalloonIfNoChoices :: !(IO ())
     -- ^ Hide balloon if no choices are present
+  , ceCancelBalloonHideTimer :: !(IO ())
+    -- ^ Cancel any pending balloon hide timer
   }
 
 -- | Get the balloon for the current scope.
@@ -232,7 +234,9 @@ cbHideBalloon env scope =
     Nothing -> return ()
 
 cbShowBalloon :: CallbackEnv -> Int -> IO ()
-cbShowBalloon env scope =
+cbShowBalloon env scope = do
+  -- Cancel any pending hide timer when showing balloon
+  ceCancelBalloonHideTimer env
   case Map.lookup scope (ceCharacters env) of
     Just cs -> showBalloon (getCharacterBalloon cs)
     Nothing -> return ()
