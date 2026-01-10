@@ -27,15 +27,12 @@ module Kokage.SakuraScript.Interpreter
 
 import           Control.Concurrent       ( MVar
                                           , forkIO
-                                          , newEmptyMVar
-                                          , putMVar
-                                          , takeMVar
                                           , threadDelay
                                           )
 import           Control.Concurrent.Async ( race )
 import           Control.Monad            ( forM_, unless, void, when )
 
-import           Data.IORef               ( IORef, modifyIORef', newIORef, readIORef, writeIORef )
+import           Data.IORef               ( IORef )
 import qualified Data.Text                as T
 import           Data.Time.Clock          ( getCurrentTime )
 import           Data.Time.Clock.POSIX    ( utcTimeToPOSIXSeconds )

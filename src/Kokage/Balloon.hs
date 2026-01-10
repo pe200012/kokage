@@ -61,8 +61,9 @@ module Kokage.Balloon
 import           Control.Monad             ( unless, void, when )
 
 import qualified Data.ByteString           as BS
-import           Data.GI.Base              ( AttrOp((:=)), new, on )
-import           Data.IORef                ( IORef, modifyIORef', newIORef, readIORef, writeIORef )
+import           Data.GI.Base              ( AttrOp((:=)), new )
+import qualified Data.GI.Base              as GI
+import           Data.IORef                ( IORef )
 import           Data.Int                  ( Int32 )
 import           Data.Maybe                ( fromMaybe )
 import qualified Data.Text                 as T
@@ -372,7 +373,7 @@ newBalloonStateWithConfig app config = do
   -- Add scroll controller for mouse wheel scrolling
   scrollController
     <- new Gtk.EventControllerScroll [ #flags := [ Gtk.EventControllerScrollFlagsVertical ] ]
-  void $ on scrollController #scroll $ \_dx dy -> do
+  void $ GI.on scrollController #scroll $ \_dx dy -> do
     if dy > 0
       then modifyIORef' scrollLineRef (+ 1)  -- Scroll down
       else modifyIORef' scrollLineRef (\n -> max 0 (n - 1))  -- Scroll up
@@ -382,7 +383,7 @@ newBalloonStateWithConfig app config = do
 
   -- Add click gesture for choice selection
   clickGesture <- new Gtk.GestureClick []
-  void $ on clickGesture #released $ \_nPress x y -> do
+  void $ GI.on clickGesture #released $ \_nPress x y -> do
     choiceRects <- readIORef choiceRectsRef
     mCallback <- readIORef choiceCallbackRef
     -- Check if click is within any choice rect
@@ -404,7 +405,7 @@ newBalloonStateWithConfig app config = do
   Gtk.windowSetChild window (Just drawArea)
 
   -- Handle close request - just hide, don't destroy
-  void $ on window #closeRequest $ do
+  void $ GI.on window #closeRequest $ do
     Gtk.widgetSetVisible window False
     writeIORef visibleRef False
     return True  -- Prevent destruction
@@ -977,7 +978,7 @@ moveCursor bs targetX targetY = do
       currentX
         = if null currentLines
           then 0
-          else T.length (last currentLines) * charWidth
+          else maybe 0 T.length (viaNonEmpty last currentLines) * charWidth
 
   -- Add newlines to reach target Y if needed
   let neededNewlines = max 0 ((targetY - currentY) `div` lineHeight)

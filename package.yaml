@@ -65,10 +65,14 @@ ghc-options:
 
 library:
   source-dirs: src
-  mixins:
-    - base hiding (Prelude)
-    - relude (Relude as Prelude)
-    - relude
+  dependencies:
+  - name: base
+    mixin:
+      - hiding (Prelude)
+  - name: relude
+    mixin:
+      - (Relude as Prelude)
+      - ""
 
 executables:
   kokage:

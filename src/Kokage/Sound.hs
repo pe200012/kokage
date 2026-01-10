@@ -20,7 +20,7 @@ import           Control.Concurrent ( forkIO )
 import           Control.Exception  ( SomeException, catch )
 import           Control.Monad      ( void )
 
-import           Data.IORef         ( IORef, newIORef, readIORef, writeIORef )
+import           Data.IORef         ( IORef )
 import           Data.Maybe         ( isJust )
 import qualified Data.Text          as T
 

@@ -57,10 +57,8 @@ import           System.FilePath        ( (</>) )
 import           System.IO              ( BufferMode(..)
                                         , Handle
                                         , hClose
-                                        , hFlush
                                         , hGetLine
                                         , hPutStrLn
-                                        , hSetBuffering
                                         )
 import           System.Process         ( CreateProcess(..)
                                         , ProcessHandle
@@ -345,11 +343,6 @@ toWinePath path
   where
     toBackslash '/' = '\\'
     toBackslash c   = c
-
--- | Check if string starts with prefix
-isPrefixOf :: String -> String -> Bool
-isPrefixOf prefix str = take (length prefix) str == prefix
-
 -- | Strip whitespace characters
 stripWhitespace :: String -> String
 stripWhitespace = filter (`notElem` (" \r\n\t" :: String))

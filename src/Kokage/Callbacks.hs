@@ -71,7 +71,7 @@ module Kokage.Callbacks
   ) where
 
 import           Control.Monad              ( unless, void, when )
-import           Data.IORef                 ( IORef, readIORef, writeIORef )
+import           Data.IORef                 ( IORef )
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 ( fromMaybe )
 import qualified Data.Set                   as Set
@@ -85,7 +85,6 @@ import qualified GI.Gio                     as Gio
 import qualified GI.GLib                    as GLib
 import qualified GI.Gtk                     as Gtk
 import           Data.GI.Base               ( AttrOp (..) )
-import           System.Environment         ( lookupEnv )
 
 import           Kokage.Animation           ( ActiveAnim (..)
                                             , asActiveAnims
@@ -571,7 +570,8 @@ cbGetEnvVar env envVar = do
     EnvSecond       -> return $ T.pack $ show (truncate second :: Int)
     EnvWeekday      -> do
       let (_, _, dow) = toWeekDate (utctDay now)
-      return $ T.pack $ ["日", "月", "火", "水", "木", "金", "土"] !! (dow `mod` 7)
+          weekdays = ["日", "月", "火", "水", "木", "金", "土"]
+      return $ T.pack $ fromMaybe "?" $ weekdays !!? (dow `mod` 7)
     EnvSelfname     -> return "Emily"
     EnvSelfname2    -> return ""
     EnvKeroname     -> return ""

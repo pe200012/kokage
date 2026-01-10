@@ -32,9 +32,9 @@ module Kokage.Animation
 
 import           Control.Monad     ( foldM, foldM_, unless, when )
 
-import           Data.IORef        ( IORef, modifyIORef', newIORef, readIORef, writeIORef )
+import           Data.IORef        ( IORef )
 import           Data.Int          ( Int32 )
-import           Data.List         ( sortBy )
+import           Data.List         ( sortBy, (!!) )
 import           Data.Map.Strict   ( Map )
 import qualified Data.Map.Strict   as Map
 import           Data.Maybe        ( catMaybes )
@@ -299,17 +299,19 @@ updateActiveAnims anims delta = do
               if aaLooping anim && not (null patterns)
                 then do
                   -- Loop back to start
-                  let firstPat = head patterns
-                      baseWait = apWait firstPat
-                  actualWait <- case apWaitMax firstPat of
-                    Just maxW -> randomRIO ( baseWait, maxW )
-                    Nothing   -> return baseWait
-                  let loopedAnim
-                        = anim { aaStepIndex = 0
-                               , aaWaitLeft  = actualWait
-                               , aaVisual    = apSurfaceId firstPat >= 0
-                               }
-                  return ( acc ++ [ loopedAnim ], True, cmds ++ patCmds )
+                  case viaNonEmpty head patterns of
+                    Nothing -> return ( acc, changed || aaVisual anim, cmds ++ patCmds )
+                    Just firstPat -> do
+                      let baseWait = apWait firstPat
+                      actualWait <- case apWaitMax firstPat of
+                        Just maxW -> randomRIO ( baseWait, maxW )
+                        Nothing   -> return baseWait
+                      let loopedAnim
+                            = anim { aaStepIndex = 0
+                                   , aaWaitLeft  = actualWait
+                                   , aaVisual    = apSurfaceId firstPat >= 0
+                                   }
+                      return ( acc ++ [ loopedAnim ], True, cmds ++ patCmds )
                 else
                   -- Animation finished, remove it
                   return ( acc, changed || aaVisual anim, cmds ++ patCmds )
@@ -373,6 +375,7 @@ compositeAnimation shell cache basePixbuf anims = do
 
       return $ Just dest
   where
+    applyPattern :: Shell -> ImageCache -> Pixbuf.Pixbuf -> Int32 -> Int32 -> ActiveAnim -> IO ()
     applyPattern shell cache dest destW destH anim = do
       let pat    = animPatterns (aaDef anim) !! aaStepIndex anim
           surfId = apSurfaceId pat
@@ -430,20 +433,21 @@ startAnimation anim looping = do
   let patterns = animPatterns anim
   if null patterns
     then return Nothing
-    else do
-      let firstPat = head patterns
-          wait     = apWait firstPat
-      actualWait <- case apWaitMax firstPat of
-        Just maxW -> randomRIO ( wait, maxW )
-        Nothing   -> return wait
-      let newAnim
-            = ActiveAnim { aaDef       = anim
-                         , aaStepIndex = 0
-                         , aaWaitLeft  = actualWait
-                         , aaVisual    = apSurfaceId firstPat >= 0
-                         , aaLooping   = looping
-                         }
-      return (Just newAnim)
+    else case viaNonEmpty head patterns of
+      Nothing -> return Nothing
+      Just firstPat -> do
+        let wait = apWait firstPat
+        actualWait <- case apWaitMax firstPat of
+          Just maxW -> randomRIO ( wait, maxW )
+          Nothing   -> return wait
+        let newAnim
+              = ActiveAnim { aaDef       = anim
+                           , aaStepIndex = 0
+                           , aaWaitLeft  = actualWait
+                           , aaVisual    = apSurfaceId firstPat >= 0
+                           , aaLooping   = looping
+                           }
+        return (Just newAnim)
 
 -- | Invoke all Runonce animations for a surface.
 -- Should be called when the surface changes.

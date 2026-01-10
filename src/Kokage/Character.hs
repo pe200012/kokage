@@ -38,7 +38,7 @@ module Kokage.Character
 import           Control.Monad      ( unless, void, when )
 
 import           Data.GI.Base       ( AttrOp((:=)), new )
-import           Data.IORef         ( IORef, newIORef, readIORef, writeIORef )
+import           Data.IORef         ( IORef )
 import           Data.Int           ( Int32 )
 import           Data.Map.Strict    ( Map )
 import           Data.Maybe         ( fromMaybe )

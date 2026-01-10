@@ -34,7 +34,7 @@ import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 import           Data.Void                  ( Void )
 
-import           Text.Megaparsec
+import           Text.Megaparsec hiding (many, some)
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
@@ -117,7 +117,7 @@ pScopeCmd
     ]
   where
     -- \p[n] or \pN (single digit shorthand)
-    pScopeIndex = pBracketedInt <|> (read . (: []) <$> digitChar)
+    pScopeIndex = pBracketedInt <|> (fromMaybe 0 . readMaybe . (: []) <$> digitChar)
 
 --------------------------------------------------------------------------------
 -- Surface commands
@@ -146,7 +146,7 @@ pSurfaceChange = char 's' *> pSurfaceIndex
     -- \s[N] or \sN (single digit shorthand) or \s[alias]
     pSurfaceIndex
       = pBracketed (try (SurfaceChange <$> pInt) <|> (SurfaceChangeAlias <$> pIdentifier))
-      <|> (SurfaceChange . read . (: []) <$> digitChar)
+      <|> (SurfaceChange . fromMaybe 0 . readMaybe . (: []) <$> digitChar)
 
 -- | Parse animation command: \i[n] or \i[n,action]
 pSurfaceAnim :: Parser SurfaceCmd
@@ -344,7 +344,7 @@ pBalloonChange = char 'b' *> pBalloonIndex
   where
     -- \b[N] or \bN (single digit shorthand)
     pBalloonIndex
-      = pBracketed (BalloonChange <$> pInt) <|> (BalloonChange . read . (: []) <$> digitChar)
+      = pBracketed (BalloonChange <$> pInt) <|> (BalloonChange . fromMaybe 0 . readMaybe . (: []) <$> digitChar)
 
 -- | Parse newline variants: \n, \n[half], \n[percent,n]
 pNewline :: Parser BalloonCmd
@@ -438,7 +438,7 @@ pWaitCmd
 
 -- | Parse simple wait: \wN (single digit)
 pWaitSimple :: Parser WaitCmd
-pWaitSimple = char 'w' *> (WaitSimple . read . pure <$> digitChar)
+pWaitSimple = char 'w' *> (WaitSimple . fromMaybe 0 . readMaybe . pure <$> digitChar)
 
 -- | Parse ms wait: \_w[n]
 pWaitMs :: Parser WaitCmd
@@ -984,7 +984,7 @@ pInt :: Parser Int
 pInt = do
   sign <- option id (negate <$ char '-')
   digits <- some digitChar
-  pure $ sign (read digits)
+  pure $ sign (fromMaybe 0 $ readMaybe digits)
 
 -- | Parse comma separator
 pComma :: Parser ()
@@ -1082,4 +1082,4 @@ pDouble :: Parser Double
 pDouble = do
   intPart <- some digitChar
   fracPart <- option "" ((:) <$> char '.' <*> some digitChar)
-  pure $ read (intPart ++ fracPart)
+  pure $ fromMaybe 0 $ readMaybe (intPart ++ fracPart)

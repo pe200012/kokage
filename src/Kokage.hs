@@ -60,11 +60,10 @@ import           Data.GI.Base                    ( AttrOp((:=))
                                                  , glibType
                                                  , new
                                                  , newObject
-                                                 , on
                                                  , withManagedPtr
                                                  )
+import qualified Data.GI.Base                    as GI
 import           Data.GI.Base.GValue             ( get_object )
-import           Data.IORef                      ( newIORef, readIORef, writeIORef )
 import           Data.Int                        ( Int32 )
 import           Data.List                       ( foldl', nub, sort )
 import qualified Data.Map.Strict                 as Map
@@ -89,7 +88,8 @@ import qualified GI.Pango                        as Pango
 import qualified GI.PangoCairo                   as PangoCairo
 
 import           Kokage.Balloon                  ( BalloonChoice(..)
-                                                , bsDrawArea
+                                                 , BalloonState
+                                                 , bsDrawArea
                                                 , bsLayerShell
                                                 , bsPosition
                                                 , bsWindow
@@ -178,7 +178,6 @@ import           System.Directory                ( XdgDirectory(..)
                                                  , getXdgDirectory
                                                  , listDirectory
                                                  )
-import           System.Environment              ( lookupEnv )
 import           System.FilePath                 ( (</>), takeBaseName, takeExtension )
 
 import           Types.Ghost                     ( CharacterSettings(..)
@@ -436,9 +435,9 @@ parseHistory content
           , ( key, rest ) <- [ T.breakOn "," stripped ]
           , let val = T.strip $ T.drop 1 rest
           ]
-      lookupInt k def = case lookup (T.toLower $ T.strip k) pairs of
+      lookupInt k def = case find (\(key, _) -> key == T.toLower (T.strip k)) pairs of
         Nothing -> def
-        Just v  -> case reads (T.unpack v) of
+        Just (_, v) -> case reads (T.unpack v) of
           [ ( n, "" ) ] -> n
           _ -> def
     in
@@ -1058,21 +1057,21 @@ runGtkApp
   -- Register application-level actions for context menu
   -- "app.quit" action - cleanly quit the application
   quitAction <- Gio.simpleActionNew "quit" Nothing
-  _ <- on quitAction #activate $ \_ -> do
+  _ <- GI.on quitAction #activate $ \_ -> do
     putStrLn "[Menu] Quit action triggered"
     Gio.applicationQuit app
   Gio.actionMapAddAction app quitAction
 
   -- "app.cancel" action - does nothing, just closes the menu
   cancelAction <- Gio.simpleActionNew "cancel" Nothing
-  _ <- on cancelAction #activate $ \_ -> do
+  _ <- GI.on cancelAction #activate $ \_ -> do
     putStrLn "[Menu] Cancel action triggered (menu closed)"
   Gio.actionMapAddAction app cancelAction
 
   -- "app.stick" action - toggle always-on-top for all windows
   stickyRef <- newIORef False
   stickAction <- Gio.simpleActionNew "stick" Nothing
-  _ <- on stickAction #activate $ \_ -> do
+  _ <- GI.on stickAction #activate $ \_ -> do
     isSticky <- readIORef stickyRef
     let newSticky = not isSticky
     writeIORef stickyRef newSticky
@@ -1088,7 +1087,7 @@ runGtkApp
 
   -- "app.close" action - close the current ghost
   closeAction <- Gio.simpleActionNew "close" Nothing
-  _ <- on closeAction #activate $ \_ -> do
+  _ <- GI.on closeAction #activate $ \_ -> do
     putStrLn "[Menu] Close action triggered"
     -- For now, close all windows (single ghost mode)
     windows <- Gtk.applicationGetWindows app
@@ -1111,12 +1110,12 @@ runGtkApp
 
   forM_ dummyActions $ \name -> do
     action <- Gio.simpleActionNew (T.pack name) Nothing
-    _ <- on action #activate $ \_ -> do
+    _ <- GI.on action #activate $ \_ -> do
       putStrLn $ "[Menu] Placeholder action triggered: " <> name
     Gio.actionMapAddAction app action
 
   -- Connect activate signal
-  _ <- on app #activate $ do
+  _ <- GI.on app #activate $ do
     -- Create all characters defined in shell config
     -- Scope 0 = Sakura, Scope 1 = Kero, Scope 2+ = extra characters
     let shellDesc = shellDescript shell
@@ -1155,7 +1154,8 @@ runGtkApp
             Nothing -> error "No characters available"  -- Should never happen
 
     -- Helper to get balloon for current scope
-    let getCurrentBalloon = do
+    let getCurrentBalloon :: IO BalloonState
+        getCurrentBalloon = do
           scope <- readIORef currentScopeRef
           return $ getBalloon scope
 
@@ -1349,7 +1349,7 @@ runGtkApp
 
     -- Register "app.close" action - sends OnClose event to SHIORI, then quits
     closeAction <- Gio.simpleActionNew "close" Nothing
-    _ <- on closeAction #activate $ \_ -> do
+    _ <- GI.on closeAction #activate $ \_ -> do
       putStrLn "[Menu] Close action triggered, sending OnClose event"
       -- Send OnClose event to SHIORI with reason "user"
       let refs = Map.fromList [ ( 0, "user" :: T.Text ) ]
@@ -1451,38 +1451,38 @@ runGtkApp
 
       -- Create drag gesture (for left-click drag/move)
       dragGesture <- new Gtk.GestureDrag []
-      _ <- on dragGesture #dragBegin $ curry fireDragBegin
-      _ <- on dragGesture #dragUpdate $ curry fireDragUpdate
-      _ <- on dragGesture #dragEnd $ curry fireDragEnd
+      _ <- GI.on dragGesture #dragBegin $ curry fireDragBegin
+      _ <- GI.on dragGesture #dragUpdate $ curry fireDragUpdate
+      _ <- GI.on dragGesture #dragEnd $ curry fireDragEnd
       Gtk.widgetAddController picture dragGesture
 
       -- Create left-click gesture (Button 1) for click count detection (single/double click)
       leftClickGesture <- new Gtk.GestureClick [ #button := 1 ]
-      _ <- on leftClickGesture #pressed
+      _ <- GI.on leftClickGesture #pressed
         $ \nPress x y -> fireLeftClick ( fromIntegral nPress, x, y )
       Gtk.widgetAddController picture leftClickGesture
 
       -- Create drag gesture for balloon
       balloonDragGesture <- new Gtk.GestureDrag []
-      _ <- on balloonDragGesture #dragBegin $ curry fireBalloonDragBegin
-      _ <- on balloonDragGesture #dragUpdate $ curry fireBalloonDragUpdate
-      _ <- on balloonDragGesture #dragEnd $ curry fireBalloonDragEnd
+      _ <- GI.on balloonDragGesture #dragBegin $ curry fireBalloonDragBegin
+      _ <- GI.on balloonDragGesture #dragUpdate $ curry fireBalloonDragUpdate
+      _ <- GI.on balloonDragGesture #dragEnd $ curry fireBalloonDragEnd
       Gtk.widgetAddController (bsDrawArea bs) balloonDragGesture
 
       -- Create left-click gesture for balloon
       balloonLeftClickGesture <- new Gtk.GestureClick [ #button := 1 ]
-      _ <- on balloonLeftClickGesture #pressed $ \nPress x y -> do
+      _ <- GI.on balloonLeftClickGesture #pressed $ \nPress x y -> do
         fireBalloonLeftClick ( fromIntegral nPress, x, y )
       Gtk.widgetAddController (bsDrawArea bs) balloonLeftClickGesture
 
       -- Create motion controller for balloon
       balloonMotionController <- new Gtk.EventControllerMotion []
-      _ <- on balloonMotionController #motion $ curry fireBalloonMotion
+      _ <- GI.on balloonMotionController #motion $ curry fireBalloonMotion
       Gtk.widgetAddController (bsDrawArea bs) balloonMotionController
 
       -- Create right-click gesture (Button 3) for context menu
       rightClickGesture <- new Gtk.GestureClick [ #button := 3 ]  -- Button 3 = right-click
-      _ <- on rightClickGesture #pressed $ \_nPress x y -> do
+      _ <- GI.on rightClickGesture #pressed $ \_nPress x y -> do
         fireRightClick ( x, y )
       Gtk.widgetAddController picture rightClickGesture
 
@@ -1501,14 +1501,14 @@ runGtkApp
 
       -- Create motion controller
       motionController <- new Gtk.EventControllerMotion []
-      _ <- on motionController #motion $ curry fireMotion
+      _ <- GI.on motionController #motion $ curry fireMotion
       Gtk.widgetAddController picture motionController
 
       -- Create DropTarget for NAR file drops (only on sakura)
       when (scopeId == 0) $ do
         gfileType <- glibType @Gio.File
         dropTarget <- Gtk.dropTargetNew gfileType [ Gdk.DragActionCopy ]
-        _ <- on dropTarget #drop $ \gvalue _x _y -> do
+        _ <- GI.on dropTarget #drop $ \gvalue _x _y -> do
           mPath <- withManagedPtr gvalue $ \gvPtr -> do
             objPtr <- get_object gvPtr :: IO (Ptr Gio.File)
             if objPtr == nullPtr

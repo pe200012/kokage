@@ -294,7 +294,7 @@ extractArchive targetDir archive = do
         let content = fromEntry entry
         BL.writeFile fullPath content
   where
-    isDirectoryPath p = not (null p) && last p `elem` [ '/', '\\' ]
+    isDirectoryPath p = maybe False (`elem` ['/', '\\']) (viaNonEmpty last p)
 
     normalizePathSeparators = map (\c -> if c == '\\'
                                      then '/'
@@ -376,7 +376,7 @@ installBundledContent base archive inst = do
     isPrefixOf _ [] = False
     isPrefixOf (x : xs) (y : ys) = x == y && isPrefixOf xs ys
 
-    isDirectoryPath p = not (null p) && last p `elem` [ '/', '\\' ]
+    isDirectoryPath p = maybe False (`elem` ['/', '\\']) (viaNonEmpty last p)
 
     normalizePathSeparators = map (\c -> if c == '\\'
                                      then '/'
