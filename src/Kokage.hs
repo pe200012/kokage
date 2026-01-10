@@ -656,6 +656,10 @@ initializeShiori ghostMasterPath shioriName = do
 cleanupShiori :: Maybe WineShiori -> IO ()
 cleanupShiori Nothing       = return ()
 cleanupShiori (Just shiori) = do
+  -- Send OnDestroy NOTIFY before unloading
+  -- Reference0: empty for normal shutdown, "reload" for reload
+  putStrLn "[SHIORI] Sending OnDestroy..."
+  _ <- sendNotify shiori "OnDestroy" (Map.fromList [(0, "" :: T.Text)])
   putStrLn "[SHIORI] Unloading DLL..."
   _ <- unloadShiori shiori
   putStrLn "[SHIORI] Stopping bridge..."
@@ -1169,6 +1173,21 @@ runGtkApp
             Nothing -> putStrLn $ "[Surface] Scope " <> show scope <> " not found"
             Just cs -> do
               setCharacterSurface cs shell newSurfaceId
+              -- Send OnSurfaceChange NOTIFY to SHIORI
+              case mShiori of
+                Nothing -> return ()
+                Just shiori -> do
+                  -- Reference0 = sakura surface, Reference1 = kero surface
+                  -- Reference2 = change details (scope,surfaceId)
+                  sakuraSurf <- maybe (return 0) getCharacterSurface (Map.lookup 0 characters)
+                  keroSurf   <- maybe (return 10) getCharacterSurface (Map.lookup 1 characters)
+                  let refs = Map.fromList
+                        [ (0, T.pack $ show sakuraSurf)
+                        , (1, T.pack $ show keroSurf)
+                        , (2, T.pack $ show scope <> "," <> show newSurfaceId)
+                        ]
+                  _ <- sendNotify shiori "OnSurfaceChange" refs
+                  putStrLn $ "[SHIORI] Sent OnSurfaceChange: scope=" <> show scope <> ", surface=" <> show newSurfaceId
               -- For extra characters (scope >= 2), show after surface is set
               -- Use idleAdd to ensure this runs after setCharacterSurface's idleAdd
               when (scope >= 2) $ void $ GLib.idleAdd GLib.PRIORITY_DEFAULT_IDLE $ do
