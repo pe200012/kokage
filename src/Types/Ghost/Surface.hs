@@ -36,17 +36,10 @@ module Types.Ghost.Surface
   , parseAnimationInterval
   ) where
 
-import           Control.Applicative  ( (<|>) )
-
 import qualified Data.ByteString.Lazy as BL
-import           Data.Map.Strict      ( Map )
 import qualified Data.Map.Strict      as Map
-import           Data.Maybe           ( mapMaybe )
-import           Data.Text            ( Text )
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
-
-import           Text.Read            ( readMaybe )
 
 import           Utils.Charset        ( convertToUtf8, detectCharsetFromBytes )
 import           Utils.Text           ( readIntOr, readMaybeInt )
@@ -445,10 +438,6 @@ parseSurfaceIds txt
               ( Just s, Just e ) -> [ s .. e ]
               _ -> maybeToList (readMaybe (T.unpack part))
       _ -> maybeToList (readMaybe (T.unpack part))
-
-    maybeToList :: Maybe a -> [ a ]
-    maybeToList Nothing  = []
-    maybeToList (Just x) = [ x ]
 
 -- | Parse collision region from collision or collisionex line
 parseCollision :: Text -> Text -> Maybe CollisionRegion

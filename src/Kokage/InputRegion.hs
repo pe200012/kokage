@@ -22,10 +22,7 @@ module Kokage.InputRegion
   , clearInputRegion
   ) where
 
-import           Control.Monad.IO.Class    ( MonadIO, liftIO )
-
 import           Data.GI.Base.ManagedPtr   ( wrapBoxed )
-import           Data.Int                  ( Int32 )
 
 import           Foreign.Ptr               ( Ptr, castPtr )
 

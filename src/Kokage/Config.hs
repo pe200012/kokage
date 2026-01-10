@@ -19,9 +19,8 @@ module Kokage.Config
   , isFirstBoot
   ) where
 
-import           Control.Exception ( SomeException, try )
+import           Control.Exception ( try )
 
-import           Data.Maybe        ( fromMaybe )
 import qualified Data.Text         as T
 import qualified Data.Text.IO      as TIO
 
@@ -108,11 +107,6 @@ parseHistory content = foldr parseLine defaultGhostHistory (T.lines content)
 
     readInt :: T.Text -> Int
     readInt t = fromMaybe 0 (readMaybe (T.unpack t))
-
-    readMaybe :: Read a => String -> Maybe a
-    readMaybe s = case reads s of
-      [ ( x, "" ) ] -> Just x
-      _ -> Nothing
 
 -- | Save ghost history to HISTORY file.
 saveGhostHistory :: FilePath -> GhostHistory -> IO ()

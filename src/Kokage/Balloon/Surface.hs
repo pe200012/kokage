@@ -31,11 +31,7 @@ module Kokage.Balloon.Surface
   ) where
 
 import qualified Data.Map.Strict     as Map
-import           Data.Map.Strict     ( Map )
-import           Data.Maybe          ( isJust )
 import qualified Data.Text           as T
-import           Data.Text           ( Text )
-
 import qualified GI.GdkPixbuf        as Pixbuf
 
 import           Kokage.Transparency ( loadWithTransparency )

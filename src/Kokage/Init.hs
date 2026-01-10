@@ -7,10 +7,9 @@ module Kokage.Init
   , cleanupShiori
   ) where
 
-import           Control.Exception        ( SomeException, try )
+import           Control.Exception        ( try )
 
 import qualified Data.Map.Strict          as Map
-import           Data.Maybe               ( fromMaybe )
 import qualified Data.Text                as T
 import           Data.Time.Clock          ( UTCTime, diffUTCTime, getCurrentTime )
 import           Data.Time.Format         ( defaultTimeLocale, formatTime )
@@ -57,7 +56,7 @@ initializeShiori shiori ghost = do
       tod    = localTimeOfDay lt
       hour   = todHour tod
       minute = todMin tod
-      second = floor (todSec tod) :: Int
+      sec    = floor (todSec tod) :: Int
 
   -- Build reference map
   let refs
@@ -74,7 +73,7 @@ initializeShiori shiori ghost = do
           , ( 3, "" )  -- Shell name (empty for now)
           , ( 4, T.pack $ show hour )
           , ( 5, T.pack $ show minute )
-          , ( 6, T.pack $ show second )
+          , ( 6, T.pack $ show sec )
           ]
 
   -- Send boot event using mkRequest helper

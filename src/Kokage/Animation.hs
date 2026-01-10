@@ -30,19 +30,14 @@ module Kokage.Animation
   , ImageCache
   ) where
 
-import           Control.Monad     ( foldM, foldM_, unless, when )
+import           Control.Monad     ( foldM, foldM_ )
 
-import           Data.IORef        ( IORef )
-import           Data.Int          ( Int32 )
-import           Data.List         ( sortBy, (!!) )
-import           Data.Map.Strict   ( Map )
 import qualified Data.Map.Strict   as Map
-import           Data.Maybe        ( catMaybes )
-import           Data.Ord          ( comparing )
-import           Data.Set          ( Set )
 import qualified Data.Set          as Set
 
 import qualified GI.GdkPixbuf      as Pixbuf
+
+import           Data.List         ( (!!) )
 
 import           Kokage.ImageCache ( ImageCache, getCachedImage, newImageCache )
 import           Kokage.Surface    ( compositeSurface, findSurfaceById, loadDefaultSurface )
@@ -376,25 +371,25 @@ compositeAnimation shell cache basePixbuf anims = do
       return $ Just dest
   where
     applyPattern :: Shell -> ImageCache -> Pixbuf.Pixbuf -> Int32 -> Int32 -> ActiveAnim -> IO ()
-    applyPattern shell cache dest destW destH anim = do
+    applyPattern shell' cache' dest destW destH anim = do
       let pat    = animPatterns (aaDef anim) !! aaStepIndex anim
           surfId = apSurfaceId pat
           x      = apX pat
           y      = apY pat
-          method = apMethod pat
+          _method = apMethod pat
 
       -- surfId < 0 means no image (just wait/logic), so skip drawing
       when (surfId >= 0) $ do
         -- Load the surface image for the pattern (with caching)
         -- Animation patterns often reference surface IDs that are just raw PNG files
         -- (e.g., surface4000.png) without a corresponding surface definition.
-        let surfaces = shellSurfaces shell
-            cacheKey = shellPath shell <> "/surface" <> show surfId
+        let surfaces = shellSurfaces shell'
+            cacheKey = shellPath shell' <> "/surface" <> show surfId
 
-        mPatPixbuf <- getCachedImage cache cacheKey $ do
+        mPatPixbuf <- getCachedImage cache' cacheKey $ do
           case findSurfaceById surfId surfaces of
-            Just patSurfDef -> compositeSurface (shellPath shell) patSurfDef
-            Nothing         -> loadDefaultSurface (shellPath shell) surfId
+            Just patSurfDef -> compositeSurface (shellPath shell') patSurfDef
+            Nothing         -> loadDefaultSurface (shellPath shell') surfId
 
         case mPatPixbuf of
           Nothing        -> return ()
@@ -482,17 +477,17 @@ invokeAlways surfDef activeAnims = do
 -- | Manually invoke an animation by ID.
 -- If the animation is already running, it will not be started again unless force is True.
 invokeAnimation :: SurfaceDefinition -> [ ActiveAnim ] -> Int -> Bool -> IO [ ActiveAnim ]
-invokeAnimation surfDef activeAnims animationId force = do
+invokeAnimation surfDef activeAnims animationId isForce = do
   let runningIds = map (animId . aaDef) activeAnims
       mAnim      = filter (\a -> animId a == animationId) (sdAnimations surfDef)
   case mAnim of
     []         -> return activeAnims
-    (anim : _) -> if animationId `elem` runningIds && not force
+    (anim : _) -> if animationId `elem` runningIds && not isForce
       then return activeAnims
       else do
         -- Remove existing if force
         let filtered
-              = if force
+              = if isForce
                 then filter (\a -> animId (aaDef a) /= animationId) activeAnims
                 else activeAnims
         mNewAnim <- startAnimation anim False
@@ -519,16 +514,16 @@ clearAnimations animState = do
 -- | Toggle a bind animation on/off.
 -- When enabled, bind animations are rendered as part of the composite.
 toggleBind :: AnimationState -> Int -> IO ()
-toggleBind animState animId = do
-  modifyIORef' (asBindState animState) $ \binds -> if Set.member animId binds
-    then Set.delete animId binds
-    else Set.insert animId binds
+toggleBind animState aId = do
+  modifyIORef' (asBindState animState) $ \binds -> if Set.member aId binds
+    then Set.delete aId binds
+    else Set.insert aId binds
 
 -- | Get the current bind state for an animation ID.
 getBindState :: AnimationState -> Int -> IO Bool
-getBindState animState animId = do
+getBindState animState aId = do
   binds <- readIORef (asBindState animState)
-  return $ Set.member animId binds
+  return $ Set.member aId binds
 
 -- | Set multiple bind states at once.
 -- Takes a map of animation ID -> enabled state.
@@ -552,7 +547,7 @@ isExclusiveRunning animState = do
 -- | Process queued animations when exclusive animation finishes.
 -- Should be called after each tick to check if queued animations can start.
 processQueue :: AnimationState -> SurfaceDefinition -> [ ActiveAnim ] -> IO [ ActiveAnim ]
-processQueue animState surfDef activeAnims = do
+processQueue animState _surfDef activeAnims = do
   mExcl <- readIORef (asExclusiveAnim animState)
   case mExcl of
     Just _  -> return activeAnims  -- Still running exclusive

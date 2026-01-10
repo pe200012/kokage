@@ -58,17 +58,11 @@ module Kokage.Balloon
   , extractPlainText
   ) where
 
-import           Control.Monad             ( unless, void, when )
-
 import qualified Data.ByteString           as BS
 import           Data.GI.Base              ( AttrOp((:=)), new )
 import qualified Data.GI.Base              as GI
-import           Data.IORef                ( IORef )
-import           Data.Int                  ( Int32 )
-import           Data.Maybe                ( fromMaybe )
 import qualified Data.Text                 as T
 import qualified Data.Text.Encoding        as TE
-import           Data.Word                 ( Word8 )
 
 import           Foreign.Ptr               ( castPtr )
 
@@ -84,7 +78,6 @@ import qualified GI.PangoCairo             as PangoCairo
 import           Kokage.Balloon.Surface    ( loadBalloonSurface )
 import           Kokage.Platform           ( Layer(..)
                                            , initPlatformWindow
-                                           , isPlatformInitialized
                                            , setWindowAlwaysOnTop
                                            , setWindowLayer
                                            , setWindowPosition
@@ -997,22 +990,22 @@ moveCursor bs targetX targetY = do
       combinedText = newlinesText <> spacesText
 
   -- Add as segment with current style
-  cfg <- readIORef (bsConfig bs)
+  cfg' <- readIORef (bsConfig bs)
   unless (T.null combinedText) $ do
     let segment
           = TextSegment
           { tsText      = combinedText
-          , tsBold      = bcFontBold cfg
-          , tsItalic    = bcFontItalic cfg
-          , tsUnderline = bcFontUnderline cfg
-          , tsStrike    = bcFontStrike cfg
-          , tsSub       = bcFontSub cfg
-          , tsSup       = bcFontSup cfg
-          , tsFontSize  = bcFontSize cfg
-          , tsFontName  = bcFontName cfg
-          , tsColorR    = bcTextColorR cfg
-          , tsColorG    = bcTextColorG cfg
-          , tsColorB    = bcTextColorB cfg
+          , tsBold      = bcFontBold cfg'
+          , tsItalic    = bcFontItalic cfg'
+          , tsUnderline = bcFontUnderline cfg'
+          , tsStrike    = bcFontStrike cfg'
+          , tsSub       = bcFontSub cfg'
+          , tsSup       = bcFontSup cfg'
+          , tsFontSize  = bcFontSize cfg'
+          , tsFontName  = bcFontName cfg'
+          , tsColorR    = bcTextColorR cfg'
+          , tsColorG    = bcTextColorG cfg'
+          , tsColorB    = bcTextColorB cfg'
           }
     modifyIORef' (bsText bs) (<> [ segment ])
   Gtk.widgetQueueDraw (bsDrawArea bs)

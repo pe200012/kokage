@@ -15,12 +15,9 @@ module Kokage.Transparency
   , loadWithTransparency
   ) where
 
-import           Control.Exception     ( SomeException, bracket, catch )
-import           Control.Monad         ( forM_ )
+import           Control.Exception     ( bracket, catch )
 
 import qualified Data.ByteString       as BS
-import           Data.Int              ( Int32 )
-import           Data.Word             ( Word8 )
 
 import           Foreign.Marshal.Alloc ( free, mallocBytes )
 import           Foreign.Ptr           ( Ptr, plusPtr )

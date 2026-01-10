@@ -21,12 +21,9 @@ import           Codec.Archive.Zip    ( Archive
                                       , zEntries
                                       )
 
-import           Control.Exception    ( SomeException, catch )
-import           Control.Monad        ( forM_, unless, when )
-
+import           Control.Exception    ( catch )
 import qualified Data.ByteString.Lazy as BL
 import           Data.Char            ( toLower )
-import           Data.Text            ( Text )
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
 
@@ -172,11 +169,6 @@ needsDirectory _ = True
 -- | Find an entry by name in the archive (case-insensitive)
 findEntry :: FilePath -> [ Entry ] -> Maybe Entry
 findEntry name = find (\e -> map toLower (eRelativePath e) == map toLower name)
-  where
-    find _ []       = Nothing
-    find p (x : xs)
-      | p x = Just x
-      | otherwise = find p xs
 
 -- | Parse install.txt content into InstallDescript
 parseInstallContent :: Text -> IO InstallDescript
@@ -371,10 +363,6 @@ installBundledContent base archive inst = do
             (c : rest)
               | c `elem` [ '/', '\\' ] -> rest
             _          -> stripped
-
-    isPrefixOf [] _ = True
-    isPrefixOf _ [] = False
-    isPrefixOf (x : xs) (y : ys) = x == y && isPrefixOf xs ys
 
     isDirectoryPath p = maybe False (`elem` ['/', '\\']) (viaNonEmpty last p)
 

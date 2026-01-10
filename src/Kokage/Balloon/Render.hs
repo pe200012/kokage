@@ -10,8 +10,6 @@ module Kokage.Balloon.Render
   , drawChoices
   ) where
 
-import           Control.Monad             ( when )
-
 import qualified Data.Text                 as T
 
 import qualified GI.Cairo.Render           as Cairo

@@ -14,7 +14,6 @@ module Types.Plugin
   ) where
 
 import qualified Data.ByteString.Lazy as BL
-import           Data.Text            ( Text )
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
 

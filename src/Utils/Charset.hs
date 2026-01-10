@@ -20,8 +20,6 @@ import           Codec.Text.IConv           ( EncodingName, convert )
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import           Data.Char                  ( toLower )
-import           Data.Maybe                 ( fromMaybe )
-import           Data.Word                  ( Word8 )
 
 import           Utils.Text                 ( cleanStr )
 

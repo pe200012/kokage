@@ -11,7 +11,6 @@ module Kokage.Menu
   , Gtk.PopoverMenu
   ) where
 
-import           Data.Text       ( Text )
 import qualified Data.Text       as T
 
 import qualified GI.Gdk          as Gdk
@@ -217,7 +216,7 @@ createContextMenu parentWindow style config = do
   return popover
 
 applyMenuStyle :: Gtk.PopoverMenu -> MenuStyle -> IO ()
-applyMenuStyle popover style = do
+applyMenuStyle _popover style = do
   let css = generateMenuCss style
   if T.null css
     then return ()

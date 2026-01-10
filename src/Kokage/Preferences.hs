@@ -34,13 +34,9 @@ module Kokage.Preferences
   , setShowCollisionArea
   ) where
 
-import           Control.Exception ( SomeException, catch )
+import           Control.Exception ( catch )
 
 import           Data.Aeson        ( FromJSON, ToJSON, eitherDecodeFileStrict, encodeFile )
-import           Data.IORef        ( modifyIORef', newIORef, readIORef, writeIORef )
-import           Data.Text         ( Text )
-
-import           GHC.Generics      ( Generic )
 
 import           System.Directory  ( XdgDirectory(..)
                                    , createDirectoryIfMissing

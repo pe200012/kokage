@@ -41,22 +41,17 @@ module Kokage.Shiori.WineBridge
   , toWinePath
   ) where
 
-import           Control.Exception      ( SomeException, bracket, try )
-import           Control.Monad          ( void, when )
+import           Control.Exception      ( bracket, try )
 
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Char8  as BS8
 import qualified Data.Map.Strict        as Map
-import           Data.Maybe             ( isNothing )
-import           Data.Text              ( Text )
 import qualified Data.Text              as T
 
 import           System.Directory       ( makeAbsolute )
 import           System.Environment     ( getEnvironment )
 import           System.FilePath        ( (</>) )
-import           System.IO              ( BufferMode(..)
-                                        , Handle
-                                        , hClose
+import           System.IO              ( hClose
                                         , hGetLine
                                         , hPutStrLn
                                         )

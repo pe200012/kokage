@@ -23,8 +23,6 @@ module Kokage.Event
   , handleClick
   ) where
 
-import           Control.Monad              ( when )
-
 import qualified Data.Map.Strict            as Map
 import qualified Data.Text                  as T
 import           Data.Time.Clock            ( getCurrentTime )

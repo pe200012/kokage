@@ -45,16 +45,11 @@ module Kokage
   , Edge(..)
   ) where
 
-import           Control.Exception               ( Exception
-                                                 , SomeException
-                                                 , finally
+import           Control.Exception               ( finally
                                                  , throwIO
                                                  , try
                                                  )
-import           Control.Monad                   ( filterM, forM, forM_, join, unless, void, when )
-import           Control.Monad.Trans.Class       ( lift )
-import           Control.Monad.Trans.Maybe       ( MaybeT(runMaybeT, MaybeT) )
-
+import qualified Data.GI.Base                    as GI
 import           Data.GI.Base                    ( AttrOp((:=))
                                                  , castTo
                                                  , glibType
@@ -62,20 +57,17 @@ import           Data.GI.Base                    ( AttrOp((:=))
                                                  , newObject
                                                  , withManagedPtr
                                                  )
-import qualified Data.GI.Base                    as GI
 import           Data.GI.Base.GValue             ( get_object )
-import           Data.Int                        ( Int32 )
-import           Data.List                       ( foldl', nub, sort )
+import           Data.List                       ( nub )
 import qualified Data.Map.Strict                 as Map
-import           Data.Maybe                      ( fromMaybe, listToMaybe )
 import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as TIO
 import           Data.Time                       ( getCurrentTime
-                                                , getCurrentTimeZone
-                                                , timeZoneMinutes
-                                                , timeZoneSummerOnly
-                                                , utcToLocalTime
-                                                )
+                                                 , getCurrentTimeZone
+                                                 , timeZoneMinutes
+                                                 , timeZoneSummerOnly
+                                                 , utcToLocalTime
+                                                 )
 
 import           Foreign.Ptr                     ( Ptr, nullPtr )
 
@@ -405,14 +397,14 @@ defaultGhostHistory = GhostHistory { ghTime = 0, ghVanishedCount = 0 }
 
 -- | Path to the HISTORY file for a ghost.
 historyFilePath :: FilePath -> FilePath
-historyFilePath ghostPath = ghostPath </> "ghost" </> "master" </> "HISTORY"
+historyFilePath gp = gp </> "ghost" </> "master" </> "HISTORY"
 
 -- | Load ghost history from HISTORY file.
 -- Returns 'Nothing' if this is the first boot (file doesn't exist).
 -- Returns default history if file exists but can't be parsed.
 loadGhostHistory :: FilePath -> IO (Maybe GhostHistory)
-loadGhostHistory ghostPath = do
-  let historyFile = historyFilePath ghostPath
+loadGhostHistory gp = do
+  let historyFile = historyFilePath gp
   exists <- doesFileExist historyFile
   if not exists
     then return Nothing  -- First boot
@@ -445,8 +437,8 @@ parseHistory content
 
 -- | Save ghost history to HISTORY file.
 saveGhostHistory :: FilePath -> GhostHistory -> IO ()
-saveGhostHistory ghostPath history = do
-  let historyFile = historyFilePath ghostPath
+saveGhostHistory gp history = do
+  let historyFile = historyFilePath gp
       content
         = T.unlines
           [ "time, " <> T.pack (show (ghTime history))
@@ -459,8 +451,8 @@ saveGhostHistory ghostPath history = do
 
 -- | Check if this is the first boot for a ghost.
 isFirstBoot :: FilePath -> IO Bool
-isFirstBoot ghostPath = do
-  mHistory <- loadGhostHistory ghostPath
+isFirstBoot gp = do
+  mHistory <- loadGhostHistory gp
   return $ case mHistory of
     Nothing -> True   -- No HISTORY file = first boot
     Just _  -> False
@@ -475,9 +467,9 @@ isFirstBoot ghostPath = do
 --   2. First available balloon in global balloon directory (bdBalloon baseDir)
 --   3. Nothing if no balloons found
 findBalloonDir :: FilePath -> BaseDir -> IO (Maybe FilePath)
-findBalloonDir ghostPath (BaseDir baseDirPath) = do
+findBalloonDir gp (BaseDir baseDirPath) = do
   -- Check for bundled balloon first
-  let bundledBalloon = ghostPath </> "balloon"
+  let bundledBalloon = gp </> "balloon"
   hasBundled <- doesDirectoryExist bundledBalloon
   if hasBundled
     then do
@@ -506,9 +498,9 @@ findBalloonDir ghostPath (BaseDir baseDirPath) = do
             []          -> do
               putStrLn "[Balloon] No valid balloons in global directory"
               return Nothing
-            (first : _) -> do
-              putStrLn $ "[Balloon] Using global balloon: " <> first
-              return $ Just first
+            (firstBalloon : _) -> do
+              putStrLn $ "[Balloon] Using global balloon: " <> firstBalloon
+              return $ Just firstBalloon
 
     -- Check if a directory contains balloon surfaces
     isBalloonDir :: FilePath -> IO Bool
@@ -682,7 +674,7 @@ sendBootNotifySequence ctx = do
   let shiori    = bncShiori ctx
       ghost     = bncGhost ctx
       shell     = bncShell ctx
-      ghostPath = bncGhostPath ctx
+      gp        = bncGhostPath ctx
       mBalloonDir = bncBalloonDir ctx
       baseDir   = bncBaseDir ctx
       ghostDesc = ghostDescript ghost
@@ -713,7 +705,7 @@ sendBootNotifySequence ctx = do
 
   -- 4. uniqueid - unique identifier for this ghost instance
   -- Use ghost path hash as a simple unique ID
-  let uniqueId = T.pack $ show $ abs $ simpleHash ghostPath
+  let uniqueId = T.pack $ show $ abs $ simpleHash gp
   _ <- sendNotify shiori "uniqueid" (Map.fromList [(0, uniqueId)])
   putStrLn "[SHIORI] Sent uniqueid"
 
@@ -748,9 +740,9 @@ sendBootNotifySequence ctx = do
 
   -- 8. installedghostname - list of all installed ghost names
   installedGhosts <- scanGhosts baseDir
-  ghostNames <- forM installedGhosts $ \gp -> do
-    mG <- loadGhost gp
-    return $ maybe (T.pack $ takeBaseName gp) (descriptName . ghostDescript) mG
+  ghostNames <- forM installedGhosts $ \gPath -> do
+    mG <- loadGhost gPath
+    return $ maybe (T.pack $ takeBaseName gPath) (descriptName . ghostDescript) mG
   let installedGhostRefs = Map.fromList $ zip [0..] ghostNames
   _ <- sendNotify shiori "installedghostname" installedGhostRefs
   putStrLn $ "[SHIORI] Sent installedghostname (" <> show (length ghostNames) <> " ghosts)"
@@ -814,7 +806,7 @@ sendBootNotifySequence ctx = do
       [ (0, ghostName)
       , (1, sakuraName)
       , (2, keroName)
-      , (3, T.pack ghostPath)
+      , (3, T.pack gp)
       , (4, shellName)
       , (5, T.pack $ shellPath shell)
       , (6, balloonName)
@@ -982,8 +974,8 @@ listAvailableBalloonPaths (BaseDir baseDirPath) = do
 
 -- | Get list of system font family names using Pango.
 -- Filters out empty names, names with control characters, and duplicates.
-getSystemFontNames :: IO [T.Text]
-getSystemFontNames = do
+_getSystemFontNames :: IO [T.Text]
+_getSystemFontNames = do
   -- Get the default Pango font map
   fontMap <- PangoCairo.fontMapGetDefault
   -- List all font families
@@ -1154,8 +1146,8 @@ runGtkApp
             Nothing -> error "No characters available"  -- Should never happen
 
     -- Helper to get balloon for current scope
-    let getCurrentBalloon :: IO BalloonState
-        getCurrentBalloon = do
+    let _getCurrentBalloon :: IO BalloonState
+        _getCurrentBalloon = do
           scope <- readIORef currentScopeRef
           return $ getBalloon scope
 
@@ -1241,8 +1233,8 @@ runGtkApp
             currentSurf <- getCharacterSurface cs
             return $ currentSurf /= csDefaultSurface cs)
           when anyNonDefault $ do
-            let shellDesc    = shellDescript shell
-                charSettings = getCharSettings 0 shellDesc
+            let sDesc        = shellDescript shell
+                charSettings = getCharSettings 0 sDesc
                 delayMs      = fromIntegral $ fromMaybe 15000 (csSurfaceLife charSettings)
             case Map.lookup 0 characters of
               Nothing -> return ()
@@ -1348,8 +1340,8 @@ runGtkApp
       Nothing     -> return ()
 
     -- Register "app.close" action - sends OnClose event to SHIORI, then quits
-    closeAction <- Gio.simpleActionNew "close" Nothing
-    _ <- GI.on closeAction #activate $ \_ -> do
+    appCloseAction <- Gio.simpleActionNew "close" Nothing
+    _ <- GI.on appCloseAction #activate $ \_ -> do
       putStrLn "[Menu] Close action triggered, sending OnClose event"
       -- Send OnClose event to SHIORI with reason "user"
       let refs = Map.fromList [ ( 0, "user" :: T.Text ) ]
@@ -1369,7 +1361,7 @@ runGtkApp
             -- No script returned, just quit immediately
             putStrLn "[Close] No goodbye script, quitting immediately"
             Gio.applicationQuit app
-    Gio.actionMapAddAction app closeAction
+    Gio.actionMapAddAction app appCloseAction
 
     -- Create global timer event handlers
     ( secondTickHandler, fireSecondTick ) <- newAddHandler
@@ -1691,8 +1683,8 @@ getDefaultBaseDir = do
     }
 
 -- | Parse a hex color string like "#FF0000" or "FF0000" to RGB values (0.0-1.0)
-parseHexColor :: T.Text -> Maybe ( Double, Double, Double )
-parseHexColor hexStr = do
+_parseHexColor :: T.Text -> Maybe ( Double, Double, Double )
+_parseHexColor hexStr = do
   let hex = T.dropWhile (== '#') hexStr
   case T.length hex of
     6 -> do
@@ -1723,8 +1715,8 @@ parseHexColor hexStr = do
       _ -> Nothing
 
 -- | Look up a named color to RGB values (0.0-1.0)
-lookupColorName :: T.Text -> Maybe ( Double, Double, Double )
-lookupColorName name = Map.lookup (T.toLower name) colorNames
+_lookupColorName :: T.Text -> Maybe ( Double, Double, Double )
+_lookupColorName name = Map.lookup (T.toLower name) colorNames
   where
     colorNames :: Map.Map T.Text ( Double, Double, Double )
     colorNames
@@ -1750,5 +1742,6 @@ lookupColorName name = Map.lookup (T.toLower name) colorNames
         , ( "lime", ( 0.0, 1.0, 0.0 ) )
         , ( "aqua", ( 0.0, 1.0, 1.0 ) )
         , ( "silver", ( 0.75, 0.75, 0.75 ) )
+        , ( "fuchsia", ( 1.0, 0.0, 1.0 ) )
         , ( "fuchsia", ( 1.0, 0.0, 1.0 ) )
         ]

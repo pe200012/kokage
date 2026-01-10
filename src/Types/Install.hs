@@ -21,8 +21,6 @@ module Types.Install
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict      as Map
-import           Data.Map.Strict      ( Map )
-import           Data.Text            ( Text )
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
 
@@ -224,9 +222,3 @@ readDeveloperOptions path = do
       "nonar"    -> Just NoNar
       "noupdate" -> Just NoUpdate
       _          -> Nothing
-
-    mapMaybe :: (a -> Maybe b) -> [ a ] -> [ b ]
-    mapMaybe _ []       = []
-    mapMaybe f (x : xs) = case f x of
-      Just y  -> y : mapMaybe f xs
-      Nothing -> mapMaybe f xs

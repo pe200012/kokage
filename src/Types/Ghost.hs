@@ -20,10 +20,7 @@ module Types.Ghost
   , loadGhost
   ) where
 
-import           Control.Exception    ( SomeException, try )
-import           Control.Monad        ( filterM, forM )
-
-import           Data.Maybe           ( catMaybes )
+import           Control.Exception    ( try )
 
 import           System.Directory     ( doesDirectoryExist, doesFileExist, listDirectory )
 import           System.FilePath      ( (</>) )

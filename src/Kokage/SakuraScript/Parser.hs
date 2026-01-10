@@ -26,13 +26,7 @@ module Kokage.SakuraScript.Parser
   , pEnvVar
   ) where
 
-import           Control.Monad              ( void )
-
-import           Data.Functor               ( ($>) )
-import           Data.Maybe                 ( fromMaybe )
-import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
-import           Data.Void                  ( Void )
 
 import           Text.Megaparsec hiding (many, some)
 import           Text.Megaparsec.Char

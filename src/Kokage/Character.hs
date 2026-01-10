@@ -35,15 +35,8 @@ module Kokage.Character
   , cancelSurfaceLifeTimer
   ) where
 
-import           Control.Monad      ( unless, void, when )
-
 import           Data.GI.Base       ( AttrOp((:=)), new )
-import           Data.IORef         ( IORef )
-import           Data.Int           ( Int32 )
-import           Data.Map.Strict    ( Map )
-import           Data.Maybe         ( fromMaybe )
 import qualified Data.Text          as T
-import           Data.Word          ( Word32 )
 
 import qualified GI.GLib            as GLib
 import qualified GI.Gdk             as Gdk
@@ -342,7 +335,7 @@ setCharacterSurface cs shell newSurfId = do
               texture <- Gdk.textureNewForPixbuf pixbuf
               Gtk.pictureSetPaintable (csPicture cs) (Just texture)
               -- Update window size to match new surface
-              Gtk.windowSetDefaultSize (csWindow cs) (fromIntegral w) (fromIntegral h)
+              Gtk.windowSetDefaultSize (csWindow cs) w h
               -- Update input region
               mSurface <- Gtk.nativeGetSurface (csWindow cs)
               case mSurface of

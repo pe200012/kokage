@@ -70,10 +70,7 @@ module Kokage.Callbacks
   , cbSetTimeCritical
   ) where
 
-import           Control.Monad              ( unless, void, when )
-import           Data.IORef                 ( IORef )
 import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 ( fromMaybe )
 import qualified Data.Set                   as Set
 import qualified Data.Text                  as T
 import           Data.Time.Calendar         ( toGregorian )
@@ -560,14 +557,14 @@ cbGetEnvVar :: CallbackEnv -> EnvVar -> IO T.Text
 cbGetEnvVar env envVar = do
   now <- getCurrentTime
   let (year, month, day)         = toGregorian (utctDay now)
-      TimeOfDay hour minute second = timeToTimeOfDay (utctDayTime now)
+      TimeOfDay hour minute sec  = timeToTimeOfDay (utctDayTime now)
   case envVar of
     EnvYear         -> return $ T.pack $ show year
     EnvMonth        -> return $ T.pack $ show month
     EnvDay          -> return $ T.pack $ show day
     EnvHour         -> return $ T.pack $ show hour
     EnvMinute       -> return $ T.pack $ show minute
-    EnvSecond       -> return $ T.pack $ show (truncate second :: Int)
+    EnvSecond       -> return $ T.pack $ show (truncate sec :: Int)
     EnvWeekday      -> do
       let (_, _, dow) = toWeekDate (utctDay now)
           weekdays = ["日", "月", "火", "水", "木", "金", "土"]

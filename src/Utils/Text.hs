@@ -2,22 +2,16 @@
 
 -- | Text utility functions for parsing and processing.
 module Utils.Text
-  ( -- * String trimming
-    clean
+  ( readBoolOr
+  , readMaybeBool
+  , clean
   , cleanStr
-    -- * Parsing helpers
   , readIntOr
   , readMaybeInt
-  , readBoolOr
-  , readMaybeBool
   ) where
 
 import           Data.Char  ( isSpace )
-import           Data.Maybe ( fromMaybe )
-import           Data.Text  ( Text )
 import qualified Data.Text  as T
-
-import           Text.Read  ( readMaybe )
 
 -- | Trim leading and trailing whitespace (String version for charset detection).
 cleanStr :: String -> String

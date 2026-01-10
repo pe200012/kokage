@@ -22,7 +22,6 @@ module Kokage.Event.Shiori
   ) where
 
 import qualified Data.Map.Strict          as Map
-import           Data.Maybe               ( fromMaybe )
 import qualified Data.Text                as T
 import           Data.Time.Clock          ( UTCTime, diffUTCTime )
 import           Data.Time.LocalTime      ( LocalTime(..), TimeOfDay(..) )

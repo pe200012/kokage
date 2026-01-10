@@ -19,12 +19,7 @@ module Kokage.Ghost
   , getScreenGeometry
   ) where
 
-import           Control.Exception ( SomeException, try )
-import           Control.Monad     ( filterM, forM )
-
-import           Data.List         ( find, sortOn )
-import           Data.Maybe        ( fromMaybe, listToMaybe )
-import           Data.Text         ( Text )
+import           Control.Exception ( try )
 import qualified Data.Text         as T
 import qualified Data.Text.IO      as TIO
 
