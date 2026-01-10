@@ -875,10 +875,14 @@ sendBootNotifySequence ctx = do
   putStrLn "[SHIORI] Sent OnNotifyOSInfo"
 
   -- 26. OnNotifyFontInfo - list of available system fonts
-  fontNames <- getSystemFontNames
-  let fontRefs = Map.fromList $ zip [0..] fontNames
-  _ <- sendNotify shiori "OnNotifyFontInfo" fontRefs
-  putStrLn $ "[SHIORI] Sent OnNotifyFontInfo (" <> show (length fontNames) <> " fonts)"
+  -- NOTE: Temporarily disabled - causes SHIORI DLL (yaya.dll) to crash
+  -- with large font lists.
+  -- TODO: Investigate Wine encoding issues or DLL limitations
+  -- fontNames <- getSystemFontNames
+  -- let fontRefs = Map.fromList $ zip [0..] fontNames
+  -- _ <- sendNotify shiori "OnNotifyFontInfo" fontRefs
+  -- putStrLn $ "[SHIORI] Sent OnNotifyFontInfo (" <> show (length fontNames) <> " fonts)"
+  putStrLn "[SHIORI] Skipped OnNotifyFontInfo (disabled due to DLL crash)"
 
   -- 27. OnNotifyInternationalInfo - timezone and locale
   tz <- getCurrentTimeZone
@@ -974,14 +978,35 @@ listAvailableBalloonPaths (BaseDir baseDirPath) = do
         else doesFileExist (path </> "balloons0.png")
 
 -- | Get list of system font family names using Pango.
+-- Filters out empty names, names with control characters, and duplicates.
 getSystemFontNames :: IO [T.Text]
 getSystemFontNames = do
   -- Get the default Pango font map
   fontMap <- PangoCairo.fontMapGetDefault
   -- List all font families
   families <- Pango.fontMapListFamilies fontMap
-  -- Get the name of each family
-  forM families Pango.fontFamilyGetName
+  -- Get the name of each family, filter out invalid names
+  names <- forM families Pango.fontFamilyGetName
+  let validNames = filter isValidFontName names
+  putStrLn $ "[Font] Total fonts: " <> show (length names) <> ", valid: " <> show (length validNames)
+  return $ nub validNames
+  where
+    -- A valid font name is non-empty, contains only printable characters,
+    -- and has at least one alphanumeric character (filters out "????????" etc.)
+    isValidFontName :: T.Text -> Bool
+    isValidFontName name =
+      not (T.null name) &&
+      T.all isPrintable name &&
+      T.any isAlphaNum name  -- Must have at least one letter or digit
+
+    isPrintable :: Char -> Bool
+    isPrintable c = c >= ' ' && c < '\DEL'
+
+    isAlphaNum :: Char -> Bool
+    isAlphaNum c = (c >= 'a' && c <= 'z') ||
+                   (c >= 'A' && c <= 'Z') ||
+                   (c >= '0' && c <= '9') ||
+                   c > '\x7F'  -- Allow non-ASCII (Japanese, Chinese, etc.)
 
 -- | Run the GTK application with the given shell.
 -- The shell contains surface definitions for dynamic surface switching.
