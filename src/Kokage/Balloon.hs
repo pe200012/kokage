@@ -175,8 +175,8 @@ defaultBalloonConfig
   , bcValidWidth    = 280
   , bcValidHeight   = 130
   , bcFontName      = "Sans"
-  , bcFontSize      = 12
-  , bcBaseFontSize  = 12
+  , bcFontSize      = 9
+  , bcBaseFontSize  = 9
   , bcTextColorR    = 0.2
   , bcTextColorG    = 0.2
   , bcTextColorB    = 0.2
@@ -944,7 +944,7 @@ clearChars bs n = do
       totalText = T.concat (map tsText segments)
       newLen    = max 0 (T.length totalText - n)
       newText   = T.take newLen totalText
-    in 
+    in
       rebuildSegments segments newText
   Gtk.widgetQueueDraw (bsDrawArea bs)
   where
@@ -957,7 +957,7 @@ clearChars bs n = do
       = let
           segLen       = T.length (tsText seg)
           remainingLen = T.length remaining
-        in 
+        in
           if remainingLen <= segLen
             then [ seg { tsText = remaining } ]
             else seg : rebuildSegments rest (T.drop segLen remaining)
@@ -1246,7 +1246,7 @@ pixbufToCairoSurface pixbuf = do
               cairoRow = convertRow rowData 0
               -- Pad row to Cairo stride
               padding  = replicate (cairoStride - fromIntegral w * 4) 0
-            in 
+            in
               cairoRow
               ++ padding
               ++ convertPixels srcData (y + 1) (srcRowStart + fromIntegral rowstride)
@@ -1267,7 +1267,7 @@ pixbufToCairoSurface pixbuf = do
               premulR = round (fromIntegral r * a') :: Word8
               premulG = round (fromIntegral g * a') :: Word8
               premulB = round (fromIntegral b * a') :: Word8
-            in 
+            in
                -- Cairo ARGB32 on little-endian: B G R A in memory
               premulB : premulG : premulR : a : convertRow restRow (x + 1)
 
