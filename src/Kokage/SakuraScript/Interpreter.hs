@@ -25,6 +25,9 @@ module Kokage.SakuraScript.Interpreter
   , executeScriptAsync
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Concurrent       ( forkIO
                                           , threadDelay
                                           )

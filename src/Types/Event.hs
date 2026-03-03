@@ -16,6 +16,9 @@ module Types.Event
   , isDragSignificant
   ) where
 
+import Prelude ()
+import Relude
+
 import           Data.Time.LocalTime ( LocalTime )
 
 import           Types.Ghost         ( CollisionRegion )

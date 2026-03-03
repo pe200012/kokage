@@ -19,6 +19,9 @@ module Kokage.Config
   , isFirstBoot
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Exception ( try )
 
 import qualified Data.Text         as T

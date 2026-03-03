@@ -45,9 +45,16 @@ module Kokage
   , Edge(..)
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Exception               ( finally
                                                  , throwIO
                                                  , try
+                                                 )
+import           Data.Char                       ( isAsciiLower
+                                                 , isAsciiUpper
+                                                 , isDigit
                                                  )
 import qualified Data.GI.Base                    as GI
 import           Data.GI.Base                    ( AttrOp((:=))
@@ -513,7 +520,7 @@ findBalloonDir gp (BaseDir baseDirPath) = do
 -- | Main entry point for Kokage.
 -- Resolves which ghost to load (explicit path, last used, or first available)
 -- and runs the GTK event loop.
-kokageMain :: KokageConfig -> IO ()
+kokageMain :: KokageConfig -> IO Int32
 kokageMain config = do
   -- Resolve which ghost to load
   gPath <- justOrError NoGhostsAvailable =<< resolveGhost config
@@ -530,7 +537,9 @@ kokageMain config = do
   let surfaces = shellSurfaces shell
       surfId   = configSurfaceId config
   case findSurfaceById surfId surfaces of
-    Nothing      -> putStrLn $ "Error: Surface " <> show surfId <> " not found"
+    Nothing      -> do
+      putStrLn $ "Error: Surface " <> show surfId <> " not found"
+      return (-1)
     Just surfDef -> do
       putStrLn
         $ "Found surface "
@@ -644,8 +653,8 @@ initializeShiori ghostMasterPath shioriName = do
               return $ Just loadedShiori
 
 -- | Clean up SHIORI bridge on exit.
-cleanupShiori :: Maybe WineShiori -> IO ()
-cleanupShiori Nothing       = return ()
+cleanupShiori :: Maybe WineShiori -> IO Int32
+cleanupShiori Nothing       = return 0
 cleanupShiori (Just shiori) = do
   -- Send OnDestroy NOTIFY before unloading
   -- Reference0: empty for normal shutdown, "reload" for reload
@@ -656,6 +665,7 @@ cleanupShiori (Just shiori) = do
   putStrLn "[SHIORI] Stopping bridge..."
   stopWineBridge shiori
   putStrLn "[SHIORI] Cleanup complete"
+  return 0
 
 -- | Send boot sequence NOTIFY events to SHIORI.
 -- These are informational events sent before OnBoot/OnFirstBoot.
@@ -998,9 +1008,9 @@ _getSystemFontNames = do
     isPrintable c = c >= ' ' && c < '\DEL'
 
     isAlphaNum :: Char -> Bool
-    isAlphaNum c = (c >= 'a' && c <= 'z') ||
-                   (c >= 'A' && c <= 'Z') ||
-                   (c >= '0' && c <= '9') ||
+    isAlphaNum c = isAsciiLower c ||
+                   isAsciiUpper c ||
+                   isDigit c ||
                    c > '\x7F'  -- Allow non-ASCII (Japanese, Chinese, etc.)
 
 -- | Run the GTK application with the given shell.
@@ -1015,7 +1025,7 @@ runGtkApp :: Ghost
           -> Int
           -> Maybe FilePath
           -> Install.BaseDir
-          -> IO ()
+          -> IO Int32
 runGtkApp
   ghost
   shell
@@ -1664,8 +1674,7 @@ runGtkApp
       else sendShioriWithCallback mShioriConfig OnBoot Map.empty displayScript
 
   -- Run application
-  _ <- Gio.applicationRun app Nothing
-  return ()
+  Gio.applicationRun app Nothing
 
 -- | Get the default base directories for NAR installation
 -- Uses XDG data directory (~/.local/share/kokage/)

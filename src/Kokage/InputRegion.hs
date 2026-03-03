@@ -22,6 +22,9 @@ module Kokage.InputRegion
   , clearInputRegion
   ) where
 
+import Prelude ()
+import Relude
+
 import           Data.GI.Base.ManagedPtr   ( wrapBoxed )
 
 import           Foreign.Ptr               ( Ptr, castPtr )

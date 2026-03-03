@@ -35,6 +35,9 @@ module Kokage.Character
   , cancelSurfaceLifeTimer
   ) where
 
+import Prelude ()
+import Relude
+
 import           Data.GI.Base       ( AttrOp((:=)), new )
 import qualified Data.Text          as T
 

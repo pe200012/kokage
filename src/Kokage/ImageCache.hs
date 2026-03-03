@@ -2,6 +2,9 @@
 -- Avoids repeated disk I/O for animation overlays.
 module Kokage.ImageCache ( ImageCache, newImageCache, getCachedImage, clearCache ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.Map.Strict as Map
 
 import qualified GI.GdkPixbuf    as Pixbuf

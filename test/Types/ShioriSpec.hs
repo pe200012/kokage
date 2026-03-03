@@ -2,9 +2,11 @@
 
 module Types.ShioriSpec ( spec ) where
 
+import Prelude ()
+import Relude
+
 import           Test.Hspec
 import qualified Data.Map.Strict as Map
-import           Data.Text ( Text )
 import qualified Data.Text as T
 
 import           Types.Shiori
@@ -273,9 +275,6 @@ spec = do
 
 -- Helper functions
 
-isLeft :: Either a b -> Bool
-isLeft (Left _) = True
-isLeft _        = False
 
 -- Strip \r from line endings for comparison
 lines' :: Text -> [Text]

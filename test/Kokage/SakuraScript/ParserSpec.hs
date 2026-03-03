@@ -2,6 +2,9 @@
 
 module Kokage.SakuraScript.ParserSpec ( spec ) where
 
+import Prelude ()
+import Relude
+
 import           Test.Hspec
 import           Test.Hspec.Megaparsec
 

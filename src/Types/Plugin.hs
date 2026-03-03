@@ -13,6 +13,9 @@ module Types.Plugin
   , readPluginDescript
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE

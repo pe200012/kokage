@@ -26,6 +26,9 @@ module Kokage.SakuraScript.Parser
   , pEnvVar
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.Text                  as T
 
 import           Text.Megaparsec hiding (many, some)

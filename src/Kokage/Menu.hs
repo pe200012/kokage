@@ -11,6 +11,9 @@ module Kokage.Menu
   , Gtk.PopoverMenu
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.Text       as T
 
 import qualified GI.Gdk          as Gdk

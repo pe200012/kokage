@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StrictData #-}
+{-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- | SHIORI/3.0 protocol types and parsing
 -- Reference: https://ssp.shillest.net/ukadoc/manual/spec_shiori3.html
@@ -71,12 +72,12 @@ module Types.Shiori
   , emptyResponse
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Map.Strict       as Map
-import           Data.Map.Strict       ( Map )
-import           Data.Maybe            ( fromMaybe, mapMaybe )
-import           Data.Text             ( Text )
 import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as TE
 
@@ -230,16 +231,6 @@ data ShioriResponse
 -- | Mouse button type
 data MouseButton = LeftButton | RightButton | MiddleButton | ExButton1 | ExButton2
   deriving ( Show, Eq )
-
--- | Parse mouse button from reference value
-parseMouseButton :: Text -> MouseButton
-parseMouseButton t = case T.strip t of
-  "0" -> LeftButton
-  "1" -> RightButton
-  "2" -> MiddleButton
-  "3" -> ExButton1
-  "4" -> ExButton2
-  _   -> LeftButton
 
 -- | Mouse wheel direction
 data WheelDirection = WheelUp | WheelDown
@@ -1658,12 +1649,12 @@ parseShioriResponseBS bs
         _           ->
           -- No SHIORI marker, check for status patterns
           case BS.breakSubstring status204 cleanBs of
-            ( prefix, rest )
+            ( _prefix, rest )
               | not (BS.null rest) ->
                 -- Construct a valid response header
                 BS8.pack "SHIORI/3.0 " <> rest
             _ -> case BS.breakSubstring status200 cleanBs of
-              ( prefix, rest )
+              ( _prefix, rest )
                 | not (BS.null rest) -> BS8.pack "SHIORI/3.0 " <> rest
               _ -> cleanBs  -- Give up, use original
     in 
@@ -1677,8 +1668,8 @@ parseShioriResponseBS bs
               parseShioriResponse txt
 
 -- | Lenient UTF-8 decoder that replaces invalid sequences
-lenientDecodeUtf8 :: BS.ByteString -> Text
-lenientDecodeUtf8 = TE.decodeUtf8With (\_ _ -> Just '\xFFFD')
+_lenientDecodeUtf8 :: BS.ByteString -> Text
+_lenientDecodeUtf8 = TE.decodeUtf8With (\_ _ -> Just '\xFFFD')
 
 --------------------------------------------------------------------------------
 -- Request Builders

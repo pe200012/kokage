@@ -63,17 +63,12 @@ ghc-options:
   - -Wredundant-constraints
   - -fllvm
   - -O2
+  - -optl-fuse-ld=mold
+ld-options:
+  - -fuse-ld=mold
 
 library:
   source-dirs: src
-  dependencies:
-  - name: base
-    mixin:
-      - hiding (Prelude)
-  - name: relude
-    mixin:
-      - (Relude as Prelude)
-      - ""
 
 executables:
   kokage:

@@ -2,6 +2,9 @@
 
 module Types.InstallSpec ( spec ) where
 
+import Prelude ()
+import Relude
+
 import           Test.Hspec
 import           System.IO.Temp             ( withSystemTempDirectory )
 import           System.FilePath            ( (</>) )

@@ -20,6 +20,9 @@ module Types.Ghost
   , loadGhost
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Exception    ( try )
 
 import           System.Directory     ( doesDirectoryExist, doesFileExist, listDirectory )

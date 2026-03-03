@@ -15,6 +15,9 @@ module Utils.Charset
   , convertToUtf8
   ) where
 
+import Prelude ()
+import Relude
+
 import           Codec.Text.IConv           ( EncodingName, convert )
 
 import qualified Data.ByteString.Lazy       as BL

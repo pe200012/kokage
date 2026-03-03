@@ -36,6 +36,9 @@ module Types.Ghost.Surface
   , parseAnimationInterval
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict      as Map
 import qualified Data.Text            as T

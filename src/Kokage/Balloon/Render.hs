@@ -10,6 +10,9 @@ module Kokage.Balloon.Render
   , drawChoices
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.Text                 as T
 
 import qualified GI.Cairo.Render           as Cairo

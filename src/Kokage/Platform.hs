@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
 
 -- | Platform-specific window operations for Wayland and X11.
 --
@@ -48,12 +49,12 @@ module Kokage.Platform
   , setWindowLayer
   ) where
 
-import           Control.Exception         ( SomeException, try )
-import           Control.Monad.Trans.Maybe ( MaybeT(..), runMaybeT )
+import Prelude ()
+import Relude
+
+import           Control.Exception         ( try )
 
 import           Data.Bits                 ( (.|.) )
-import           Data.Int                  ( Int32 )
-import           Data.Word                 ( Word32 )
 
 import           Foreign.C.Types           ( CInt )
 
@@ -323,7 +324,7 @@ moveWindowRaw :: X11.Window -> Int32 -> Int32 -> IO Bool
 moveWindowRaw win x y = do
   result <- try $ do
     dpy <- openDisplay ""
-    X11.moveWindow dpy win (fromIntegral x) (fromIntegral y)
+    X11.moveWindow dpy win x y
     flush dpy
     closeDisplay dpy
 

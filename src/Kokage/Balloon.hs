@@ -58,6 +58,9 @@ module Kokage.Balloon
   , extractPlainText
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.ByteString           as BS
 import           Data.GI.Base              ( AttrOp((:=)), new )
 import qualified Data.GI.Base              as GI

@@ -13,6 +13,9 @@ module Kokage.Install
   , getInstallDir
   ) where
 
+import Prelude ()
+import Relude
+
 import           Codec.Archive.Zip    ( Archive
                                       , Entry
                                       , eRelativePath

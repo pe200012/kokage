@@ -2,6 +2,9 @@
 -- No IO, no GTK dependencies - just geometry.
 module Kokage.Collision ( hitTestShape, findCollisionAt, pointInPolygon ) where
 
+import Prelude ()
+import Relude
+
 import           Types.Ghost   ( CollisionRegion(..), CollisionShape(..) )
 
 -- | Test if a point (x, y) is inside a collision shape.

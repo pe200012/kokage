@@ -15,6 +15,9 @@ module Kokage.Transparency
   , loadWithTransparency
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Exception     ( bracket, catch )
 
 import qualified Data.ByteString       as BS

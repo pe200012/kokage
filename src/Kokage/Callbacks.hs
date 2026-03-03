@@ -70,6 +70,9 @@ module Kokage.Callbacks
   , cbSetTimeCritical
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.Map.Strict            as Map
 import qualified Data.Set                   as Set
 import qualified Data.Text                  as T
@@ -203,7 +206,7 @@ cbSetScope env scope = do
   putStrLn $ "[Scope] Switched to scope " <> show scope
 
 cbSetSurface :: CallbackEnv -> Int -> Int -> IO ()
-cbSetSurface env = ceChangeSurface env
+cbSetSurface = ceChangeSurface
 
 cbHideCharacter :: CallbackEnv -> Int -> IO ()
 cbHideCharacter env scope = do

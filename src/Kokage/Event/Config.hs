@@ -17,6 +17,9 @@ module Kokage.Event.Config
   , GlobalNetworkConfig(..)
   ) where
 
+import Prelude ()
+import Relude
+
 import qualified Data.Text                  as T
 import           Data.Time.Clock            ( UTCTime )
 import           Data.Time.LocalTime        ( LocalTime )

@@ -4,16 +4,10 @@
 
 module Main ( main ) where
 
-import           Control.Monad              ( unless, when )
-import           Control.Monad.Trans.Maybe  ( MaybeT(..), runMaybeT )
-import           Data.IORef                 ( newIORef, readIORef, writeIORef, IORef )
-import           Data.List                  ( find )
-import           System.IO                  ( hFlush, stdout )
-import           Data.Map.Strict            ( Map )
-import qualified Data.Map.Strict            as Map
+import Prelude ()
+import Relude hiding (on)
+
 import qualified Data.Text                  as T
-import           System.Environment         ( getArgs )
-import           System.Exit                ( exitFailure )
 import           System.Directory           ( makeAbsolute )
 
 import qualified GI.Gdk                     as Gdk
@@ -24,10 +18,9 @@ import qualified GI.Gtk                     as Gtk
 import           Data.GI.Base               ( AttrOp((:=)), new, on )
 
 import           Kokage.Animation           ( tickAnimations, compositeAnimation, newAnimationState
-                                            , AnimationState(..), ImageCache )
+                                            , AnimationState(..) )
 import           Kokage.Surface             ( compositeSurface, findSurfaceById )
-import           Types.Ghost                ( Ghost(..), Shell(..), Surfaces(..)
-                                            , SurfaceDefinition(..), Animation(..)
+import           Types.Ghost                ( Ghost(..), Shell(..), SurfaceDefinition(..)
                                             , loadGhost
                                             )
 
@@ -40,23 +33,46 @@ main = do
     ]
 
   _ <- on app #activate $ do
+    let usage = do
+          putStrLn "Usage: animation-test <ghost-path> [surface-id] [scope]"
+          putStrLn "  ghost-path  : Path to ghost directory"
+          putStrLn "  surface-id  : Surface ID to display (default: 0)"
+          putStrLn "  scope       : Character scope (0=sakura, 1=kero, 2+=char*) (default: 0)"
+          putStrLn ""
+          putStrLn "Examples:"
+          putStrLn "  animation-test ./test-fdr/ghost/emily4          # sakura surface 0"
+          putStrLn "  animation-test ./test-fdr/ghost/emily4 10       # sakura surface 10"
+          putStrLn "  animation-test ./test-fdr/ghost/emily4 204 2    # char2 surface 204"
+          Gtk.windowDestroy =<< new Gtk.Window [#application := app]
+
     args <- getArgs
     case args of
-      [ghostPath, surfIdStr] -> runVisualTest app ghostPath (read surfIdStr)
-      [ghostPath]            -> runVisualTest app ghostPath 0
-      _                      -> do
-        putStrLn "Usage: animation-test <ghost-path> [surface-id]"
-        Gtk.windowDestroy =<< new Gtk.Window [#application := app] -- Dummy to exit?
-        -- Actually just return, loop wont start properly without a window usually
-        return ()
+      [gPath, surfIdStr, scopeStr] ->
+        case (readMaybe surfIdStr, readMaybe scopeStr) of
+          (Just surfId, Just scope) -> runVisualTest app gPath surfId scope
+          _                         -> do
+            putStrLn "Error: surface-id and scope must be integers."
+            usage
+
+      [gPath, surfIdStr] ->
+        case readMaybe surfIdStr of
+          Just surfId -> runVisualTest app gPath surfId 0
+          Nothing     -> do
+            putStrLn "Error: surface-id must be an integer."
+            usage
+
+      [gPath] -> runVisualTest app gPath 0 0
+      _       -> usage
 
   _ <- Gio.applicationRun app Nothing
   return ()
 
-runVisualTest :: Gtk.Application -> FilePath -> Int -> IO ()
-runVisualTest app ghostPath surfId = do
-  absPath <- makeAbsolute ghostPath
+runVisualTest :: Gtk.Application -> FilePath -> Int -> Int -> IO ()
+runVisualTest app gPath surfId scope = do
+  absPath <- makeAbsolute gPath
   putStrLn $ "Loading ghost from: " <> absPath
+  putStrLn $ "Surface ID: " <> show surfId
+  putStrLn $ "Scope: " <> show scope <> " (" <> scopeName scope <> ")"
   
   mGhost <- loadGhost absPath
   case mGhost of
@@ -73,10 +89,15 @@ runVisualTest app ghostPath surfId = do
           case mSurfDef of
             Nothing -> putStrLn $ "Error: Surface " <> show surfId <> " not found."
             Just surfDef -> do
-              startVisualSimulation app shell surfDef
+              startVisualSimulation app shell surfDef scope
 
-startVisualSimulation :: Gtk.Application -> Shell -> SurfaceDefinition -> IO ()
-startVisualSimulation app shell surfDef = do
+scopeName :: Int -> String
+scopeName 0 = "sakura"
+scopeName 1 = "kero"
+scopeName n = "char" <> show n
+
+startVisualSimulation :: Gtk.Application -> Shell -> SurfaceDefinition -> Int -> IO ()
+startVisualSimulation app shell surfDef scope = do
   putStrLn $ "Surface " <> show (sdId surfDef) <> " loaded."
   putStrLn $ "Definitions: " <> show (length (sdAnimations surfDef)) <> " animations."
   hFlush stdout
@@ -84,7 +105,7 @@ startVisualSimulation app shell surfDef = do
   -- Create Window
   window <- new Gtk.Window
     [ #application := app
-    , #title := "Animation Test"
+    , #title := "Animation Test - " <> T.pack (scopeName scope) <> " surface " <> T.pack (show (sdId surfDef))
     , #resizable := False
     ]
     

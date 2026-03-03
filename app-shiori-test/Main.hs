@@ -15,11 +15,12 @@
 
 module Main ( main ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Concurrent         ( threadDelay )
-import           Control.Monad              ( forM_ )
 
 import qualified Data.Map.Strict            as Map
-import           Data.Text                  ( Text )
 import qualified Data.Text                  as T
 import qualified Data.Text.IO               as TIO
 
@@ -30,8 +31,6 @@ import           Data.Time.LocalTime        ( LocalTime(..)
                                             , utcToLocalTime
                                             )
 
-import           System.Environment         ( getArgs )
-import           System.Exit                ( exitFailure )
 import           System.FilePath            ( takeDirectory, (</>) )
 import           System.Directory           ( makeAbsolute )
 
@@ -148,7 +147,7 @@ runTestSequence bridge dllPath ghostPath = do
           timeOfDay = localTimeOfDay localTime
           hour      = todHour timeOfDay
           minute    = todMin timeOfDay
-          second    = floor (todSec timeOfDay) :: Int
+          startSecond = floor (todSec timeOfDay) :: Int
       
       -- Send OnBoot event
       logInfo "=== Sending OnBoot ==="
@@ -161,7 +160,7 @@ runTestSequence bridge dllPath ghostPath = do
       -- Send OnSecondChange events (a few times)
       logInfo "=== Sending OnSecondChange (3 times) ==="
       forM_ [0..2] $ \i -> do
-        let sec = (second + i) `mod` 60
+        let sec = (startSecond + i) `mod` 60
         sendOnSecondChange bridge' hour minute sec
         threadDelay 1000000  -- 1 second
       logInfo ""

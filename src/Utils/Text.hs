@@ -10,6 +10,9 @@ module Utils.Text
   , readMaybeInt
   ) where
 
+import Prelude ()
+import Relude
+
 import           Data.Char  ( isSpace )
 import qualified Data.Text  as T
 

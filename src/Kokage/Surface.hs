@@ -1,5 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
 
 -- | Surface image loading and compositing.
 -- Handles loading surface images and compositing elements with transparency.
@@ -12,15 +13,10 @@ module Kokage.Surface
   , drawMethodToOperator
   ) where
 
-import           Control.Monad             ( forM, forM_ )
+import Prelude ()
+import Relude
 
-import           Data.Foldable             ( find )
 import           Data.GI.Base.ManagedPtr   ( wrapBoxed )
-import           Data.Int                  ( Int32 )
-import           Data.List                 ( sortBy )
-import           Data.Maybe                ( catMaybes )
-import           Data.Ord                  ( comparing )
-import           Data.Text                 ( Text )
 import qualified Data.Text                 as T
 
 import           Foreign.Ptr               ( Ptr, castPtr )
@@ -135,7 +131,7 @@ compositeSurface shellDir surfDef = do
 
       case pixbufs of
         [] -> loadDefaultSurface shellDir (sdId surfDef)  -- Fallback to default
-        (( first, _, _, _ ) : _) -> compositeWithCairo first pixbufs
+        (( firstPixbuf, _, _, _ ) : _) -> compositeWithCairo firstPixbuf pixbufs
 
 -- | Load the default surface image for a given surface ID.
 -- Ukagaka convention: surface{id:04d}.png (e.g., surface0000.png)
@@ -155,10 +151,10 @@ loadDefaultSurface shellDir surfId = do
 -- Each element specifies its own DrawMethod which maps to a Cairo operator.
 compositeWithCairo
   :: Pixbuf.Pixbuf -> [ ( Pixbuf.Pixbuf, Int, Int, DrawMethod ) ] -> IO (Maybe Pixbuf.Pixbuf)
-compositeWithCairo first pixbufs = do
+compositeWithCairo firstPixbuf pixbufs = do
   -- Get dimensions from first element
-  width <- Pixbuf.pixbufGetWidth first
-  height <- Pixbuf.pixbufGetHeight first
+  width <- Pixbuf.pixbufGetWidth firstPixbuf
+  height <- Pixbuf.pixbufGetHeight firstPixbuf
 
   -- Create a Cairo image surface for compositing
   Cairo.withImageSurface Cairo.FormatARGB32 (fromIntegral width) (fromIntegral height)

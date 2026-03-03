@@ -41,6 +41,9 @@ module Kokage.Shiori.WineBridge
   , toWinePath
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Exception      ( bracket, try )
 
 import qualified Data.ByteString.Base64 as B64

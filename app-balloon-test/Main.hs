@@ -6,11 +6,10 @@
 -- If no path given, uses a simple default balloon style.
 module Main ( main ) where
 
-import           Control.Monad              ( forM_, void )
-import           Data.IORef                 ( newIORef, readIORef, writeIORef )
+import Prelude ()
+import Relude hiding (on)
+
 import qualified Data.Text                  as T
-import           System.Environment         ( getArgs )
-import           System.IO                  ( hFlush, stdout )
 
 import           Data.GI.Base               ( AttrOp((:=)), new, on )
 import qualified GI.Gio                     as Gio
@@ -219,9 +218,17 @@ runBalloonTest app _mBalloonPath = do
             i <- readIORef counterRef
             if i < length chars
               then do
-                appendChar balloon (chars !! i)
-                writeIORef counterRef (i + 1)
-                return True
+                case chars !!? i of
+                  Just ch -> do
+                    appendChar balloon ch
+                    writeIORef counterRef (i + 1)
+                    return True
+                  Nothing -> do
+                    -- Should not happen due to bounds check above, but handle defensively
+                    writeIORef charAnimRunningRef False
+                    putStrLn "[Test] Character animation: index out of bounds"
+                    hFlush stdout
+                    return False
               else do
                 writeIORef charAnimRunningRef False
                 putStrLn "[Test] Character animation complete"

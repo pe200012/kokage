@@ -7,6 +7,9 @@ module Kokage.Init
   , cleanupShiori
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Exception        ( try )
 
 import qualified Data.Map.Strict          as Map

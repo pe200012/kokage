@@ -30,6 +30,9 @@ module Kokage.Animation
   , ImageCache
   ) where
 
+import Prelude ()
+import Relude
+
 import           Control.Monad     ( foldM, foldM_ )
 
 import qualified Data.Map.Strict   as Map

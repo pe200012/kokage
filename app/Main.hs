@@ -1,10 +1,12 @@
 module Main ( main ) where
 
+import Prelude ()
+import Relude
+
 import Kokage ( kokageMain, KokageConfig(..), defaultConfig, loadLastGhost )
 
-import System.IO ( hSetBuffering, stdout, BufferMode(..) )
 
-main :: IO ()
+main :: IO Int32
 main = do
   -- Set line buffering for stdout to ensure logs appear immediately
   hSetBuffering stdout LineBuffering
