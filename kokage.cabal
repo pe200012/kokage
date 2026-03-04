@@ -316,6 +316,7 @@ test-suite kokage-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Kokage.Balloon.LayoutSpec
       Kokage.GhostResolutionSpec
       Kokage.InstallSpec
       Kokage.SakuraScript.ParserSpec

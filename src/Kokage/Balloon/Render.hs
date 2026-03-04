@@ -10,9 +10,6 @@ module Kokage.Balloon.Render
   , drawChoices
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Text                 as T
 
 import qualified GI.Cairo.Render           as Cairo
@@ -21,6 +18,10 @@ import qualified GI.Pango                  as Pango
 import qualified GI.PangoCairo             as PangoCairo
 
 import           Kokage.Balloon.Types      ( BalloonChoice(..), BalloonConfig(..) )
+
+import           Prelude                   ()
+
+import           Relude
 
 import           Types.Balloon             ( ShadowStyle(..) )
 
@@ -94,9 +95,9 @@ drawText config text scrollLine = do
   fontDesc <- Cairo.liftIO Pango.fontDescriptionNew
   Cairo.liftIO $ Pango.fontDescriptionSetFamily fontDesc (bcfFontName config)
   Cairo.liftIO
-    $ Pango.fontDescriptionSetSize
+    $ Pango.fontDescriptionSetAbsoluteSize
       fontDesc
-      (fromIntegral $ bcfFontSize config * fromIntegral Pango.SCALE)
+      (fromIntegral (bcfFontSize config) * fromIntegral Pango.SCALE)
 
   when (bcfFontBold config)
     $ Cairo.liftIO
@@ -196,9 +197,9 @@ drawChoices config choices startY _scrollLine = do
       fontDesc <- Cairo.liftIO Pango.fontDescriptionNew
       Cairo.liftIO $ Pango.fontDescriptionSetFamily fontDesc (bcfFontName config)
       Cairo.liftIO
-        $ Pango.fontDescriptionSetSize
+        $ Pango.fontDescriptionSetAbsoluteSize
           fontDesc
-          (fromIntegral $ bcfFontSize config * fromIntegral Pango.SCALE)
+          (fromIntegral (bcfFontSize config) * fromIntegral Pango.SCALE)
 
       sampleLayout <- Cairo.liftIO $ PangoCairo.createLayout ctx
       Cairo.liftIO $ Pango.layoutSetFontDescription sampleLayout (Just fontDesc)

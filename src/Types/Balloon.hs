@@ -43,13 +43,14 @@ module Types.Balloon
   , parseCoordinate
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict      as Map
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
+
+import           Prelude              ()
+
+import           Relude
 
 import           Types.Ghost          ( clean
                                       , convertToUtf8
@@ -96,6 +97,7 @@ data BlendMethod
   | BlendNotMaskPen    -- ^ NOT (mask OR pen)
   | BlendMergePenNot   -- ^ pen OR (NOT mask)
 -- Additional Win32 ROP2 codes can be added as needed
+
 
 
 
@@ -517,6 +519,7 @@ readBalloonDescript path = do
 
 
 
+
         | key == "charset" = bd { bdCharset = val }
         | key == "name" = bd { bdName = val }
         | key == "type" = bd { bdType = val }
@@ -548,6 +551,7 @@ readBalloonDescript path = do
         -- Main font settings
         | key == "font.name" = bd { bdFont = (bdFont bd) { fsName = Just val } }
         | key == "font.height" = bd { bdFont = (bdFont bd) { fsHeight = readMaybeInt val } }
+        | key == "font.size" = bd { bdFont = (bdFont bd) { fsHeight = readMaybeInt val } }
         | key == "font.color.r" = bd { bdFont = (bdFont bd) { fsColorR = readMaybeInt val } }
         | key == "font.color.g" = bd { bdFont = (bdFont bd) { fsColorG = readMaybeInt val } }
         | key == "font.color.b" = bd { bdFont = (bdFont bd) { fsColorB = readMaybeInt val } }
@@ -569,6 +573,8 @@ readBalloonDescript path = do
         | key == "disable.font.name"
           = bd { bdDisableFont = (bdDisableFont bd) { fsName = Just val } }
         | key == "disable.font.height"
+          = bd { bdDisableFont = (bdDisableFont bd) { fsHeight = readMaybeInt val } }
+        | key == "disable.font.size"
           = bd { bdDisableFont = (bdDisableFont bd) { fsHeight = readMaybeInt val } }
         | key == "disable.font.color.r"
           = bd { bdDisableFont = (bdDisableFont bd) { fsColorR = readMaybeInt val } }
@@ -769,6 +775,8 @@ readBalloonDescript path = do
           = bd { bdSstpMessageFont = (bdSstpMessageFont bd) { fsName = Just val } }
         | key == "sstpmessage.font.height"
           = bd { bdSstpMessageFont = (bdSstpMessageFont bd) { fsHeight = readMaybeInt val } }
+        | key == "sstpmessage.font.size"
+          = bd { bdSstpMessageFont = (bdSstpMessageFont bd) { fsHeight = readMaybeInt val } }
         | key == "sstpmessage.font.color.r"
           = bd { bdSstpMessageFont = (bdSstpMessageFont bd) { fsColorR = readMaybeInt val } }
         | key == "sstpmessage.font.color.g"
@@ -779,6 +787,8 @@ readBalloonDescript path = do
         -- Number display
         | key == "number.font.name" = bd { bdNumberFont = (bdNumberFont bd) { fsName = Just val } }
         | key == "number.font.height"
+          = bd { bdNumberFont = (bdNumberFont bd) { fsHeight = readMaybeInt val } }
+        | key == "number.font.size"
           = bd { bdNumberFont = (bdNumberFont bd) { fsHeight = readMaybeInt val } }
         | key == "number.font.color.r"
           = bd { bdNumberFont = (bdNumberFont bd) { fsColorR = readMaybeInt val } }
@@ -799,6 +809,8 @@ readBalloonDescript path = do
         | key == "communicatebox.font.name"
           = bd { bdCommunicateBoxFont = (bdCommunicateBoxFont bd) { fsName = Just val } }
         | key == "communicatebox.font.height"
+          = bd { bdCommunicateBoxFont = (bdCommunicateBoxFont bd) { fsHeight = readMaybeInt val } }
+        | key == "communicatebox.font.size"
           = bd { bdCommunicateBoxFont = (bdCommunicateBoxFont bd) { fsHeight = readMaybeInt val } }
         | key == "communicatebox.font.color.r"
           = bd { bdCommunicateBoxFont = (bdCommunicateBoxFont bd) { fsColorR = readMaybeInt val } }
@@ -882,6 +894,7 @@ readBalloonSurfaceOption path = do
     parseKey :: BalloonSurfaceOption -> Text -> Text -> BalloonSurfaceOption
     parseKey bso key val
       -- Text positioning
+
 
 
 

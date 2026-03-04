@@ -17,14 +17,15 @@ module Kokage.Balloon.Types
   , BalloonState(..)
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Text       as T
 
 import qualified GI.Cairo.Render as Cairo
 import qualified GI.GdkPixbuf    as Pixbuf
 import qualified GI.Gtk          as Gtk
+
+import           Prelude         ()
+
+import           Relude
 
 import           Types.Balloon   ( BalloonDescript(..), FontSettings(..), ShadowStyle(..) )
 
@@ -120,14 +121,20 @@ defaultBalloonConfig
   , bcfShadowColorB  = 0.8
   }
 
--- | Create BalloonConfig from BalloonDescript and image dimensions.
+-- | Create a 'BalloonConfig' from a parsed @descript.txt@ and the balloon image size.
 --
--- The text area is calculated according to ukadoc:
--- - X = origin.x + validrect.left
--- - Y = origin.y + validrect.top
--- - Width = (image_width + validrect.right) - X - origin.x
---   - Or use wordwrappoint.x if specified (negative value from right edge)
--- - Height = (image_height + validrect.bottom) - Y - origin.y
+-- * @origin.(x|y)@ is the text start position.
+--   If missing, fall back to @validrect.(left|top)@ (default: 14).
+--
+-- * @wordwrappoint.x@ (or @validrect.right@ fallback) controls the wrapping X:
+--     - positive: absolute X coordinate from the left edge
+--     - negative: offset from the right edge
+--     - zero: symmetric margins (@imageWidth - origin.x * 2@)
+--
+-- * @validrect.bottom@ controls the bottom edge of the text region:
+--     - positive: absolute Y coordinate from the top edge (clamped to image height)
+--     - negative: offset from the bottom edge
+--     - zero: symmetric margins (@imageHeight - origin.y * 2@)
 configFromDescript :: BalloonDescript -> Int -> Int -> BalloonConfig
 configFromDescript bd imgWidth imgHeight
   = BalloonConfig
@@ -155,27 +162,23 @@ configFromDescript bd imgWidth imgHeight
   , bcfShadowColorB  = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorB (bdFont bd))
   }
   where
-    originX         = fromMaybe 10 (bdOriginX bd)
+    originX     = fromMaybe (fromMaybe 14 (bdValidRectLeft bd)) (bdOriginX bd)
 
-    originY         = fromMaybe 10 (bdOriginY bd)
+    originY     = fromMaybe (fromMaybe 14 (bdValidRectTop bd)) (bdOriginY bd)
 
-    validRectLeft   = fromMaybe 0 (bdValidRectLeft bd)
+    wrapPointX  = fromMaybe (fromMaybe (-14) (bdValidRectRight bd)) (bdWordWrapPointX bd)
 
-    validRectTop    = fromMaybe 0 (bdValidRectTop bd)
+    rectBottom  = fromMaybe (-14) (bdValidRectBottom bd)
 
-    validRectRight  = fromMaybe 0 (bdValidRectRight bd)
+    validWidth  = max 0 $ case compare wrapPointX 0 of
+      GT -> wrapPointX - originX
+      LT -> imgWidth - originX + wrapPointX
+      EQ -> imgWidth - originX * 2
 
-    validRectBottom = fromMaybe 0 (bdValidRectBottom bd)
-
-    textAreaX       = originX + validRectLeft
-
-    textAreaY       = originY + validRectTop
-
-    validWidth      = case bdWordWrapPointX bd of
-      Just wwpX -> imgWidth + wwpX - textAreaX
-      Nothing   -> imgWidth + validRectRight - textAreaX - originX
-
-    validHeight     = imgHeight + validRectBottom - textAreaY - originY
+    validHeight = max 0 $ case compare rectBottom 0 of
+      GT -> min rectBottom imgHeight - originY
+      LT -> imgHeight - originY + rectBottom
+      EQ -> imgHeight - originY * 2
 
 -- | State for a balloon window.
 data BalloonState

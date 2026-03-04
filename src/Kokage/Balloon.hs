@@ -9,6 +9,7 @@ module Kokage.Balloon
   , BalloonConfig(..)
   , BalloonDirection(..)
   , defaultBalloonConfig
+  , configFromDescript
   , newBalloonState
   , newBalloonStateWithConfig
   , newBalloonStateWithSurface
@@ -58,9 +59,6 @@ module Kokage.Balloon
   , extractPlainText
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.ByteString           as BS
 import           Data.GI.Base              ( AttrOp((:=)), new )
 import qualified Data.GI.Base              as GI
@@ -86,13 +84,19 @@ import           Kokage.Platform           ( Layer(..)
                                            , setWindowPosition
                                            )
 
+import           Prelude                   ()
+
+import           Relude
+
 import           System.Directory          ( doesFileExist )
 import           System.FilePath           ( (</>) )
 
 import           Types.Balloon             ( BalloonDescript(..)
+                                           , BalloonSurfaceOption(..)
                                            , FontSettings(..)
                                            , ShadowStyle(..)
                                            , readBalloonDescript
+                                           , readBalloonSurfaceOption
                                            )
 import           Types.SakuraScript        ( BalloonCmd(..), SakuraScript(..), Script )
 
@@ -172,8 +176,8 @@ defaultBalloonConfig
   , bcValidWidth    = 280
   , bcValidHeight   = 130
   , bcFontName      = "Sans"
-  , bcFontSize      = 9
-  , bcBaseFontSize  = 9
+  , bcFontSize      = 12
+  , bcBaseFontSize  = 12
   , bcTextColorR    = 0.2
   , bcTextColorG    = 0.2
   , bcTextColorB    = 0.2
@@ -194,14 +198,27 @@ defaultBalloonConfig
   , bcShadowColorB  = 0.8
   }
 
--- | Create BalloonConfig from BalloonDescript and image dimensions
+-- | Create a 'BalloonConfig' from a parsed @descript.txt@ and the balloon image size.
 --
--- The text area is calculated according to ukadoc:
--- - X = origin.x + validrect.left
--- - Y = origin.y + validrect.top
--- - Width = (image_width + validrect.right) - X - origin.x
---   - Or use wordwrappoint.x if specified (negative value from right edge)
--- - Height = (image_height + validrect.bottom) - Y - origin.y
+-- SSP behavior (observed):
+--
+-- * @origin.(x|y)@ is the text start position.
+--   If missing, fall back to @validrect.(left|top)@ (default: 14).
+--
+-- * @wordwrappoint.x@ specifies the X position where automatic wrapping occurs.
+--   If missing, fall back to @validrect.right@ (default: -14).
+--
+--   - Positive values are absolute X coordinates from the left edge.
+--   - Negative values are offsets from the right edge.
+--   - 0 means use symmetric margins (@imageWidth - origin.x*2@).
+--
+-- * @validrect.bottom@ specifies the bottom edge of the drawable text region.
+--   If missing, default: -14.
+--
+--   - Positive values are absolute Y coordinates from the top edge (clamped to
+--     the image height).
+--   - Negative values are offsets from the bottom edge.
+--   - 0 means use symmetric margins (@imageHeight - origin.y*2@).
 configFromDescript :: BalloonDescript -> Int -> Int -> BalloonConfig
 configFromDescript bd imgWidth imgHeight
   = BalloonConfig
@@ -232,43 +249,44 @@ configFromDescript bd imgWidth imgHeight
   , bcShadowColorB  = maybe 0.8 (\v -> fromIntegral v / 255.0) (fsShadowColorB (bdFont bd))
   }
   where
-    -- Origin point (where text starts)
-    originX         = fromMaybe 10 (bdOriginX bd)
+    originX :: Int
+    originX = fromMaybe (fromMaybe 14 (bdValidRectLeft bd)) (bdOriginX bd)
 
-    originY         = fromMaybe 10 (bdOriginY bd)
+    originY :: Int
+    originY = fromMaybe (fromMaybe 14 (bdValidRectTop bd)) (bdOriginY bd)
 
-    -- Valid rect offsets (can be negative)
-    validRectLeft   = fromMaybe 0 (bdValidRectLeft bd)
+    wrapPointX :: Int
+    wrapPointX = fromMaybe (fromMaybe (-14) (bdValidRectRight bd)) (bdWordWrapPointX bd)
 
-    validRectTop    = fromMaybe 0 (bdValidRectTop bd)
+    rectBottom :: Int
+    rectBottom = fromMaybe (-14) (bdValidRectBottom bd)
 
-    validRectRight  = fromMaybe 0 (bdValidRectRight bd)
+    validWidth :: Int
+    validWidth = max 0 $ case compare wrapPointX 0 of
+      GT -> wrapPointX - originX
+      LT -> imgWidth - originX + wrapPointX
+      EQ -> imgWidth - originX * 2
 
-    validRectBottom = fromMaybe 0 (bdValidRectBottom bd)
+    validHeight :: Int
+    validHeight = max 0 $ case compare rectBottom 0 of
+      GT -> min rectBottom imgHeight - originY
+      LT -> imgHeight - originY + rectBottom
+      EQ -> imgHeight - originY * 2
 
-    -- Text area start position
-    textAreaX       = originX + validRectLeft
-
-    textAreaY       = originY + validRectTop
-
-    -- Calculate valid width
-    -- If wordwrappoint.x is specified, use it (negative value from right edge)
-    -- Otherwise use validrect.right
-    validWidth      = case bdWordWrapPointX bd of
-      Just wwpX ->
-        -- wordwrappoint.x is offset from right edge (negative)
-        -- width = imgWidth + wwpX - textAreaX
-        imgWidth + wwpX - textAreaX
-      Nothing   ->
-        -- Use validrect.right (can be negative, meaning from right edge)
-        -- width = (imgWidth + validRectRight) - originX - textAreaX
-        -- Simplified: imgWidth + validRectRight - originX - (originX + validRectLeft)
-        --           = imgWidth + validRectRight - 2*originX - validRectLeft
-        imgWidth + validRectRight - textAreaX - originX
-
-    -- Calculate valid height
-    -- validrect.bottom can be negative, meaning offset from bottom edge
-    validHeight     = imgHeight + validRectBottom - textAreaY - originY
+-- | Apply a per-surface @balloon*s.txt@ override to the base @descript.txt@.
+--
+-- Treat surface options as overrides: if a key is present in the
+-- surface option file, it takes precedence over @descript.txt@.
+applySurfaceOptionToDescript :: BalloonDescript -> BalloonSurfaceOption -> BalloonDescript
+applySurfaceOptionToDescript bd bso
+  = bd { bdOriginX         = bsoOriginX bso <|> bdOriginX bd
+       , bdOriginY         = bsoOriginY bso <|> bdOriginY bd
+       , bdValidRectLeft   = bsoValidRectLeft bso <|> bdValidRectLeft bd
+       , bdValidRectTop    = bsoValidRectTop bso <|> bdValidRectTop bd
+       , bdValidRectRight  = bsoValidRectRight bso <|> bdValidRectRight bd
+       , bdValidRectBottom = bsoValidRectBottom bso <|> bdValidRectBottom bd
+       , bdWordWrapPointX  = bsoWordWrapPointX bso <|> bdWordWrapPointX bd
+       }
 
 -- | State for a balloon window.
 data BalloonState
@@ -563,9 +581,9 @@ drawText config segments scrollLine = do
   fontDesc <- Cairo.liftIO Pango.fontDescriptionNew
   Cairo.liftIO $ Pango.fontDescriptionSetFamily fontDesc (bcFontName config)
   Cairo.liftIO
-    $ Pango.fontDescriptionSetSize
+    $ Pango.fontDescriptionSetAbsoluteSize
       fontDesc
-      (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
+      (fromIntegral (bcFontSize config) * fromIntegral Pango.SCALE)
   Cairo.liftIO $ Pango.layoutSetFontDescription layout (Just fontDesc)
 
   -- Build attribute list from segments
@@ -669,7 +687,7 @@ buildAttributeList segments = do
         Pango.attrListInsert attrs fontAttr
 
         -- Font size attribute
-        sizeAttr <- Pango.attrSizeNew (fromIntegral $ tsFontSize seg * fromIntegral Pango.SCALE)
+        sizeAttr <- Pango.attrSizeNewAbsolute (fromIntegral (tsFontSize seg) * Pango.SCALE)
         Pango.setAttributeStartIndex sizeAttr startIdx
         Pango.setAttributeEndIndex sizeAttr endIdx
         Pango.attrListInsert attrs sizeAttr
@@ -748,9 +766,9 @@ drawChoices config choices startY _scrollLine = do
       fontDesc <- Cairo.liftIO Pango.fontDescriptionNew
       Cairo.liftIO $ Pango.fontDescriptionSetFamily fontDesc (bcFontName config)
       Cairo.liftIO
-        $ Pango.fontDescriptionSetSize
+        $ Pango.fontDescriptionSetAbsoluteSize
           fontDesc
-          (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
+          (fromIntegral (bcFontSize config) * fromIntegral Pango.SCALE)
 
       -- Get line height from a sample layout
       sampleLayout <- Cairo.liftIO $ PangoCairo.createLayout ctx
@@ -941,7 +959,7 @@ clearChars bs n = do
       totalText = T.concat (map tsText segments)
       newLen    = max 0 (T.length totalText - n)
       newText   = T.take newLen totalText
-    in
+    in 
       rebuildSegments segments newText
   Gtk.widgetQueueDraw (bsDrawArea bs)
   where
@@ -954,7 +972,7 @@ clearChars bs n = do
       = let
           segLen       = T.length (tsText seg)
           remainingLen = T.length remaining
-        in
+        in 
           if remainingLen <= segLen
             then [ seg { tsText = remaining } ]
             else seg : rebuildSegments rest (T.drop segLen remaining)
@@ -1155,7 +1173,20 @@ loadAndSetBalloonSurface bs balloonDir charType index = do
       mDescript <- readIORef (bsDescript bs)
       case mDescript of
         Just descript -> do
-          let newConfig = configFromDescript descript imgWidth imgHeight
+          -- Load per-surface option file (balloon*s.txt) if present
+          let optionPath = balloonDir </> ("balloon" <> T.unpack charType <> show index <> "s.txt")
+          optionExists <- doesFileExist optionPath
+          mSurfaceOption <- if optionExists
+            then do
+              opt <- readBalloonSurfaceOption optionPath
+              putStrLn $ "[Balloon]   loaded surface option: " <> optionPath
+              return (Just opt)
+            else return Nothing
+
+          let effectiveDescript
+                = maybe descript (applySurfaceOptionToDescript descript) mSurfaceOption
+              newConfig         = configFromDescript effectiveDescript imgWidth imgHeight
+
           writeIORef (bsConfig bs) newConfig
           putStrLn $ "[Balloon]   image size: " <> show imgWidth <> "x" <> show imgHeight
           putStrLn
@@ -1202,8 +1233,8 @@ setBalloonId bs newBalloonId = do
         -- Reload surface with new balloon ID
         mBalloonDir <- readIORef (bsBalloonDir bs)
         case mBalloonDir of
-          Nothing
-            -> putStrLn $ "[Balloon] Cannot set balloon ID " <> show newBalloonId <> ": no balloon dir"
+          Nothing         -> putStrLn
+            $ "[Balloon] Cannot set balloon ID " <> show newBalloonId <> ": no balloon dir"
           Just balloonDir -> do
             charType <- readIORef (bsCharType bs)
             direction <- readIORef (bsDirection bs)
@@ -1243,7 +1274,7 @@ pixbufToCairoSurface pixbuf = do
               cairoRow = convertRow rowData 0
               -- Pad row to Cairo stride
               padding  = replicate (cairoStride - fromIntegral w * 4) 0
-            in
+            in 
               cairoRow
               ++ padding
               ++ convertPixels srcData (y + 1) (srcRowStart + fromIntegral rowstride)
@@ -1264,7 +1295,7 @@ pixbufToCairoSurface pixbuf = do
               premulR = round (fromIntegral r * a') :: Word8
               premulG = round (fromIntegral g * a') :: Word8
               premulB = round (fromIntegral b * a') :: Word8
-            in
+            in 
                -- Cairo ARGB32 on little-endian: B G R A in memory
               premulB : premulG : premulR : a : convertRow restRow (x + 1)
 
@@ -1433,9 +1464,9 @@ autoScrollToLastLine bs = do
 
     fontDesc <- Pango.fontDescriptionNew
     Pango.fontDescriptionSetFamily fontDesc (bcFontName config)
-    Pango.fontDescriptionSetSize
+    Pango.fontDescriptionSetAbsoluteSize
       fontDesc
-      (fromIntegral $ bcFontSize config * fromIntegral Pango.SCALE)
+      (fromIntegral (bcFontSize config) * fromIntegral Pango.SCALE)
     Pango.layoutSetFontDescription layout (Just fontDesc)
 
     -- Use CHAR wrapping like in drawText
