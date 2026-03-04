@@ -11,14 +11,15 @@ module Kokage.Menu
   , Gtk.PopoverMenu
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Text       as T
 
 import qualified GI.Gdk          as Gdk
 import qualified GI.Gio          as Gio
 import qualified GI.Gtk          as Gtk
+
+import           Prelude         ()
+
+import           Relude
 
 import           System.FilePath ( (</>) )
 

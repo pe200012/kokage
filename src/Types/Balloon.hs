@@ -102,6 +102,7 @@ data BlendMethod
 
 
 
+
   deriving ( Show, Eq )
 
 -- | Font settings used for various text elements
@@ -520,6 +521,7 @@ readBalloonDescript path = do
 
 
 
+
         | key == "charset" = bd { bdCharset = val }
         | key == "name" = bd { bdName = val }
         | key == "type" = bd { bdType = val }
@@ -894,6 +896,7 @@ readBalloonSurfaceOption path = do
     parseKey :: BalloonSurfaceOption -> Text -> Text -> BalloonSurfaceOption
     parseKey bso key val
       -- Text positioning
+
 
 
 

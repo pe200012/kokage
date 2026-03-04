@@ -15,9 +15,6 @@ module Kokage.Transparency
   , loadWithTransparency
   ) where
 
-import Prelude ()
-import Relude
-
 import           Control.Exception     ( bracket, catch )
 
 import qualified Data.ByteString       as BS
@@ -27,6 +24,10 @@ import           Foreign.Ptr           ( Ptr, plusPtr )
 import           Foreign.Storable      ( poke )
 
 import qualified GI.GdkPixbuf          as Pixbuf
+
+import           Prelude               ()
+
+import           Relude
 
 import           System.Directory      ( doesFileExist )
 import           System.FilePath       ( replaceExtension )

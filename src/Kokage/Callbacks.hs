@@ -1,11 +1,11 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Callback functions for the SakuraScript interpreter.
 -- All callbacks are defined as top-level functions receiving a 'CallbackEnv'.
 module Kokage.Callbacks
   ( -- * Environment
-    CallbackEnv (..)
+    CallbackEnv(..)
     -- * Text callbacks
   , cbAppendChar
   , cbAppendText
@@ -70,90 +70,94 @@ module Kokage.Callbacks
   , cbSetTimeCritical
   ) where
 
-import Prelude ()
-import Relude
-
-import qualified Data.Map.Strict            as Map
-import qualified Data.Set                   as Set
-import qualified Data.Text                  as T
-import           Data.Time.Calendar         ( toGregorian )
+import           Data.GI.Base                ( AttrOp(..) )
+import qualified Data.Map.Strict             as Map
+import qualified Data.Set                    as Set
+import qualified Data.Text                   as T
+import           Data.Time.Calendar          ( toGregorian )
 import           Data.Time.Calendar.WeekDate ( toWeekDate )
-import           Data.Time.Clock            ( getCurrentTime, utctDay, utctDayTime )
-import           Data.Time.LocalTime        ( TimeOfDay (..), timeToTimeOfDay )
-import qualified GI.Gdk                     as Gdk
-import qualified GI.Gio                     as Gio
-import qualified GI.GLib                    as GLib
-import qualified GI.Gtk                     as Gtk
-import           Data.GI.Base               ( AttrOp (..) )
+import           Data.Time.Clock             ( getCurrentTime, utctDay, utctDayTime )
+import           Data.Time.LocalTime         ( TimeOfDay(..), timeToTimeOfDay )
 
-import           Kokage.Animation           ( ActiveAnim (..)
-                                            , asActiveAnims
-                                            , clearAnimations
-                                            , getEnabledBinds
-                                            , stopAnimation
-                                            , toggleBind
-                                            )
-import           Kokage.Balloon             ( BalloonChoice (..)
-                                            , BalloonState
-                                            , addChoice
-                                            , appendChar
-                                            , appendNewline
-                                            , appendNewlineHalf
-                                            , appendNewlinePercent
-                                            , appendText
-                                            , clearBalloon
-                                            , clearChars
-                                            , clearChoices
-                                            , getFontSize
-                                            , hideBalloon
-                                            , moveCursor
-                                            , resetFont
-                                            , setBalloonId
-                                            , setFontBold
-                                            , setFontColor
-                                            , setFontItalic
-                                            , setFontName
-                                            , setFontSize
-                                            , setFontStrike
-                                            , setFontSub
-                                            , setFontSup
-                                            , setFontUnderline
-                                            , showBalloon
-                                            )
-import           Kokage.Character           ( CharacterState
-                                            , csAnimState
-                                            , csCurrentSurface
-                                            , getCharacterBalloon
-                                            , hideCharacter
-                                            , setCharacterPosition
-                                            )
-import           Types.SakuraScript         ( Color (..)
-                                            , DialogOpt (..)
-                                            , EnvVar (..)
-                                            , ExecuteCmd (..)
-                                            , FontCmd (..)
-                                            , FontSize (..)
-                                            , FontToggle (..)
-                                            , GetProperty (..)
-                                            , InputBoxOpt (..)
-                                            , ReloadTarget (..)
-                                            , SetProperty (..)
-                                            , SoundAction (..)
-                                            )
-import           Kokage.Sound               ( SoundState, playSound, stopSound )
-import           Types.Ghost.Surface        ( Animation (..) )
+import qualified GI.GLib                     as GLib
+import qualified GI.Gdk                      as Gdk
+import qualified GI.Gio                      as Gio
+import qualified GI.Gtk                      as Gtk
+
+import           Kokage.Animation            ( ActiveAnim(..)
+                                             , asActiveAnims
+                                             , clearAnimations
+                                             , getEnabledBinds
+                                             , stopAnimation
+                                             , toggleBind
+                                             )
+import           Kokage.Balloon              ( BalloonChoice(..)
+                                             , BalloonState
+                                             , addChoice
+                                             , appendChar
+                                             , appendNewline
+                                             , appendNewlineHalf
+                                             , appendNewlinePercent
+                                             , appendText
+                                             , clearBalloon
+                                             , clearChars
+                                             , clearChoices
+                                             , getFontSize
+                                             , hideBalloon
+                                             , moveCursor
+                                             , resetFont
+                                             , setBalloonId
+                                             , setFontBold
+                                             , setFontColor
+                                             , setFontItalic
+                                             , setFontName
+                                             , setFontSize
+                                             , setFontStrike
+                                             , setFontSub
+                                             , setFontSup
+                                             , setFontUnderline
+                                             , showBalloon
+                                             )
+import           Kokage.Character            ( CharacterState
+                                             , csAnimState
+                                             , csCurrentSurface
+                                             , getCharacterBalloon
+                                             , hideCharacter
+                                             , setCharacterPosition
+                                             )
+import           Kokage.Sound                ( SoundState, playSound, stopSound )
+
+import           Prelude                     ()
+
+import           Relude
+
+import           Types.Ghost.Surface         ( Animation(..) )
+import           Types.SakuraScript          ( Color(..)
+                                             , DialogOpt(..)
+                                             , EnvVar(..)
+                                             , ExecuteCmd(..)
+                                             , FontCmd(..)
+                                             , FontSize(..)
+                                             , FontToggle(..)
+                                             , GetProperty(..)
+                                             , InputBoxOpt(..)
+                                             , ReloadTarget(..)
+                                             , SetProperty(..)
+                                             , SoundAction(..)
+                                             )
 
 -- | Environment containing all dependencies needed by callbacks.
-data CallbackEnv = CallbackEnv
-  { ceCharacters       :: !(Map.Map Int CharacterState)
+data CallbackEnv
+  = CallbackEnv
+  { ceCharacters :: !(Map.Map Int CharacterState)
     -- ^ All character states indexed by scope
-  , ceCurrentScopeRef  :: !(IORef Int)
+  , ceCurrentScopeRef :: !(IORef Int)
     -- ^ Current active scope (0=sakura, 1=kero)
-  , ceSoundState       :: !SoundState
+  , ceSoundState :: !SoundState
     -- ^ Sound playback state
   , ceFireTimeCritical :: !(Bool -> IO ())
     -- ^ Fire time-critical state change event
-  , ceChangeSurface    :: !(Int -> Int -> IO ())
+  , ceChangeSurface :: !(Int -> Int -> IO ())
     -- ^ Change surface for a scope
   , ceHideBalloonIfNoChoices :: !(IO ())
     -- ^ Hide balloon if no choices are present
@@ -227,10 +231,9 @@ cbSetBalloon env scope balloonId = do
     Nothing -> putStrLn $ "[Balloon] Scope " <> show scope <> " not found"
 
 cbHideBalloon :: CallbackEnv -> Int -> IO ()
-cbHideBalloon env scope =
-  case Map.lookup scope (ceCharacters env) of
-    Just cs -> hideBalloon (getCharacterBalloon cs)
-    Nothing -> return ()
+cbHideBalloon env scope = case Map.lookup scope (ceCharacters env) of
+  Just cs -> hideBalloon (getCharacterBalloon cs)
+  Nothing -> return ()
 
 cbShowBalloon :: CallbackEnv -> Int -> IO ()
 cbShowBalloon env scope = do
@@ -260,6 +263,7 @@ cbClearChoices env = getCurrentBalloon env >>= clearChoices
 cbAnimStart :: CallbackEnv -> Int -> Int -> IO ()
 cbAnimStart _env scope animId' = do
   putStrLn $ "[Anim] Start animation " <> show animId' <> " on scope " <> show scope
+
   -- Animation start requires surface definition lookup which is done at Character level
 
 cbAnimStop :: CallbackEnv -> Int -> Int -> IO ()
@@ -342,7 +346,9 @@ cbMove env scope x y mTime async = do
     <> show y
     <> ")"
     <> maybe "" (\t -> " in " <> show t <> "ms") mTime
-    <> if async then " (async)" else ""
+    <> if async
+      then " (async)"
+      else ""
   case Map.lookup scope (ceCharacters env) of
     Just cs -> setCharacterPosition cs (fromIntegral x) (fromIntegral y)
     Nothing -> return ()
@@ -366,14 +372,18 @@ cbSetFont env fontCmd = do
         setFontSize b (max 1 ((defaultSize * pct) `div` 100))
       FontSizeDefault        -> setFontSize b 12
     FontColor color      -> case color of
-      ColorRGB r g b'        -> setFontColor b (fromIntegral r / 255.0) (fromIntegral g / 255.0) (fromIntegral b' / 255.0)
+      ColorRGB r g b'        -> setFontColor
+        b
+        (fromIntegral r / 255.0)
+        (fromIntegral g / 255.0)
+        (fromIntegral b' / 255.0)
       ColorRGBPercent r g b' -> setFontColor b r g b'
       ColorHex hexStr        -> case parseHexColor hexStr of
-        Just (r, g, b') -> setFontColor b r g b'
-        Nothing         -> return ()
+        Just ( r, g, b' ) -> setFontColor b r g b'
+        Nothing           -> return ()
       ColorName name         -> case lookupColorName name of
-        Just (r, g, b') -> setFontColor b r g b'
-        Nothing         -> return ()
+        Just ( r, g, b' ) -> setFontColor b r g b'
+        Nothing           -> return ()
       ColorDefault           -> resetFont b
       ColorDisable           -> return ()
     FontBold toggle      -> applyToggle (setFontBold b) toggle
@@ -423,11 +433,11 @@ cbSoundAction env action file = case action of
 -- Event callbacks
 -- -----------------------------------------------------------------------------
 
-cbRaiseEvent :: T.Text -> [T.Text] -> IO ()
+cbRaiseEvent :: T.Text -> [ T.Text ] -> IO ()
 cbRaiseEvent eventName refs = do
   putStrLn $ "[Event] Raise: " <> T.unpack eventName <> " with refs: " <> show refs
 
-cbNotify :: T.Text -> [T.Text] -> IO ()
+cbNotify :: T.Text -> [ T.Text ] -> IO ()
 cbNotify name refs = do
   putStrLn $ "[Event] Notify: " <> T.unpack name <> " with refs: " <> show refs
 
@@ -469,16 +479,24 @@ cbOpenFile file = do
   let uri = "file://" <> file
   void $ Gio.appInfoLaunchDefaultForUri uri (Nothing :: Maybe Gio.AppLaunchContext)
 
-cbOpenInputBox :: T.Text -> [InputBoxOpt] -> IO ()
+cbOpenInputBox :: T.Text -> [ InputBoxOpt ] -> IO ()
 cbOpenInputBox eventId _opts = do
   putStrLn $ "[Open] Input box for event: " <> T.unpack eventId
-  dialog <- Gtk.new Gtk.Window
+  dialog <- Gtk.new
+    Gtk.Window
     [ #title := "Input", #modal := True, #defaultWidth := 300, #defaultHeight := 100 ]
-  box <- Gtk.new Gtk.Box
-    [ #orientation := Gtk.OrientationVertical, #spacing := 10
-    , #marginTop := 10, #marginBottom := 10, #marginStart := 10, #marginEnd := 10 ]
+  box <- Gtk.new
+    Gtk.Box
+    [ #orientation := Gtk.OrientationVertical
+    , #spacing := 10
+    , #marginTop := 10
+    , #marginBottom := 10
+    , #marginStart := 10
+    , #marginEnd := 10
+    ]
   entry <- Gtk.new Gtk.Entry [ #placeholderText := "Enter text..." ]
-  buttonBox <- Gtk.new Gtk.Box
+  buttonBox <- Gtk.new
+    Gtk.Box
     [ #orientation := Gtk.OrientationHorizontal, #spacing := 10, #halign := Gtk.AlignEnd ]
   okBtn <- Gtk.new Gtk.Button [ #label := "OK" ]
   cancelBtn <- Gtk.new Gtk.Button [ #label := "Cancel" ]
@@ -503,11 +521,18 @@ cbOpenInputBox eventId _opts = do
 cbOpenDialog :: T.Text -> DialogOpt -> IO ()
 cbOpenDialog msg _opt = do
   putStrLn $ "[Open] Dialog: " <> T.unpack msg
-  dialog <- Gtk.new Gtk.Window
+  dialog <- Gtk.new
+    Gtk.Window
     [ #title := "Message", #modal := True, #defaultWidth := 300, #defaultHeight := 150 ]
-  box <- Gtk.new Gtk.Box
-    [ #orientation := Gtk.OrientationVertical, #spacing := 10
-    , #marginTop := 20, #marginBottom := 10, #marginStart := 20, #marginEnd := 20 ]
+  box <- Gtk.new
+    Gtk.Box
+    [ #orientation := Gtk.OrientationVertical
+    , #spacing := 10
+    , #marginTop := 20
+    , #marginBottom := 10
+    , #marginStart := 20
+    , #marginEnd := 20
+    ]
   label <- Gtk.new Gtk.Label [ #label := msg, #wrap := True ]
   okBtn <- Gtk.new Gtk.Button [ #label := "OK", #halign := Gtk.AlignCenter ]
 
@@ -559,8 +584,8 @@ cbUnlock component = do
 cbGetEnvVar :: CallbackEnv -> EnvVar -> IO T.Text
 cbGetEnvVar env envVar = do
   now <- getCurrentTime
-  let (year, month, day)         = toGregorian (utctDay now)
-      TimeOfDay hour minute sec  = timeToTimeOfDay (utctDayTime now)
+  let ( year, month, day )      = toGregorian (utctDay now)
+      TimeOfDay hour minute sec = timeToTimeOfDay (utctDayTime now)
   case envVar of
     EnvYear         -> return $ T.pack $ show year
     EnvMonth        -> return $ T.pack $ show month
@@ -569,8 +594,8 @@ cbGetEnvVar env envVar = do
     EnvMinute       -> return $ T.pack $ show minute
     EnvSecond       -> return $ T.pack $ show (truncate sec :: Int)
     EnvWeekday      -> do
-      let (_, _, dow) = toWeekDate (utctDay now)
-          weekdays = ["日", "月", "火", "水", "木", "金", "土"]
+      let ( _, _, dow ) = toWeekDate (utctDay now)
+          weekdays      = [ "日", "月", "火", "水", "木", "金", "土" ]
       return $ T.pack $ fromMaybe "?" $ weekdays !!? (dow `mod` 7)
     EnvSelfname     -> return "Emily"
     EnvSelfname2    -> return ""
@@ -596,7 +621,10 @@ getScreenDimension :: Bool -> IO T.Text
 getScreenDimension isWidth = do
   mDisplay <- Gdk.displayGetDefault
   case mDisplay of
-    Nothing      -> return $ if isWidth then "1920" else "1080"
+    Nothing      -> return
+      $ if isWidth
+        then "1920"
+        else "1080"
     Just display -> do
       monitors <- Gdk.displayGetMonitors display
       n <- Gio.listModelGetNItems monitors
@@ -604,7 +632,10 @@ getScreenDimension isWidth = do
         then do
           mMonitor <- Gio.listModelGetItem monitors 0
           case mMonitor of
-            Nothing  -> return $ if isWidth then "1920" else "1080"
+            Nothing  -> return
+              $ if isWidth
+                then "1920"
+                else "1080"
             Just obj -> do
               monitor <- Gdk.unsafeCastTo Gdk.Monitor obj
               geom <- Gdk.monitorGetGeometry monitor
@@ -612,15 +643,17 @@ getScreenDimension isWidth = do
                 then Gdk.getRectangleWidth geom
                 else Gdk.getRectangleHeight geom
               return $ T.pack $ show val
-        else return $ if isWidth then "1920" else "1080"
+        else return
+          $ if isWidth
+            then "1920"
+            else "1080"
 
 getCharacterSurfaceId :: CallbackEnv -> Int -> IO T.Text
-getCharacterSurfaceId env scope =
-  case Map.lookup scope (ceCharacters env) of
-    Just cs -> do
-      surfId <- readIORef (csCurrentSurface cs)
-      return $ T.pack $ show surfId
-    Nothing -> return "0"
+getCharacterSurfaceId env scope = case Map.lookup scope (ceCharacters env) of
+  Just cs -> do
+    surfId <- readIORef (csCurrentSurface cs)
+    return $ T.pack $ show surfId
+  Nothing -> return "0"
 
 -- -----------------------------------------------------------------------------
 -- Completion callbacks
@@ -652,7 +685,7 @@ cbSetTimeCritical env enabled = do
 -- -----------------------------------------------------------------------------
 
 -- | Parse a hex color string like "#FF0000" or "FF0000" to RGB values (0.0-1.0)
-parseHexColor :: T.Text -> Maybe (Double, Double, Double)
+parseHexColor :: T.Text -> Maybe ( Double, Double, Double )
 parseHexColor hexStr = do
   let hex = T.dropWhile (== '#') hexStr
   case T.length hex of
@@ -660,39 +693,56 @@ parseHexColor hexStr = do
       r <- parseHexByte (T.take 2 hex)
       g <- parseHexByte (T.take 2 (T.drop 2 hex))
       b <- parseHexByte (T.drop 4 hex)
-      Just (fromIntegral r / 255.0, fromIntegral g / 255.0, fromIntegral b / 255.0)
+      Just ( fromIntegral r / 255.0, fromIntegral g / 255.0, fromIntegral b / 255.0 )
     3 -> do
       r <- parseHexNibble (T.take 1 hex)
       g <- parseHexNibble (T.take 1 (T.drop 1 hex))
       b <- parseHexNibble (T.drop 2 hex)
-      Just (fromIntegral (r * 17) / 255.0, fromIntegral (g * 17) / 255.0, fromIntegral (b * 17) / 255.0)
+      Just
+        ( fromIntegral (r * 17) / 255.0
+        , fromIntegral (g * 17) / 255.0
+        , fromIntegral (b * 17) / 255.0
+        )
     _ -> Nothing
   where
     parseHexByte :: T.Text -> Maybe Int
     parseHexByte t = case reads ("0x" ++ T.unpack t) of
-      [(n, "")] -> Just n
-      _         -> Nothing
+      [ ( n, "" ) ] -> Just n
+      _ -> Nothing
+
     parseHexNibble :: T.Text -> Maybe Int
     parseHexNibble t = case reads ("0x" ++ T.unpack t) of
-      [(n, "")] -> Just n
-      _         -> Nothing
+      [ ( n, "" ) ] -> Just n
+      _ -> Nothing
 
 -- | Look up a named color to RGB values (0.0-1.0)
-lookupColorName :: T.Text -> Maybe (Double, Double, Double)
+lookupColorName :: T.Text -> Maybe ( Double, Double, Double )
 lookupColorName name = Map.lookup (T.toLower name) colorNames
   where
-    colorNames :: Map.Map T.Text (Double, Double, Double)
-    colorNames = Map.fromList
-      [ ("black", (0.0, 0.0, 0.0)), ("white", (1.0, 1.0, 1.0))
-      , ("red", (1.0, 0.0, 0.0)), ("green", (0.0, 0.5, 0.0))
-      , ("blue", (0.0, 0.0, 1.0)), ("yellow", (1.0, 1.0, 0.0))
-      , ("cyan", (0.0, 1.0, 1.0)), ("magenta", (1.0, 0.0, 1.0))
-      , ("gray", (0.5, 0.5, 0.5)), ("grey", (0.5, 0.5, 0.5))
-      , ("orange", (1.0, 0.65, 0.0)), ("pink", (1.0, 0.75, 0.8))
-      , ("purple", (0.5, 0.0, 0.5)), ("brown", (0.65, 0.16, 0.16))
-      , ("navy", (0.0, 0.0, 0.5)), ("teal", (0.0, 0.5, 0.5))
-      , ("olive", (0.5, 0.5, 0.0)), ("maroon", (0.5, 0.0, 0.0))
-      , ("silver", (0.75, 0.75, 0.75)), ("lime", (0.0, 1.0, 0.0))
-      , ("aqua", (0.0, 1.0, 1.0)), ("fuchsia", (1.0, 0.0, 1.0))
-      ]
+    colorNames :: Map.Map T.Text ( Double, Double, Double )
+    colorNames
+      = Map.fromList
+        [ ( "black", ( 0.0, 0.0, 0.0 ) )
+        , ( "white", ( 1.0, 1.0, 1.0 ) )
+        , ( "red", ( 1.0, 0.0, 0.0 ) )
+        , ( "green", ( 0.0, 0.5, 0.0 ) )
+        , ( "blue", ( 0.0, 0.0, 1.0 ) )
+        , ( "yellow", ( 1.0, 1.0, 0.0 ) )
+        , ( "cyan", ( 0.0, 1.0, 1.0 ) )
+        , ( "magenta", ( 1.0, 0.0, 1.0 ) )
+        , ( "gray", ( 0.5, 0.5, 0.5 ) )
+        , ( "grey", ( 0.5, 0.5, 0.5 ) )
+        , ( "orange", ( 1.0, 0.65, 0.0 ) )
+        , ( "pink", ( 1.0, 0.75, 0.8 ) )
+        , ( "purple", ( 0.5, 0.0, 0.5 ) )
+        , ( "brown", ( 0.65, 0.16, 0.16 ) )
+        , ( "navy", ( 0.0, 0.0, 0.5 ) )
+        , ( "teal", ( 0.0, 0.5, 0.5 ) )
+        , ( "olive", ( 0.5, 0.5, 0.0 ) )
+        , ( "maroon", ( 0.5, 0.0, 0.0 ) )
+        , ( "silver", ( 0.75, 0.75, 0.75 ) )
+        , ( "lime", ( 0.0, 1.0, 0.0 ) )
+        , ( "aqua", ( 0.0, 1.0, 1.0 ) )
+        , ( "fuchsia", ( 1.0, 0.0, 1.0 ) )
+        ]
 

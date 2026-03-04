@@ -1,20 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Text utility functions for parsing and processing.
-module Utils.Text
-  ( readBoolOr
-  , readMaybeBool
-  , clean
-  , cleanStr
-  , readIntOr
-  , readMaybeInt
-  ) where
+module Utils.Text ( readBoolOr, readMaybeBool, clean, cleanStr, readIntOr, readMaybeInt ) where
 
-import Prelude ()
-import Relude
+import           Data.Char ( isSpace )
+import qualified Data.Text as T
 
-import           Data.Char  ( isSpace )
-import qualified Data.Text  as T
+import           Prelude   ()
+
+import           Relude
 
 -- | Trim leading and trailing whitespace (String version for charset detection).
 cleanStr :: String -> String

@@ -36,13 +36,14 @@ module Types.Ghost.Surface
   , parseAnimationInterval
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict      as Map
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
+
+import           Prelude              ()
+
+import           Relude
 
 import           Utils.Charset        ( convertToUtf8, detectCharsetFromBytes )
 import           Utils.Text           ( readIntOr, readMaybeInt )
@@ -598,6 +599,7 @@ parseSurfaceBrace sid = foldl' parseLine (emptySurfaceDefinition sid)
     parseKey sd key val
       -- Elements
 
+
         | "element" `T.isPrefixOf` key = case parseElement key val of
           Just el -> sd { sdElements = sdElements sd ++ [ el ] }
           Nothing -> sd
@@ -787,6 +789,7 @@ readSurfaces path = do
     processBrace :: Surfaces -> BraceBlock -> Surfaces
     processBrace surf (BraceBlock name lns)
       -- descript brace
+
 
         | name == "descript" = surf { surfacesDescript = parseDescriptBrace lns }
 

@@ -21,18 +21,19 @@ module Kokage.Event.Shiori
   , getUptimeHours
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Map.Strict          as Map
 import qualified Data.Text                as T
 import           Data.Time.Clock          ( UTCTime, diffUTCTime )
 import           Data.Time.LocalTime      ( LocalTime(..), TimeOfDay(..) )
 
 import           Kokage.Event.Config      ( ShioriConfig(..) )
-import           Types.Event              ( ClickEvent(..), CollisionHit(..), DragEvent(..) )
 import           Kokage.Shiori.WineBridge ( sendEvent )
 
+import           Prelude                  ()
+
+import           Relude
+
+import           Types.Event              ( ClickEvent(..), CollisionHit(..), DragEvent(..) )
 import           Types.Ghost              ( CollisionRegion(..) )
 import           Types.Shiori             ( ShioriEvent, ShioriResponse(..), srsValue )
 

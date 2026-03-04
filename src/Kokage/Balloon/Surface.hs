@@ -30,14 +30,16 @@ module Kokage.Balloon.Surface
   , loadArrowSurface
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Map.Strict     as Map
 import qualified Data.Text           as T
+
 import qualified GI.GdkPixbuf        as Pixbuf
 
 import           Kokage.Transparency ( loadWithTransparency )
+
+import           Prelude             ()
+
+import           Relude
 
 import           System.Directory    ( doesFileExist )
 import           System.FilePath     ( (</>) )

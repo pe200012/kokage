@@ -13,12 +13,13 @@ module Types.Plugin
   , readPluginDescript
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
+
+import           Prelude              ()
+
+import           Relude
 
 import           Types.Ghost          ( clean, convertToUtf8, detectCharsetFromBytes, readIntOr )
 
@@ -112,6 +113,7 @@ readPluginDescript path = do
     parseKey :: PluginDescript -> Text -> Text -> PluginDescript
     parseKey pd key val
       -- Basic info
+
 
         | key == "charset" = pd { pdCharset = val }
         | key == "name" = pd { pdName = val }

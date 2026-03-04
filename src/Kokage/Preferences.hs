@@ -34,12 +34,13 @@ module Kokage.Preferences
   , setShowCollisionArea
   ) where
 
-import Prelude ()
-import Relude
-
 import           Control.Exception ( catch )
 
 import           Data.Aeson        ( FromJSON, ToJSON, eitherDecodeFileStrict, encodeFile )
+
+import           Prelude           ()
+
+import           Relude
 
 import           System.Directory  ( XdgDirectory(..)
                                    , createDirectoryIfMissing

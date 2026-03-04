@@ -65,8 +65,9 @@ module Types.SakuraScript
   , ExecuteCmd(..)
   ) where
 
-import Prelude ()
-import Relude
+import           Prelude ()
+
+import           Relude
 
 --------------------------------------------------------------------------------
 -- Top-level script

@@ -35,9 +35,6 @@ module Kokage.Character
   , cancelSurfaceLifeTimer
   ) where
 
-import Prelude ()
-import Relude
-
 import           Data.GI.Base       ( AttrOp((:=)), new )
 import qualified Data.Text          as T
 
@@ -72,6 +69,10 @@ import           Kokage.Platform    ( Layer(..)
                                     , setWindowPosition
                                     )
 import           Kokage.Surface     ( compositeSurface, findSurfaceById )
+
+import           Prelude            ()
+
+import           Relude
 
 import           Types.Ghost        ( CharacterSettings(..)
                                     , GhostDescript(..)
@@ -122,29 +123,34 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
 
   -- Try to find and composite the default surface
   -- If not found, create a transparent placeholder (1x1 pixel)
-  (pixbuf, actualSurfId) <- case findSurfaceById defaultSurfId surfaces of
-    Nothing -> do
-      putStrLn $ "[Character " <> show scopeId <> "] Default surface " <> show defaultSurfId
-              <> " not found, using transparent placeholder"
+  ( pixbuf, actualSurfId ) <- case findSurfaceById defaultSurfId surfaces of
+    Nothing      -> do
+      putStrLn
+        $ "[Character "
+        <> show scopeId
+        <> "] Default surface "
+        <> show defaultSurfId
+        <> " not found, using transparent placeholder"
       -- Create 1x1 transparent pixbuf as placeholder
       placeholder <- Pixbuf.pixbufNew Pixbuf.ColorspaceRgb True 8 1 1
       case placeholder of
         Nothing -> error "Failed to create placeholder pixbuf"
         Just pb -> do
           Pixbuf.pixbufFill pb 0x00000000  -- Fully transparent (RGBA)
-          return (pb, defaultSurfId)
+          return ( pb, defaultSurfId )
     Just surfDef -> do
       mPixbuf <- compositeSurface (shellPath shell) surfDef
       case mPixbuf of
         Nothing -> do
-          putStrLn $ "[Character " <> show scopeId <> "] Failed to composite surface, using placeholder"
+          putStrLn
+            $ "[Character " <> show scopeId <> "] Failed to composite surface, using placeholder"
           placeholder <- Pixbuf.pixbufNew Pixbuf.ColorspaceRgb True 8 1 1
           case placeholder of
             Nothing -> error "Failed to create placeholder pixbuf"
             Just pb -> do
               Pixbuf.pixbufFill pb 0x00000000  -- Fully transparent (RGBA)
-              return (pb, defaultSurfId)
-        Just pb -> return (pb, defaultSurfId)
+              return ( pb, defaultSurfId )
+        Just pb -> return ( pb, defaultSurfId )
 
   width <- Pixbuf.pixbufGetWidth pixbuf
   height <- Pixbuf.pixbufGetHeight pixbuf
@@ -162,9 +168,7 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
 
   -- Make window transparent
   cssProvider <- new Gtk.CssProvider []
-  Gtk.cssProviderLoadFromString
-    cssProvider
-    "window.transparent { background-color: transparent; }"
+  Gtk.cssProviderLoadFromString cssProvider "window.transparent { background-color: transparent; }"
   display <- Gdk.displayGetDefault
   case display of
     Nothing -> return ()
@@ -214,8 +218,7 @@ createCharacter app shell ghostDesc scopeId mBalloonDir = do
         <> ")"
       newBalloonStateWithSurface app balloonDir charType
     Nothing         -> do
-      putStrLn
-        $ "[Character " <> show scopeId <> "] No balloon directory, using default balloon"
+      putStrLn $ "[Character " <> show scopeId <> "] No balloon directory, using default balloon"
       newBalloonState app
   _ <- initBalloonAlwaysOnTop balloon
 
@@ -267,11 +270,20 @@ showCharacter cs = do
   visible <- readIORef (csVisible cs)
   unless visible $ do
     let isLayerShell = csLayerShell cs
-    (posX, posY) <- readIORef (csPosition cs)
-    (sizeW, sizeH) <- readIORef (csSurfaceSize cs)
-    putStrLn $ "[Character " <> show (csScopeId cs) <> "] Showing at position ("
-            <> show posX <> ", " <> show posY <> ") size (" 
-            <> show sizeW <> "x" <> show sizeH <> ")"
+    ( posX, posY ) <- readIORef (csPosition cs)
+    ( sizeW, sizeH ) <- readIORef (csSurfaceSize cs)
+    putStrLn
+      $ "[Character "
+      <> show (csScopeId cs)
+      <> "] Showing at position ("
+      <> show posX
+      <> ", "
+      <> show posY
+      <> ") size ("
+      <> show sizeW
+      <> "x"
+      <> show sizeH
+      <> ")"
     if isLayerShell
       then do
         setWindowLayer (csWindow cs) LayerTop
@@ -454,7 +466,7 @@ initBalloonPosition cs shell = do
         putStrLn
           $ "[Character " <> show (csScopeId cs) <> "] Flipping balloon to left (edge detection)"
         return ( BalloonLeft, leftPosX )
-      else
+      else 
         -- Keep right, clamp if needed
         return ( BalloonRight, max monX (min rightPosX (monX + monW - balloonW)) )
     BalloonLeft  -> if leftPosX < monX && rightPosX + balloonW <= monX + monW
@@ -463,7 +475,7 @@ initBalloonPosition cs shell = do
         putStrLn
           $ "[Character " <> show (csScopeId cs) <> "] Flipping balloon to right (edge detection)"
         return ( BalloonRight, rightPosX )
-      else
+      else 
         -- Keep left, clamp if needed
         return ( BalloonLeft, max monX (min leftPosX (monX + monW - balloonW)) )
 
@@ -652,10 +664,12 @@ getDefaultSurfaceId :: GhostDescript -> ShellDescript -> Int -> ( Int, T.Text )
 getDefaultSurfaceId ghostDesc shellDesc scopeId = case scopeId of
   0 -> ( descriptSakuraSerikoDefaultSurface ghostDesc, descriptSakuraName ghostDesc )
   1 -> ( descriptKeroSerikoDefaultSurface ghostDesc, descriptKeroName ghostDesc )
-  n -> let charSettings = getCharSettings n shellDesc
-           defaultSurf  = fromMaybe (10 + n * 10) (csSerikoDefaultSurface charSettings)
-           charName     = fromMaybe ("char" <> T.pack (show n)) (csName charSettings)
-       in  ( defaultSurf, charName )
+  n -> let
+      charSettings = getCharSettings n shellDesc
+      defaultSurf  = fromMaybe (10 + n * 10) (csSerikoDefaultSurface charSettings)
+      charName     = fromMaybe ("char" <> T.pack (show n)) (csName charSettings)
+    in 
+      ( defaultSurf, charName )
 
 -- | Get balloon offset for a character/surface combination.
 -- Checks surface-specific offsets first, then falls back to shell descript.
@@ -695,7 +709,7 @@ getBalloonOffset shell scopeId surfId dir
         Nothing -> case snd charOffset of
           Just y  -> y
           Nothing -> fromMaybe 0 (snd genericOffset)
-    in
+    in 
       ( resolveX, resolveY )
 
 -- | Start a surface life timer for OnSurfaceRestore event.

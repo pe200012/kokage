@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StrictData #-}
+
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- | SHIORI/3.0 protocol types and parsing
@@ -72,14 +73,15 @@ module Types.Shiori
   , emptyResponse
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Map.Strict       as Map
 import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as TE
+
+import           Prelude               ()
+
+import           Relude
 
 import qualified TextBuilder           as TB
 

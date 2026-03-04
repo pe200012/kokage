@@ -26,12 +26,13 @@ module Kokage.SakuraScript.Parser
   , pEnvVar
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Text                  as T
 
-import           Text.Megaparsec hiding (many, some)
+import           Prelude                    ()
+
+import           Relude
+
+import           Text.Megaparsec            hiding ( many, some )
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 
@@ -341,7 +342,8 @@ pBalloonChange = char 'b' *> pBalloonIndex
   where
     -- \b[N] or \bN (single digit shorthand)
     pBalloonIndex
-      = pBracketed (BalloonChange <$> pInt) <|> (BalloonChange . fromMaybe 0 . readMaybe . (: []) <$> digitChar)
+      = pBracketed (BalloonChange <$> pInt)
+      <|> (BalloonChange . fromMaybe 0 . readMaybe . (: []) <$> digitChar)
 
 -- | Parse newline variants: \n, \n[half], \n[percent,n]
 pNewline :: Parser BalloonCmd

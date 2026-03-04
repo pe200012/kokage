@@ -7,9 +7,6 @@ module Kokage.Init
   , cleanupShiori
   ) where
 
-import Prelude ()
-import Relude
-
 import           Control.Exception        ( try )
 
 import qualified Data.Map.Strict          as Map
@@ -31,6 +28,10 @@ import           Kokage.Config            ( GhostHistory(..)
                                           , saveGhostHistory
                                           )
 import           Kokage.Shiori.WineBridge ( WineShiori, sendRequest )
+
+import           Prelude                  ()
+
+import           Relude
 
 import           Types.Ghost              ( Ghost(..), descriptSakuraName, ghostDescript )
 import           Types.Shiori             ( ShioriEvent(..)

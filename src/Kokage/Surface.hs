@@ -1,5 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
+
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
 -- | Surface image loading and compositing.
@@ -12,9 +13,6 @@ module Kokage.Surface
   , findSurfaceById
   , drawMethodToOperator
   ) where
-
-import Prelude ()
-import Relude
 
 import           Data.GI.Base.ManagedPtr   ( wrapBoxed )
 import qualified Data.Text                 as T
@@ -29,6 +27,10 @@ import qualified GI.Gdk                    as Gdk
 import qualified GI.GdkPixbuf              as Pixbuf
 
 import           Kokage.Transparency       ( loadWithTransparency )
+
+import           Prelude                   ()
+
+import           Relude
 
 import           System.Directory          ( doesFileExist )
 import           System.FilePath           ( (</>) )

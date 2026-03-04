@@ -30,20 +30,20 @@ module Kokage.Animation
   , ImageCache
   ) where
 
-import Prelude ()
-import Relude
-
 import           Control.Monad     ( foldM, foldM_ )
 
+import           Data.List         ( (!!) )
 import qualified Data.Map.Strict   as Map
 import qualified Data.Set          as Set
 
 import qualified GI.GdkPixbuf      as Pixbuf
 
-import           Data.List         ( (!!) )
-
 import           Kokage.ImageCache ( ImageCache, getCachedImage, newImageCache )
 import           Kokage.Surface    ( compositeSurface, findSurfaceById, loadDefaultSurface )
+
+import           Prelude           ()
+
+import           Relude
 
 import           System.Random     ( randomRIO )
 
@@ -214,7 +214,7 @@ tickAnimations animState _shell surfDef activeAnims currentTimers delta = do
           -- Create new active animation
           case animPatterns anim of
             [] -> return ( accAnims, newTimers, started )
-            ( firstPat : _ ) -> do
+            (firstPat : _) -> do
               let isLooping = animInterval anim == IntervalAlways
                   baseWait  = apWait firstPat
 
@@ -292,13 +292,13 @@ updateActiveAnims anims delta = do
               patCmds    = extractCommands (apMethod currentPat)
 
           if nextIndex >= length patterns
-            then
+            then 
               -- Animation finished - check if looping
               if aaLooping anim && not (null patterns)
                 then do
                   -- Loop back to start
                   case viaNonEmpty head patterns of
-                    Nothing -> return ( acc, changed || aaVisual anim, cmds ++ patCmds )
+                    Nothing       -> return ( acc, changed || aaVisual anim, cmds ++ patCmds )
                     Just firstPat -> do
                       let baseWait = apWait firstPat
                       actualWait <- case apWaitMax firstPat of
@@ -310,7 +310,7 @@ updateActiveAnims anims delta = do
                                    , aaVisual    = apSurfaceId firstPat >= 0
                                    }
                       return ( acc ++ [ loopedAnim ], True, cmds ++ patCmds )
-                else
+                else 
                   -- Animation finished, remove it
                   return ( acc, changed || aaVisual anim, cmds ++ patCmds )
             else do
@@ -375,10 +375,10 @@ compositeAnimation shell cache basePixbuf anims = do
   where
     applyPattern :: Shell -> ImageCache -> Pixbuf.Pixbuf -> Int32 -> Int32 -> ActiveAnim -> IO ()
     applyPattern shell' cache' dest destW destH anim = do
-      let pat    = animPatterns (aaDef anim) !! aaStepIndex anim
-          surfId = apSurfaceId pat
-          x      = apX pat
-          y      = apY pat
+      let pat     = animPatterns (aaDef anim) !! aaStepIndex anim
+          surfId  = apSurfaceId pat
+          x       = apX pat
+          y       = apY pat
           _method = apMethod pat
 
       -- surfId < 0 means no image (just wait/logic), so skip drawing
@@ -432,7 +432,7 @@ startAnimation anim looping = do
   if null patterns
     then return Nothing
     else case viaNonEmpty head patterns of
-      Nothing -> return Nothing
+      Nothing       -> return Nothing
       Just firstPat -> do
         let wait = apWait firstPat
         actualWait <- case apWaitMax firstPat of

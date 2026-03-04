@@ -15,14 +15,15 @@ module Utils.Charset
   , convertToUtf8
   ) where
 
-import Prelude ()
-import Relude
-
 import           Codec.Text.IConv           ( EncodingName, convert )
 
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import           Data.Char                  ( toLower )
+
+import           Prelude                    ()
+
+import           Relude
 
 import           Utils.Text                 ( cleanStr )
 
@@ -35,6 +36,7 @@ isValidUtf8 bs = go (BL.unpack bs)
     go []         = True
     go (b : rest)
       -- ASCII (0x00-0x7F)
+
 
         | b <= 0x7F = go rest
         -- 2-byte sequence (0xC0-0xDF followed by 0x80-0xBF)
@@ -84,6 +86,7 @@ hasUtf8Bom bs = BL.take 3 bs == BL.pack [ 0xEF, 0xBB, 0xBF ]
 guessCharset :: BL.ByteString -> EncodingName
 guessCharset bytes
   -- UTF-8 BOM present
+
 
     | hasUtf8Bom bytes = "UTF-8"
     -- Check for explicit charset declaration

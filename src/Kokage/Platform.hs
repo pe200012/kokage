@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
 -- | Platform-specific window operations for Wayland and X11.
@@ -49,37 +50,38 @@ module Kokage.Platform
   , setWindowLayer
   ) where
 
-import Prelude ()
-import Relude
+import           Control.Exception        ( try )
 
-import           Control.Exception         ( try )
+import           Data.Bits                ( (.|.) )
 
-import           Data.Bits                 ( (.|.) )
+import           Foreign.C.Types          ( CInt )
 
-import           Foreign.C.Types           ( CInt )
-
-import qualified GI.Gdk                    as Gdk
+import qualified GI.Gdk                   as Gdk
 -- X11 imports (always available)
-import qualified GI.GdkX11                 as GdkX11
-import qualified GI.Gio                    as Gio
-import qualified GI.Gtk                    as Gtk
-import qualified GI.Gtk4LayerShell         as LayerShell
-import           GI.Gtk4LayerShell         ( Edge(..), Layer(..) )
+import qualified GI.GdkX11                as GdkX11
+import qualified GI.Gio                   as Gio
+import qualified GI.Gtk                   as Gtk
+import qualified GI.Gtk4LayerShell        as LayerShell
+import           GI.Gtk4LayerShell        ( Edge(..), Layer(..) )
 
-import           Graphics.X11.Xlib         ( allocaXEvent
-                                           , clientMessage
-                                           , closeDisplay
-                                           , defaultScreen
-                                           , flush
-                                           , internAtom
-                                           , openDisplay
-                                           , rootWindow
-                                           , sendEvent
-                                           , substructureNotifyMask
-                                           , substructureRedirectMask
-                                           )
-import qualified Graphics.X11.Xlib         as X11
-import           Graphics.X11.Xlib.Extras  ( setClientMessageEvent', setEventType )
+import           Graphics.X11.Xlib        ( allocaXEvent
+                                          , clientMessage
+                                          , closeDisplay
+                                          , defaultScreen
+                                          , flush
+                                          , internAtom
+                                          , openDisplay
+                                          , rootWindow
+                                          , sendEvent
+                                          , substructureNotifyMask
+                                          , substructureRedirectMask
+                                          )
+import qualified Graphics.X11.Xlib        as X11
+import           Graphics.X11.Xlib.Extras ( setClientMessageEvent', setEventType )
+
+import           Prelude                  ()
+
+import           Relude
 
 --------------------------------------------------------------------------------
 -- Types

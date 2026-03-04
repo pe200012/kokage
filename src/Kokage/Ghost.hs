@@ -19,10 +19,8 @@ module Kokage.Ghost
   , getScreenGeometry
   ) where
 
-import Prelude ()
-import Relude
-
 import           Control.Exception ( try )
+
 import qualified Data.Text         as T
 import qualified Data.Text.IO      as TIO
 
@@ -31,6 +29,10 @@ import qualified GI.Gio            as Gio
 
 import           Kokage.Config     ( BaseDir(..) )
 import qualified Kokage.Install    as Install
+
+import           Prelude           ()
+
+import           Relude
 
 import           System.Directory  ( XdgDirectory(..)
                                    , createDirectoryIfMissing

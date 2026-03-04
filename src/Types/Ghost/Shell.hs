@@ -22,13 +22,14 @@ module Types.Ghost.Shell
   , MenuItemEx(..)
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map.Strict      as Map
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as TE
+
+import           Prelude              ()
+
+import           Relude
 
 import           Utils.Charset        ( convertToUtf8, detectCharsetFromBytes )
 import           Utils.Text           ( clean, readIntOr, readMaybeBool, readMaybeInt )
@@ -102,29 +103,29 @@ data CharacterSettings
 emptyCharacterSettings :: CharacterSettings
 emptyCharacterSettings
   = CharacterSettings
-  { csName                    = Nothing
-  , csName2                   = Nothing
+  { csName = Nothing
+  , csName2 = Nothing
   , csSerikoAlignmentToDesktop = Nothing
-  , csDefaultX                = Nothing
-  , csDefaultY                = Nothing
-  , csDefaultLeft             = Nothing
-  , csDefaultTop              = Nothing
-  , csBalloonOffsetX          = Nothing
-  , csBalloonOffsetY          = Nothing
-  , csBalloonOffsetXL         = Nothing
-  , csBalloonOffsetXR         = Nothing
-  , csBalloonOffsetYL         = Nothing
-  , csBalloonOffsetYR         = Nothing
-  , csBalloonAlignment        = Nothing
-  , csBalloonDontMove         = Nothing
-  , csBalloonSyncScale        = Nothing
-  , csSerikoDefaultSurface    = Nothing
-  , csBindGroups              = Map.empty
-  , csBindOptions             = []
-  , csMenuItems               = []
-  , csMenuItemsEx             = []
-  , csMenu                    = Nothing
-  , csSurfaceLife             = Nothing
+  , csDefaultX = Nothing
+  , csDefaultY = Nothing
+  , csDefaultLeft = Nothing
+  , csDefaultTop = Nothing
+  , csBalloonOffsetX = Nothing
+  , csBalloonOffsetY = Nothing
+  , csBalloonOffsetXL = Nothing
+  , csBalloonOffsetXR = Nothing
+  , csBalloonOffsetYL = Nothing
+  , csBalloonOffsetYR = Nothing
+  , csBalloonAlignment = Nothing
+  , csBalloonDontMove = Nothing
+  , csBalloonSyncScale = Nothing
+  , csSerikoDefaultSurface = Nothing
+  , csBindGroups = Map.empty
+  , csBindOptions = []
+  , csMenuItems = []
+  , csMenuItemsEx = []
+  , csMenu = Nothing
+  , csSurfaceLife = Nothing
   }
 
 data ShellDescript
@@ -266,7 +267,7 @@ getCharSettings idx desc
   = Map.findWithDefault emptyCharacterSettings idx (shellDescriptCharacters desc)
 
 -- | Get all defined character scope indices from shell config
-getDefinedScopes :: ShellDescript -> [Int]
+getDefinedScopes :: ShellDescript -> [ Int ]
 getDefinedScopes desc = Map.keys (shellDescriptCharacters desc)
 
 -- | Update character settings for a scope index

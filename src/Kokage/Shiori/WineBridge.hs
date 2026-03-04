@@ -41,9 +41,6 @@ module Kokage.Shiori.WineBridge
   , toWinePath
   ) where
 
-import Prelude ()
-import Relude
-
 import           Control.Exception      ( bracket, try )
 
 import qualified Data.ByteString.Base64 as B64
@@ -51,13 +48,14 @@ import qualified Data.ByteString.Char8  as BS8
 import qualified Data.Map.Strict        as Map
 import qualified Data.Text              as T
 
+import           Prelude                ()
+
+import           Relude
+
 import           System.Directory       ( makeAbsolute )
 import           System.Environment     ( getEnvironment )
 import           System.FilePath        ( (</>) )
-import           System.IO              ( hClose
-                                        , hGetLine
-                                        , hPutStrLn
-                                        )
+import           System.IO              ( hClose, hGetLine, hPutStrLn )
 import           System.Process         ( CreateProcess(..)
                                         , ProcessHandle
                                         , StdStream(..)
@@ -341,6 +339,7 @@ toWinePath path
   where
     toBackslash '/' = '\\'
     toBackslash c   = c
+
 -- | Strip whitespace characters
 stripWhitespace :: String -> String
 stripWhitespace = filter (`notElem` (" \r\n\t" :: String))

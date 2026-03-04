@@ -23,9 +23,6 @@ module Kokage.Event
   , handleClick
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Map.Strict            as Map
 import qualified Data.Text                  as T
 import           Data.Time.Clock            ( getCurrentTime )
@@ -36,8 +33,8 @@ import qualified GI.Gtk                     as Gtk
 import           Kokage.Collision           ( findCollisionAt )
 import           Kokage.Event.Config
 import           Kokage.Event.Shiori
--- Re-export submodules
-import           Types.Event
+
+import           Prelude                    ()
 
 import           Reactive.Banana            ( (<@)
                                             , (<@>)
@@ -51,6 +48,10 @@ import           Reactive.Banana            ( (<@)
 import           Reactive.Banana.Frameworks ( MomentIO, fromAddHandler, reactimate )
 import           Reactive.Banana.GI.Gtk     ( signalE0R )
 
+import           Relude
+
+-- Re-export submodules
+import           Types.Event
 import           Types.Ghost                ( CollisionRegion(..) )
 import           Types.Shiori               ( ShioriEvent(..) )
 
@@ -140,9 +141,7 @@ setupNetwork config = do
   motionB :: Behavior (Maybe ( Double, Double )) <- stepper Nothing (Just <$> motionE)
 
   -- Track freshness: motion sets True, tick resets to False
-  freshB <- accumB False $ unionWith const
-    (const True <$ motionE)
-    (const False <$ motionTickE)
+  freshB <- accumB False $ unionWith const (const True <$ motionE) (const False <$ motionTickE)
 
   let sampledMotionE = (,) <$> motionB <*> freshB <@ motionTickE
 
@@ -235,15 +234,15 @@ setupNetwork config = do
 -- | Set up the FRP network for a single character window.
 setupCharacterNetwork :: CharacterNetworkConfig -> MomentIO ()
 setupCharacterNetwork config = do
-  let window          = cncWindow config
-      inputs          = cncInputs config
-      collisions      = cncCollisions config
-      moveMode        = cncMoveMode config
-      scopeId         = cncScopeId config
-      mShiori         = cncShiori config
-      handler         = cncScriptHandler config
-      contextMenu     = cncContextMenu config
-      motionTick      = cncMotionTick config
+  let window = cncWindow config
+      inputs = cncInputs config
+      collisions = cncCollisions config
+      moveMode = cncMoveMode config
+      scopeId = cncScopeId config
+      mShiori = cncShiori config
+      handler = cncScriptHandler config
+      contextMenu = cncContextMenu config
+      motionTick = cncMotionTick config
       timeCriticalHandler = cncTimeCriticalHandler config
 
   -- Create Behavior for time-critical state from AddHandler
@@ -280,9 +279,7 @@ setupCharacterNetwork config = do
 
   -- Track freshness: motion sets True, tick resets to False
   -- accumB samples BEFORE applying update from same event
-  freshB <- accumB False $ unionWith const
-    (const True <$ motionE)
-    (const False <$ motionTickE)
+  freshB <- accumB False $ unionWith const (const True <$ motionE) (const False <$ motionTickE)
 
   -- Sample both on tick - wasFresh is True if any motion occurred since last tick
   let sampledMotionE = (,) <$> motionB <*> freshB <@ motionTickE
@@ -302,7 +299,7 @@ setupCharacterNetwork config = do
   -- Send OnMouseMove only on tick, only if motion was fresh
   -- Filter by time-critical state at FRP level (not inside reactimate)
   let notTimeCriticalB = not <$> bTimeCritical
-      filteredMotionE = whenE notTimeCriticalB sampledMotionE
+      filteredMotionE  = whenE notTimeCriticalB sampledMotionE
 
   let handleSampledMotion ( mPos, wasFresh ) = case mPos of
         Nothing       -> return ()
@@ -353,8 +350,11 @@ setupCharacterNetwork config = do
   let filteredSingleHitE = whenE notTimeCriticalB singleHitE
       filteredDoubleHitE = whenE notTimeCriticalB doubleHitE
 
-  reactimate $ (\hit -> handleMouseClick mShiori OnMouseClick scopeId hit handler) <$> filteredSingleHitE
-  reactimate $ (\hit -> handleMouseClick mShiori OnMouseDoubleClick scopeId hit handler) <$> filteredDoubleHitE
+  reactimate
+    $ (\hit -> handleMouseClick mShiori OnMouseClick scopeId hit handler) <$> filteredSingleHitE
+  reactimate
+    $ (\hit -> handleMouseClick mShiori OnMouseDoubleClick scopeId hit handler)
+    <$> filteredDoubleHitE
   reactimate $ putStrLn "[Click] Suppressed (drag exceeded threshold)" <$ suppressedE
 
   -- Drag logging

@@ -25,12 +25,7 @@ module Kokage.SakuraScript.Interpreter
   , executeScriptAsync
   ) where
 
-import Prelude ()
-import Relude
-
-import           Control.Concurrent       ( forkIO
-                                          , threadDelay
-                                          )
+import           Control.Concurrent       ( forkIO, threadDelay )
 import           Control.Concurrent.Async ( race )
 
 import qualified Data.Text                as T
@@ -39,6 +34,11 @@ import           Data.Time.Clock.POSIX    ( utcTimeToPOSIXSeconds )
 
 import           Kokage.Callbacks         ( CallbackEnv(..) )
 import qualified Kokage.Callbacks         as CB
+
+import           Prelude                  ()
+
+import           Relude
+
 import           Types.SakuraScript
 
 --------------------------------------------------------------------------------
@@ -234,7 +234,7 @@ handleSurface ist surfaceCmd = do
   case surfaceCmd of
     SurfaceChange surfaceId
       | surfaceId < 0 -> CB.cbHideCharacter (esCallbackEnv ist) scope  -- \s[-1] hides character
-      | otherwise     -> CB.cbSetSurface (esCallbackEnv ist) scope surfaceId
+      | otherwise -> CB.cbSetSurface (esCallbackEnv ist) scope surfaceId
 
     SurfaceChangeAlias _alias ->
       -- Alias lookup should be done at a higher level
@@ -318,7 +318,7 @@ handleBalloon ist balloonCmd = do
       -- etc.
       let
           balloonId = n `div` 2
-        in
+        in 
           CB.cbSetBalloon (esCallbackEnv ist) scope balloonId
 
     BalloonHide -> CB.cbHideBalloon (esCallbackEnv ist) scope

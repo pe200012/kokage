@@ -16,13 +16,14 @@ module Kokage.Sound
   , isPlaying
   ) where
 
-import Prelude ()
-import Relude
-
 import           Control.Concurrent ( forkIO )
 import           Control.Exception  ( catch )
 
 import qualified Data.Text          as T
+
+import           Prelude            ()
+
+import           Relude
 
 import           System.Directory   ( findExecutable )
 import           System.Process     ( ProcessHandle

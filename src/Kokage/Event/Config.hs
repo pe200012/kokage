@@ -17,9 +17,6 @@ module Kokage.Event.Config
   , GlobalNetworkConfig(..)
   ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.Text                  as T
 import           Data.Time.Clock            ( UTCTime )
 import           Data.Time.LocalTime        ( LocalTime )
@@ -28,7 +25,11 @@ import qualified GI.Gtk                     as Gtk
 
 import           Kokage.Shiori.WineBridge   ( WineShiori )
 
+import           Prelude                    ()
+
 import           Reactive.Banana.Frameworks ( AddHandler )
+
+import           Relude
 
 import           Types.Ghost                ( CollisionRegion )
 
@@ -103,18 +104,18 @@ data NetworkConfig
 -- Since each character has exactly one balloon, the balloon config is integrated here.
 data CharacterNetworkConfig
   = CharacterNetworkConfig
-  { cncWindow          :: !Gtk.Window                -- ^ The character's surface window
-  , cncInputs          :: !InputHandlers             -- ^ Input event handlers for this window
-  , cncCollisions      :: ![ CollisionRegion ]       -- ^ Collision regions for hit testing
-  , cncMoveMode        :: !MoveMode                  -- ^ How to handle window movement
-  , cncScopeId         :: !Int                       -- ^ Character scope ID (0=sakura, 1=kero, etc.)
-  , cncShiori          :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
-  , cncScriptHandler   :: !ScriptHandler          -- ^ Handler for SHIORI scripts
-  , cncContextMenu     :: !Gtk.PopoverMenu          -- ^ Context menu for right-click
-  , cncMotionTick      :: !(AddHandler ())           -- ^ Motion tick for throttled mouse events
+  { cncWindow :: !Gtk.Window                -- ^ The character's surface window
+  , cncInputs :: !InputHandlers             -- ^ Input event handlers for this window
+  , cncCollisions :: ![ CollisionRegion ]       -- ^ Collision regions for hit testing
+  , cncMoveMode :: !MoveMode                  -- ^ How to handle window movement
+  , cncScopeId :: !Int                       -- ^ Character scope ID (0=sakura, 1=kero, etc.)
+  , cncShiori :: !(Maybe ShioriConfig)      -- ^ Optional SHIORI config (shared)
+  , cncScriptHandler :: !ScriptHandler          -- ^ Handler for SHIORI scripts
+  , cncContextMenu :: !Gtk.PopoverMenu          -- ^ Context menu for right-click
+  , cncMotionTick :: !(AddHandler ())           -- ^ Motion tick for throttled mouse events
     -- Balloon integration (one balloon per character)
-  , cncBalloonWindow   :: !Gtk.Window           -- ^ The balloon window
-  , cncBalloonInputs   :: !InputHandlers        -- ^ Input event handlers for balloon
+  , cncBalloonWindow :: !Gtk.Window           -- ^ The balloon window
+  , cncBalloonInputs :: !InputHandlers        -- ^ Input event handlers for balloon
   , cncBalloonMoveMode :: !BalloonMoveMode      -- ^ How to handle balloon window movement
     -- Time-critical mode (blocks mouse events during \t sections)
   , cncTimeCriticalHandler :: !(AddHandler Bool)  -- ^ Handler for time-critical state changes

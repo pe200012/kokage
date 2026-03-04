@@ -22,9 +22,6 @@ module Kokage.InputRegion
   , clearInputRegion
   ) where
 
-import Prelude ()
-import Relude
-
 import           Data.GI.Base.ManagedPtr   ( wrapBoxed )
 
 import           Foreign.Ptr               ( Ptr, castPtr )
@@ -36,6 +33,10 @@ import qualified GI.Cairo.Structs.Region   as CairoRegion
 import qualified GI.Cairo.Structs.Surface  as CairoSurface
 import qualified GI.Gdk                    as Gdk
 import qualified GI.GdkPixbuf              as Pixbuf
+
+import           Prelude                   ()
+
+import           Relude
 
 -- | FFI import for cairo_surface_reference to increment reference count.
 -- This is needed because we're sharing the surface pointer between

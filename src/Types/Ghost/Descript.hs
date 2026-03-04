@@ -5,13 +5,14 @@
 -- Parses ghost/master/descript.txt files.
 module Types.Ghost.Descript ( GhostDescript(..), emptyGhostDescript, readGhostDescript ) where
 
-import Prelude ()
-import Relude
-
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
+
+import           Prelude                    ()
+
+import           Relude
 
 import           Utils.Charset              ( convertToUtf8, detectCharset )
 import           Utils.Text                 ( clean, readBoolOr, readIntOr, readMaybeInt )
