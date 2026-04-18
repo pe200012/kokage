@@ -45,17 +45,9 @@ module Kokage
   , Edge(..)
   ) where
 
-import Prelude ()
-import Relude
+import           Control.Exception               ( finally, throwIO, try )
 
-import           Control.Exception               ( finally
-                                                 , throwIO
-                                                 , try
-                                                 )
-import           Data.Char                       ( isAsciiLower
-                                                 , isAsciiUpper
-                                                 , isDigit
-                                                 )
+import           Data.Char                       ( isAsciiLower, isAsciiUpper, isDigit )
 import qualified Data.GI.Base                    as GI
 import           Data.GI.Base                    ( AttrOp((:=))
                                                  , castTo
@@ -89,15 +81,15 @@ import qualified GI.PangoCairo                   as PangoCairo
 import           Kokage.Balloon                  ( BalloonChoice(..)
                                                  , BalloonState
                                                  , bsDrawArea
-                                                , bsLayerShell
-                                                , bsPosition
-                                                , bsWindow
-                                                , clearBalloon
-                                                , clearChoices
-                                                , hasChoices
-                                                , hideBalloon
-                                                , setBalloonId
-                                                , setChoiceCallback
+                                                 , bsLayerShell
+                                                 , bsPosition
+                                                 , bsWindow
+                                                 , clearBalloon
+                                                 , clearChoices
+                                                 , hasChoices
+                                                 , hideBalloon
+                                                 , setBalloonId
+                                                 , setChoiceCallback
                                                  )
 import           Kokage.Callbacks                ( CallbackEnv(..) )
 import           Kokage.Character                ( CharacterState(..)
@@ -145,9 +137,7 @@ import           Kokage.Platform                 ( Edge(..)
                                                  , setWindowLayer
                                                  , setWindowPosition
                                                  )
-import           Kokage.SakuraScript.Interpreter ( defaultInterpreterConfig
-                                                , executeScriptAsync
-                                                )
+import           Kokage.SakuraScript.Interpreter ( defaultInterpreterConfig, executeScriptAsync )
 import           Kokage.SakuraScript.Parser      ( parseScript )
 import           Kokage.Shiori.WineBridge        ( WineBridgeConfig(..)
                                                  , WineShiori(..)
@@ -162,12 +152,15 @@ import           Kokage.Shiori.WineBridge        ( WineBridgeConfig(..)
                                                  , unloadShiori
                                                  , withWineBridge
                                                  )
-import           Kokage.Sound                    ( newSoundState
-                                                )
+import           Kokage.Sound                    ( newSoundState )
 import           Kokage.Surface
+
+import           Prelude                         ()
 
 import           Reactive.Banana                 ( compile )
 import           Reactive.Banana.Frameworks      ( actuate, newAddHandler )
+
+import           Relude
 
 import           System.Directory                ( XdgDirectory(..)
                                                  , createDirectoryIfMissing
@@ -180,31 +173,24 @@ import           System.Directory                ( XdgDirectory(..)
 import           System.FilePath                 ( (</>), takeBaseName, takeExtension )
 
 import           Types.Ghost                     ( CharacterSettings(..)
-                                                , Ghost(..)
-                                                , GhostDescript
-                                                , Shell(..)
-                                                , descriptKeroDefaultLeft
-                                                , descriptKeroDefaultTop
-                                                , descriptKeroName
-                                                , descriptKeroSerikoDefaultSurface
-                                                , descriptName
-                                                , descriptSakuraDefaultLeft
-                                                , descriptSakuraDefaultTop
-                                                , descriptSakuraName
-                                                , descriptSakuraSerikoDefaultSurface
-                                                , descriptShiori
-                                                , loadGhost
-                                                , shellDescriptName
-                                                )
-import           Types.Ghost.Surface            ( crIndex
-                                                , crName
-                                                , sdCollisions
-                                                , sdElements
-                                                )
-import           Types.Ghost.Shell              ( getCharSettings
-                                                , getDefinedScopes
-                                                )
-
+                                                 , Ghost(..)
+                                                 , GhostDescript
+                                                 , Shell(..)
+                                                 , descriptKeroDefaultLeft
+                                                 , descriptKeroDefaultTop
+                                                 , descriptKeroName
+                                                 , descriptKeroSerikoDefaultSurface
+                                                 , descriptName
+                                                 , descriptSakuraDefaultLeft
+                                                 , descriptSakuraDefaultTop
+                                                 , descriptSakuraName
+                                                 , descriptSakuraSerikoDefaultSurface
+                                                 , descriptShiori
+                                                 , loadGhost
+                                                 , shellDescriptName
+                                                 )
+import           Types.Ghost.Shell               ( getCharSettings, getDefinedScopes )
+import           Types.Ghost.Surface             ( crIndex, crName, sdCollisions, sdElements )
 import           Types.Shiori                    ( ShioriEvent(..) )
 
 data KokageError
@@ -286,7 +272,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
               (descriptSakuraDefaultLeft descript)
           relY
             = maybe (screenH - fromIntegral surfH) fromIntegral (descriptSakuraDefaultTop descript)
-        in
+        in 
           ( monX + relX, monY + relY )
     _    -- Kero and others: default to left of sakura position
       -> let
@@ -295,7 +281,7 @@ calcInitialPosition descript scopeId ( surfW, surfH ) ( monX, monY, screenW, scr
           defaultY = screenH - fromIntegral surfH
           relX     = maybe defaultX fromIntegral (descriptKeroDefaultLeft descript)
           relY     = maybe defaultY fromIntegral (descriptKeroDefaultTop descript)
-        in
+        in 
           ( monX + relX, monY + relY )
 
 --------------------------------------------------------------------------------
@@ -434,12 +420,12 @@ parseHistory content
           , ( key, rest ) <- [ T.breakOn "," stripped ]
           , let val = T.strip $ T.drop 1 rest
           ]
-      lookupInt k def = case find (\(key, _) -> key == T.toLower (T.strip k)) pairs of
-        Nothing -> def
-        Just (_, v) -> case reads (T.unpack v) of
+      lookupInt k def = case find (\( key, _ ) -> key == T.toLower (T.strip k)) pairs of
+        Nothing       -> def
+        Just ( _, v ) -> case reads (T.unpack v) of
           [ ( n, "" ) ] -> n
           _ -> def
-    in
+    in 
       GhostHistory { ghTime = lookupInt "time" 0, ghVanishedCount = lookupInt "vanished_count" 0 }
 
 -- | Save ghost history to HISTORY file.
@@ -502,7 +488,7 @@ findBalloonDir gp (BaseDir baseDirPath) = do
           let fullPaths = map (globalBalloonDir </>) entries
           validBalloons <- filterM isBalloonDir fullPaths
           case validBalloons of
-            []          -> do
+            [] -> do
               putStrLn "[Balloon] No valid balloons in global directory"
               return Nothing
             (firstBalloon : _) -> do
@@ -580,7 +566,8 @@ kokageMain config = do
       -- Send boot NOTIFY sequence if SHIORI is available
       case mShiori of
         Just shiori -> do
-          let bootCtx = BootNotifyContext
+          let bootCtx
+                = BootNotifyContext
                 { bncShiori     = shiori
                 , bncGhost      = ghost
                 , bncShell      = shell
@@ -659,7 +646,7 @@ cleanupShiori (Just shiori) = do
   -- Send OnDestroy NOTIFY before unloading
   -- Reference0: empty for normal shutdown, "reload" for reload
   putStrLn "[SHIORI] Sending OnDestroy..."
-  _ <- sendNotify shiori "OnDestroy" (Map.fromList [(0, "" :: T.Text)])
+  _ <- sendNotify shiori "OnDestroy" (Map.fromList [ ( 0, "" :: T.Text ) ])
   putStrLn "[SHIORI] Unloading DLL..."
   _ <- unloadShiori shiori
   putStrLn "[SHIORI] Stopping bridge..."
@@ -670,78 +657,82 @@ cleanupShiori (Just shiori) = do
 -- | Send boot sequence NOTIFY events to SHIORI.
 -- These are informational events sent before OnBoot/OnFirstBoot.
 -- Per UKADOC, the full sequence includes system info, installed items, and current state.
-data BootNotifyContext = BootNotifyContext
-  { bncShiori      :: !WineShiori
-  , bncGhost       :: !Ghost
-  , bncShell       :: !Shell
-  , bncGhostPath   :: !FilePath
-  , bncBalloonDir  :: !(Maybe FilePath)
-  , bncBaseDir     :: !BaseDir
+data BootNotifyContext
+  = BootNotifyContext
+  { bncShiori     :: !WineShiori
+  , bncGhost      :: !Ghost
+  , bncShell      :: !Shell
+  , bncGhostPath  :: !FilePath
+  , bncBalloonDir :: !(Maybe FilePath)
+  , bncBaseDir    :: !BaseDir
   }
 
 sendBootNotifySequence :: BootNotifyContext -> IO ()
 sendBootNotifySequence ctx = do
-  let shiori    = bncShiori ctx
-      ghost     = bncGhost ctx
-      shell     = bncShell ctx
-      gp        = bncGhostPath ctx
+  let shiori      = bncShiori ctx
+      ghost       = bncGhost ctx
+      shell       = bncShell ctx
+      gp          = bncGhostPath ctx
       mBalloonDir = bncBalloonDir ctx
-      baseDir   = bncBaseDir ctx
-      ghostDesc = ghostDescript ghost
-      shellDesc = shellDescript shell
-      ghostName = descriptName ghostDesc
-      sakuraName = descriptSakuraName ghostDesc
-      keroName  = descriptKeroName ghostDesc
-      shellName = shellDescriptName shellDesc
+      baseDir     = bncBaseDir ctx
+      ghostDesc   = ghostDescript ghost
+      shellDesc   = shellDescript shell
+      ghostName   = descriptName ghostDesc
+      sakuraName  = descriptSakuraName ghostDesc
+      keroName    = descriptKeroName ghostDesc
+      shellName   = shellDescriptName shellDesc
 
   putStrLn "[SHIORI] Sending boot NOTIFY sequence..."
 
   -- 1. OnInitialize - signals SHIORI initialization complete
   -- Reference0: empty for normal boot, "reload" for reload
-  _ <- sendNotify shiori "OnInitialize" (Map.fromList [(0, "" :: T.Text)])
+  _ <- sendNotify shiori "OnInitialize" (Map.fromList [ ( 0, "" :: T.Text ) ])
   putStrLn "[SHIORI] Sent OnInitialize"
 
   -- 2. basewareversion - baseware version info
-  let version     = "0.1.0" :: T.Text
+  let version      = "0.1.0" :: T.Text
       basewareName = "Kokage" :: T.Text
-      fullVersion = "0.1.0.0" :: T.Text
-  _ <- sendNotify shiori "basewareversion"
-    (Map.fromList [(0, version), (1, basewareName), (2, fullVersion)])
+      fullVersion  = "0.1.0.0" :: T.Text
+  _ <- sendNotify
+    shiori
+    "basewareversion"
+    (Map.fromList [ ( 0, version ), ( 1, basewareName ), ( 2, fullVersion ) ])
   putStrLn "[SHIORI] Sent basewareversion"
 
   -- 3. hwnd - window handle (Windows-specific, send 0 on Linux)
-  _ <- sendNotify shiori "hwnd" (Map.fromList [(0, "0" :: T.Text)])
+  _ <- sendNotify shiori "hwnd" (Map.fromList [ ( 0, "0" :: T.Text ) ])
   putStrLn "[SHIORI] Sent hwnd"
 
   -- 4. uniqueid - unique identifier for this ghost instance
   -- Use ghost path hash as a simple unique ID
   let uniqueId = T.pack $ show $ abs $ simpleHash gp
-  _ <- sendNotify shiori "uniqueid" (Map.fromList [(0, uniqueId)])
+  _ <- sendNotify shiori "uniqueid" (Map.fromList [ ( 0, uniqueId ) ])
   putStrLn "[SHIORI] Sent uniqueid"
 
   -- 5. capability - list of supported features (full SSP list)
-  let capabilities = Map.fromList
-        [ (0, "request.status" :: T.Text)
-        , (1, "request.securitylevel")
-        , (2, "request.baseid")
-        , (3, "request.sendertype")
-        , (4, "request.x-sstp-passthru")
-        , (5, "response.marker")
-        , (6, "response.markersend")
-        , (7, "response.errorlevel")
-        , (8, "response.errordescription")
-        , (9, "response.balloonoffset")
-        , (10, "response.age")
-        , (11, "response.x-sstp-passthru")
-        , (12, "response.valuenotify")
-        , (13, "response.securitylevel")
-        , (14, "response.requestcharset")
-        ]
+  let capabilities
+        = Map.fromList
+          [ ( 0, "request.status" :: T.Text )
+          , ( 1, "request.securitylevel" )
+          , ( 2, "request.baseid" )
+          , ( 3, "request.sendertype" )
+          , ( 4, "request.x-sstp-passthru" )
+          , ( 5, "response.marker" )
+          , ( 6, "response.markersend" )
+          , ( 7, "response.errorlevel" )
+          , ( 8, "response.errordescription" )
+          , ( 9, "response.balloonoffset" )
+          , ( 10, "response.age" )
+          , ( 11, "response.x-sstp-passthru" )
+          , ( 12, "response.valuenotify" )
+          , ( 13, "response.securitylevel" )
+          , ( 14, "response.requestcharset" )
+          ]
   _ <- sendNotify shiori "capability" capabilities
   putStrLn "[SHIORI] Sent capability (15 features)"
 
   -- 6. ownerghostname - the name of this ghost
-  _ <- sendNotify shiori "ownerghostname" (Map.fromList [(0, ghostName)])
+  _ <- sendNotify shiori "ownerghostname" (Map.fromList [ ( 0, ghostName ) ])
   putStrLn $ "[SHIORI] Sent ownerghostname: " <> T.unpack ghostName
 
   -- 7. otherghostname - names of other running ghosts (not implemented, send empty)
@@ -753,19 +744,19 @@ sendBootNotifySequence ctx = do
   ghostNames <- forM installedGhosts $ \gPath -> do
     mG <- loadGhost gPath
     return $ maybe (T.pack $ takeBaseName gPath) (descriptName . ghostDescript) mG
-  let installedGhostRefs = Map.fromList $ zip [0..] ghostNames
+  let installedGhostRefs = Map.fromList $ zip [ 0 .. ] ghostNames
   _ <- sendNotify shiori "installedghostname" installedGhostRefs
   putStrLn $ "[SHIORI] Sent installedghostname (" <> show (length ghostNames) <> " ghosts)"
 
   -- 9. installedshellname - list of shell names for current ghost
-  let shellNames = map (shellDescriptName . shellDescript) (ghostShells ghost)
-      installedShellRefs = Map.fromList $ zip [0..] shellNames
+  let shellNames         = map (shellDescriptName . shellDescript) (ghostShells ghost)
+      installedShellRefs = Map.fromList $ zip [ 0 .. ] shellNames
   _ <- sendNotify shiori "installedshellname" installedShellRefs
   putStrLn $ "[SHIORI] Sent installedshellname (" <> show (length shellNames) <> " shells)"
 
   -- 10. installedballoonname - list of all installed balloon names
   balloonNames <- listAvailableBalloonNames baseDir
-  let installedBalloonRefs = Map.fromList $ zip [0..] balloonNames
+  let installedBalloonRefs = Map.fromList $ zip [ 0 .. ] balloonNames
   _ <- sendNotify shiori "installedballoonname" installedBalloonRefs
   putStrLn $ "[SHIORI] Sent installedballoonname (" <> show (length balloonNames) <> " balloons)"
 
@@ -778,13 +769,13 @@ sendBootNotifySequence ctx = do
   putStrLn "[SHIORI] Sent installedplugin (empty)"
 
   -- 13. ghostpathlist - paths to all installed ghosts
-  let ghostPathRefs = Map.fromList $ zip [0..] (map T.pack installedGhosts)
+  let ghostPathRefs = Map.fromList $ zip [ 0 .. ] (map T.pack installedGhosts)
   _ <- sendNotify shiori "ghostpathlist" ghostPathRefs
   putStrLn $ "[SHIORI] Sent ghostpathlist (" <> show (length installedGhosts) <> " paths)"
 
   -- 14. balloonpathlist - paths to all installed balloons
   balloonPaths <- listAvailableBalloonPaths baseDir
-  let balloonPathRefs = Map.fromList $ zip [0..] (map T.pack balloonPaths)
+  let balloonPathRefs = Map.fromList $ zip [ 0 .. ] (map T.pack balloonPaths)
   _ <- sendNotify shiori "balloonpathlist" balloonPathRefs
   putStrLn $ "[SHIORI] Sent balloonpathlist (" <> show (length balloonPaths) <> " paths)"
 
@@ -811,49 +802,55 @@ sendBootNotifySequence ctx = do
   -- 20. OnNotifySelfInfo - current ghost/shell/balloon info
   let balloonName = maybe "" (T.pack . takeBaseName) mBalloonDir
       balloonPath = maybe "" T.pack mBalloonDir
-  _ <- sendNotify shiori "OnNotifySelfInfo"
+  _ <- sendNotify
+    shiori
+    "OnNotifySelfInfo"
     (Map.fromList
-      [ (0, ghostName)
-      , (1, sakuraName)
-      , (2, keroName)
-      , (3, T.pack gp)
-      , (4, shellName)
-      , (5, T.pack $ shellPath shell)
-      , (6, balloonName)
-      , (7, balloonPath)
-      ])
+       [ ( 0, ghostName )
+       , ( 1, sakuraName )
+       , ( 2, keroName )
+       , ( 3, T.pack gp )
+       , ( 4, shellName )
+       , ( 5, T.pack $ shellPath shell )
+       , ( 6, balloonName )
+       , ( 7, balloonPath )
+       ])
   putStrLn "[SHIORI] Sent OnNotifySelfInfo"
 
   -- 21. OnNotifyBalloonInfo - current balloon dimensions
   -- Reference0=name, Ref1=path, Ref2=sakura_w, Ref3=sakura_h, Ref4=kero_w, Ref5=kero_h
-  _ <- sendNotify shiori "OnNotifyBalloonInfo"
+  _ <- sendNotify
+    shiori
+    "OnNotifyBalloonInfo"
     (Map.fromList
-      [ (0, balloonName)
-      , (1, balloonPath)
-      , (2, "200")  -- Default balloon width (would need actual measurement)
-      , (3, "150")  -- Default balloon height
-      , (4, "200")  -- Kero balloon width
-      , (5, "150")  -- Kero balloon height
-      ])
+       [ ( 0, balloonName )
+       , ( 1, balloonPath )
+       , ( 2, "200" )  -- Default balloon width (would need actual measurement)
+       , ( 3, "150" )  -- Default balloon height
+       , ( 4, "200" )  -- Kero balloon width
+       , ( 5, "150" )  -- Kero balloon height
+       ])
   putStrLn "[SHIORI] Sent OnNotifyBalloonInfo"
 
   -- 22. OnNotifyShellInfo - current shell info
   -- Ref0=name, Ref1=path, Ref2=sakura_w, Ref3=sakura_h, Ref4=kero_w, Ref5=kero_h,
   -- Ref6=author, Ref7=sakura_default_surface, Ref8=kero_default_surface
   let sakuraDefaultSurf = descriptSakuraSerikoDefaultSurface ghostDesc
-      keroDefaultSurf = descriptKeroSerikoDefaultSurface ghostDesc
-  _ <- sendNotify shiori "OnNotifyShellInfo"
+      keroDefaultSurf   = descriptKeroSerikoDefaultSurface ghostDesc
+  _ <- sendNotify
+    shiori
+    "OnNotifyShellInfo"
     (Map.fromList
-      [ (0, shellName)
-      , (1, T.pack $ shellPath shell)
-      , (2, "200")  -- Sakura surface width (would need actual measurement)
-      , (3, "400")  -- Sakura surface height
-      , (4, "150")  -- Kero surface width
-      , (5, "300")  -- Kero surface height
-      , (6, "")     -- Shell author (from shell descript if available)
-      , (7, T.pack $ show sakuraDefaultSurf)
-      , (8, T.pack $ show keroDefaultSurf)
-      ])
+       [ ( 0, shellName )
+       , ( 1, T.pack $ shellPath shell )
+       , ( 2, "200" )  -- Sakura surface width (would need actual measurement)
+       , ( 3, "400" )  -- Sakura surface height
+       , ( 4, "150" )  -- Kero surface width
+       , ( 5, "300" )  -- Kero surface height
+       , ( 6, "" )     -- Shell author (from shell descript if available)
+       , ( 7, T.pack $ show sakuraDefaultSurf )
+       , ( 8, T.pack $ show keroDefaultSurf )
+       ])
   putStrLn "[SHIORI] Sent OnNotifyShellInfo"
 
   -- 23. OnNotifyDressupInfo - dressup/clothing info (not implemented)
@@ -863,20 +860,24 @@ sendBootNotifySequence ctx = do
   -- 24. OnNotifyUserInfo - user information
   -- Reference0=user name, Reference1=default charset
   userName <- getEffectiveUserName
-  _ <- sendNotify shiori "OnNotifyUserInfo"
-    (Map.fromList [(0, T.pack userName), (1, "UTF-8")])
+  _ <- sendNotify
+    shiori
+    "OnNotifyUserInfo"
+    (Map.fromList [ ( 0, T.pack userName ), ( 1, "UTF-8" ) ])
   putStrLn "[SHIORI] Sent OnNotifyUserInfo"
 
   -- 25. OnNotifyOSInfo - OS information
   -- Ref0=OS type/version, Ref1=CPU info, Ref2=memory info, Ref3=display count
   osInfo <- getOSInfo
-  _ <- sendNotify shiori "OnNotifyOSInfo"
+  _ <- sendNotify
+    shiori
+    "OnNotifyOSInfo"
     (Map.fromList
-      [ (0, osInfo)
-      , (1, "")  -- CPU info (complex to get portably)
-      , (2, "")  -- Memory info
-      , (3, "1") -- Display count
-      ])
+       [ ( 0, osInfo )
+       , ( 1, "" )  -- CPU info (complex to get portably)
+       , ( 2, "" )  -- Memory info
+       , ( 3, "1" ) -- Display count
+       ])
   putStrLn "[SHIORI] Sent OnNotifyOSInfo"
 
   -- 26. OnNotifyFontInfo - list of available system fonts
@@ -893,13 +894,19 @@ sendBootNotifySequence ctx = do
   tz <- getCurrentTimeZone
   let tzOffsetMins = negate $ timeZoneMinutes tz
   locale <- getLocaleInfo
-  _ <- sendNotify shiori "OnNotifyInternationalInfo"
+  _ <- sendNotify
+    shiori
+    "OnNotifyInternationalInfo"
     (Map.fromList
-      [ (0, T.pack $ show tzOffsetMins)
-      , (1, if timeZoneSummerOnly tz then "1" else "0")
-      , (2, fst locale)  -- Country code
-      , (3, snd locale)  -- Language code
-      ])
+       [ ( 0, T.pack $ show tzOffsetMins )
+       , ( 1
+         , if timeZoneSummerOnly tz
+             then "1"
+             else "0"
+         )
+       , ( 2, fst locale )  -- Country code
+       , ( 3, snd locale )  -- Language code
+       ])
   putStrLn "[SHIORI] Sent OnNotifyInternationalInfo"
 
   putStrLn "[SHIORI] Boot NOTIFY sequence complete (27 events)"
@@ -912,12 +919,10 @@ getOSInfo = do
   if exists
     then do
       content <- TIO.readFile "/etc/os-release"
-      let lines' = T.lines content
-          prettyName = listToMaybe
-            [ T.drop 13 (T.filter (/= '"') l)
-            | l <- lines'
-            , "PRETTY_NAME=" `T.isPrefixOf` l
-            ]
+      let lines'     = T.lines content
+          prettyName
+            = listToMaybe
+              [ T.drop 13 (T.filter (/= '"') l) | l <- lines', "PRETTY_NAME=" `T.isPrefixOf` l ]
       return $ fromMaybe "Linux" prettyName
     else return "Linux"
 
@@ -928,25 +933,27 @@ getEffectiveUserName = do
   return $ fromMaybe "user" mUser
 
 -- | Get locale information (country code, language code).
-getLocaleInfo :: IO (T.Text, T.Text)
+getLocaleInfo :: IO ( T.Text, T.Text )
 getLocaleInfo = do
   mLang <- lookupEnv "LANG"
   case mLang of
-    Nothing -> return ("", "")
+    Nothing   -> return ( "", "" )
     Just lang ->
       -- Parse LANG format: "en_US.UTF-8" -> ("US", "en")
-      let langPart = takeWhile (/= '.') lang
-          parts = break (== '_') langPart
-      in case parts of
-        (langCode, '_':countryCode) -> return (T.pack countryCode, T.pack langCode)
-        (langCode, _) -> return ("", T.pack langCode)
+      let
+          langPart = takeWhile (/= '.') lang
+          parts    = break (== '_') langPart
+        in 
+          case parts of
+            ( langCode, '_' : countryCode ) -> return ( T.pack countryCode, T.pack langCode )
+            ( langCode, _ ) -> return ( "", T.pack langCode )
 
 -- | Simple hash function for strings (DJB2 algorithm).
 simpleHash :: String -> Int
 simpleHash = foldl' (\h c -> 33 * h + fromEnum c) 5381
 
 -- | List available balloon names from base directory.
-listAvailableBalloonNames :: BaseDir -> IO [T.Text]
+listAvailableBalloonNames :: BaseDir -> IO [ T.Text ]
 listAvailableBalloonNames (BaseDir baseDirPath) = do
   let balloonDir = baseDirPath </> "balloon"
   exists <- doesDirectoryExist balloonDir
@@ -965,7 +972,7 @@ listAvailableBalloonNames (BaseDir baseDirPath) = do
         else doesFileExist (path </> "balloons0.png")
 
 -- | List available balloon paths from base directory.
-listAvailableBalloonPaths :: BaseDir -> IO [FilePath]
+listAvailableBalloonPaths :: BaseDir -> IO [ FilePath ]
 listAvailableBalloonPaths (BaseDir baseDirPath) = do
   let balloonDir = baseDirPath </> "balloon"
   exists <- doesDirectoryExist balloonDir
@@ -984,7 +991,7 @@ listAvailableBalloonPaths (BaseDir baseDirPath) = do
 
 -- | Get list of system font family names using Pango.
 -- Filters out empty names, names with control characters, and duplicates.
-_getSystemFontNames :: IO [T.Text]
+_getSystemFontNames :: IO [ T.Text ]
 _getSystemFontNames = do
   -- Get the default Pango font map
   fontMap <- PangoCairo.fontMapGetDefault
@@ -993,25 +1000,20 @@ _getSystemFontNames = do
   -- Get the name of each family, filter out invalid names
   names <- forM families Pango.fontFamilyGetName
   let validNames = filter isValidFontName names
-  putStrLn $ "[Font] Total fonts: " <> show (length names) <> ", valid: " <> show (length validNames)
+  putStrLn
+    $ "[Font] Total fonts: " <> show (length names) <> ", valid: " <> show (length validNames)
   return $ nub validNames
   where
     -- A valid font name is non-empty, contains only printable characters,
     -- and has at least one alphanumeric character (filters out "????????" etc.)
     isValidFontName :: T.Text -> Bool
-    isValidFontName name =
-      not (T.null name) &&
-      T.all isPrintable name &&
-      T.any isAlphaNum name  -- Must have at least one letter or digit
+    isValidFontName name = not (T.null name) && T.all isPrintable name && T.any isAlphaNum name  -- Must have at least one letter or digit
 
     isPrintable :: Char -> Bool
     isPrintable c = c >= ' ' && c < '\DEL'
 
     isAlphaNum :: Char -> Bool
-    isAlphaNum c = isAsciiLower c ||
-                   isAsciiUpper c ||
-                   isDigit c ||
-                   c > '\x7F'  -- Allow non-ASCII (Japanese, Chinese, etc.)
+    isAlphaNum c = isAsciiLower c || isAsciiUpper c || isDigit c || c > '\x7F'  -- Allow non-ASCII (Japanese, Chinese, etc.)
 
 -- | Run the GTK application with the given shell.
 -- The shell contains surface definitions for dynamic surface switching.
@@ -1120,9 +1122,9 @@ runGtkApp
   _ <- GI.on app #activate $ do
     -- Create all characters defined in shell config
     -- Scope 0 = Sakura, Scope 1 = Kero, Scope 2+ = extra characters
-    let shellDesc = shellDescript shell
+    let shellDesc     = shellDescript shell
         -- Get all defined scopes, ensure 0 and 1 are always included
-        definedScopes = nub $ [0, 1] ++ getDefinedScopes shellDesc
+        definedScopes = nub $ [ 0, 1 ] ++ getDefinedScopes shellDesc
 
     -- Create each character
     putStrLn $ "[Startup] Defined scopes: " <> show definedScopes
@@ -1131,12 +1133,10 @@ runGtkApp
       case mChar of
         Just _  -> putStrLn $ "[Startup] Created character for scope " <> show scopeId
         Nothing -> putStrLn $ "[Startup] Failed to create character for scope " <> show scopeId
-      return (scopeId, mChar)
+      return ( scopeId, mChar )
 
     -- Build character map from successfully created characters
-    let characters
-          = Map.fromList
-          $ [(scopeId, c) | (scopeId, Just c) <- characterPairs]
+    let characters = Map.fromList $ [ ( scopeId, c ) | ( scopeId, Just c ) <- characterPairs ]
 
     when (Map.null characters) $ do
       putStrLn "Error: No characters could be created"
@@ -1166,7 +1166,7 @@ runGtkApp
 
     -- Time-critical mode: when True, mouse events are blocked (set by \t tag)
     -- Using AddHandler for FRP integration instead of IORef
-    (timeCriticalHandler, fireTimeCritical) <- newAddHandler
+    ( timeCriticalHandler, fireTimeCritical ) <- newAddHandler
 
     -- Surface change function using Character module
     let changeSurface :: Int -> Int -> IO ()
@@ -1177,33 +1177,40 @@ runGtkApp
               setCharacterSurface cs shell newSurfaceId
               -- Send OnSurfaceChange NOTIFY to SHIORI
               case mShiori of
-                Nothing -> return ()
+                Nothing     -> return ()
                 Just shiori -> do
                   -- Reference0 = sakura surface, Reference1 = kero surface
                   -- Reference2 = change details (scope,surfaceId)
                   sakuraSurf <- maybe (return 0) getCharacterSurface (Map.lookup 0 characters)
-                  keroSurf   <- maybe (return 10) getCharacterSurface (Map.lookup 1 characters)
-                  let refs = Map.fromList
-                        [ (0, T.pack $ show sakuraSurf)
-                        , (1, T.pack $ show keroSurf)
-                        , (2, T.pack $ show scope <> "," <> show newSurfaceId)
-                        ]
+                  keroSurf <- maybe (return 10) getCharacterSurface (Map.lookup 1 characters)
+                  let refs
+                        = Map.fromList
+                          [ ( 0, T.pack $ show sakuraSurf )
+                          , ( 1, T.pack $ show keroSurf )
+                          , ( 2, T.pack $ show scope <> "," <> show newSurfaceId )
+                          ]
                   _ <- sendNotify shiori "OnSurfaceChange" refs
-                  putStrLn $ "[SHIORI] Sent OnSurfaceChange: scope=" <> show scope <> ", surface=" <> show newSurfaceId
-              -- For extra characters (scope >= 2), show after surface is set
-              -- Use idleAdd to ensure this runs after setCharacterSurface's idleAdd
-              when (scope >= 2) $ void $ GLib.idleAdd GLib.PRIORITY_DEFAULT_IDLE $ do
+                  putStrLn
+                    $ "[SHIORI] Sent OnSurfaceChange: scope="
+                    <> show scope
+                    <> ", surface="
+                    <> show newSurfaceId
+              -- A hidden character becomes visible again when a surface >= 0 is selected.
+              -- Extra characters (scope >= 2) also recalculate their initial position based on
+              -- the actual surface size.
+              void $ GLib.idleAdd GLib.PRIORITY_DEFAULT_IDLE $ do
                 visible <- readIORef (csVisible cs)
                 unless visible $ do
-                  -- Recalculate position with actual surface size
-                  mScreenGeom <- getScreenGeometry
-                  case mScreenGeom of
-                    Just screenGeom -> do
-                      surfSize <- readIORef (csSurfaceSize cs)
-                      let pos = calcInitialPosition ghostDesc scope surfSize screenGeom
-                      putStrLn $ "[Position] Repositioning char" <> show scope <> " to " <> show pos
-                      uncurry (setCharacterPosition cs) pos
-                    Nothing -> return ()
+                  when (scope >= 2) $ do
+                    mScreenGeom <- getScreenGeometry
+                    case mScreenGeom of
+                      Just screenGeom -> do
+                        surfSize <- readIORef (csSurfaceSize cs)
+                        let pos = calcInitialPosition ghostDesc scope surfSize screenGeom
+                        putStrLn
+                          $ "[Position] Repositioning char" <> show scope <> " to " <> show pos
+                        uncurry (setCharacterPosition cs) pos
+                      Nothing         -> return ()
                   showCharacter cs
                 return False
 
@@ -1218,7 +1225,7 @@ runGtkApp
               _ <- GLib.sourceRemove timerId
               writeIORef balloonHideTimerRef Nothing
               putStrLn "[Balloon] Cancelled pending hide timer"
-            Nothing -> return ()
+            Nothing      -> return ()
 
     let hideBalloonIfNoChoices :: IO ()
         hideBalloonIfNoChoices = do
@@ -1239,27 +1246,30 @@ runGtkApp
         startOnSurfaceRestoreTimer = do
           forM_ (Map.elems characters) cancelSurfaceLifeTimer
           -- Check if any character is on a non-default surface
-          anyNonDefault <- or <$> forM (Map.elems characters) (\cs -> do
-            currentSurf <- getCharacterSurface cs
-            return $ currentSurf /= csDefaultSurface cs)
+          anyNonDefault <- or
+            <$> forM (Map.elems characters) (\cs -> do
+                                               currentSurf <- getCharacterSurface cs
+                                               return $ currentSurf /= csDefaultSurface cs)
           when anyNonDefault $ do
             let sDesc        = shellDescript shell
                 charSettings = getCharSettings 0 sDesc
                 delayMs      = fromIntegral $ fromMaybe 15000 (csSurfaceLife charSettings)
             case Map.lookup 0 characters of
-              Nothing -> return ()
+              Nothing     -> return ()
               Just sakura -> do
                 onSurfaceRestore <- readIORef surfaceRestoreCallbackRef
                 startSurfaceLifeTimer sakura delayMs onSurfaceRestore
-                putStrLn $ "[SurfaceLife] Started OnSurfaceRestore timer (" <> show delayMs <> "ms)"
+                putStrLn
+                  $ "[SurfaceLife] Started OnSurfaceRestore timer (" <> show delayMs <> "ms)"
 
     -- Create callback environment
-    let callbackEnv = CallbackEnv
-          { ceCharacters       = characters
-          , ceCurrentScopeRef  = currentScopeRef
-          , ceSoundState       = soundState
+    let callbackEnv
+          = CallbackEnv
+          { ceCharacters = characters
+          , ceCurrentScopeRef = currentScopeRef
+          , ceSoundState = soundState
           , ceFireTimeCritical = fireTimeCritical
-          , ceChangeSurface    = changeSurface
+          , ceChangeSurface = changeSurface
           , ceHideBalloonIfNoChoices = hideBalloonIfNoChoices
           , ceCancelBalloonHideTimer = cancelBalloonHideTimer
           }
@@ -1276,8 +1286,8 @@ runGtkApp
           -- Cancel all surface life timers when new script starts
           forM_ (Map.elems characters) cancelSurfaceLifeTimer
           -- Hide extra characters (scope >= 2) at script start
-          forM_ (Map.toList characters) $ \(scopeId, cs) ->
-            when (scopeId >= 2) $ hideCharacter cs
+          forM_ (Map.toList characters) $ \( scopeId, cs ) -> when (scopeId >= 2)
+            $ hideCharacter cs
           -- Reset scope to sakura (0) at start of each new script
           writeIORef currentScopeRef 0
           -- Parse the SakuraScript
@@ -1292,17 +1302,16 @@ runGtkApp
                 clearBalloon balloon
                 setBalloonId balloon 0  -- Reset to default balloon surface
               -- Execute script asynchronously with animation
-              interruptAction
-                <- executeScriptAsync defaultInterpreterConfig callbackEnv script
+              interruptAction <- executeScriptAsync defaultInterpreterConfig callbackEnv script
               -- Save the interrupt function for this script
               writeIORef currentScriptInterruptRef interruptAction
 
     -- Collect current surface IDs for OnSurfaceRestore event
     let collectSurfaceRefs :: IO (Map.Map Int T.Text)
         collectSurfaceRefs = do
-          surfacePairs <- forM (Map.toList characters) $ \(scopeId, cs) -> do
+          surfacePairs <- forM (Map.toList characters) $ \( scopeId, cs ) -> do
             surfId <- getCharacterSurface cs
-            return (scopeId, T.pack $ show surfId)
+            return ( scopeId, T.pack $ show surfId )
           return $ Map.fromList surfacePairs
 
     -- Fill in the surface restore callback now that displayScript is defined
@@ -1597,8 +1606,8 @@ runGtkApp
       -- Build unified character+balloon network config
       let charConfig
             = CharacterNetworkConfig
-            { cncWindow          = window
-            , cncInputs          = InputHandlers
+            { cncWindow = window
+            , cncInputs = InputHandlers
                 { ihDragBegin  = dragBeginHandler
                 , ihDragUpdate = dragUpdateHandler
                 , ihDragEnd    = dragEndHandler
@@ -1606,16 +1615,16 @@ runGtkApp
                 , ihRightClick = rightClickHandler
                 , ihLeftClick  = leftClickHandler
                 }
-            , cncCollisions      = collisions
-            , cncMoveMode        = moveMode
-            , cncScopeId         = scopeId
-            , cncShiori          = mShioriConfig
-            , cncScriptHandler   = displayScript
-            , cncContextMenu     = contextMenu
-            , cncMotionTick      = motionTickHandler
+            , cncCollisions = collisions
+            , cncMoveMode = moveMode
+            , cncScopeId = scopeId
+            , cncShiori = mShioriConfig
+            , cncScriptHandler = displayScript
+            , cncContextMenu = contextMenu
+            , cncMotionTick = motionTickHandler
               -- Balloon integration
-            , cncBalloonWindow   = bsWindow bs
-            , cncBalloonInputs   = InputHandlers
+            , cncBalloonWindow = bsWindow bs
+            , cncBalloonInputs = InputHandlers
                 { ihDragBegin  = balloonDragBeginHandler
                 , ihDragUpdate = balloonDragUpdateHandler
                 , ihDragEnd    = balloonDragEndHandler
@@ -1656,8 +1665,7 @@ runGtkApp
        -> putStrLn "[Position] Warning: Could not get screen geometry, using default positions"
 
     -- Show only main characters (scope 0 and 1), keep extra characters (scope >= 2) hidden
-    forM_ (Map.toList characters) $ \(scopeId, cs) ->
-      when (scopeId < 2) $ showCharacter cs
+    forM_ (Map.toList characters) $ \( scopeId, cs ) -> when (scopeId < 2) $ showCharacter cs
 
     -- Position balloons relative to their characters
     -- This needs a small delay to ensure windows are realized

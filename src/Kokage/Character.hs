@@ -296,13 +296,20 @@ showCharacter cs = do
     putStrLn $ "[Character " <> show (csScopeId cs) <> "] Shown"
 
 -- | Hide a character's surface window.
+-- This function is safe to call from any thread.
 hideCharacter :: CharacterState -> IO ()
 hideCharacter cs = do
   visible <- readIORef (csVisible cs)
   when visible $ do
-    Gtk.widgetSetVisible (csWindow cs) False
+    -- Set desired visibility immediately so subsequent logic (e.g. surface change)
+    -- can observe the hidden state.
     writeIORef (csVisible cs) False
-    putStrLn $ "[Character " <> show (csScopeId cs) <> "] Hidden"
+    void $ GLib.idleAdd GLib.PRIORITY_HIGH $ do
+      desired <- readIORef (csVisible cs)
+      unless desired $ do
+        Gtk.widgetSetVisible (csWindow cs) False
+        putStrLn $ "[Character " <> show (csScopeId cs) <> "] Hidden"
+      return False
 
 -- | Check if a character is currently visible.
 isCharacterVisible :: CharacterState -> IO Bool
