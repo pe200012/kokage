@@ -1,2 +1,16 @@
 .stack-work/
 *~
+
+.oc/
+.opencode/
+.serena/
+.tasks/
+.vscode/
+app-shiori-timer-test/
+dist/
+dist-newstyle/
+frp-book/
+openspec/
+test-fdr/
+
+WARP.md
