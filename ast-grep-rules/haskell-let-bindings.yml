@@ -1,0 +1,18 @@
+# ast-grep rule for Haskell local let bindings
+# Usage: ast-grep scan --rule haskell-let-bindings.yml /path/to/project
+#
+# Matches:
+#   - let x = 5 in x + 1
+#   - let { a = 1; b = 2 } in a + b
+#   - case x of Just y -> let z = y + 1 in z
+#
+# Does NOT match:
+#   - Top-level bindings (foo = ...)
+#   - Where clauses (... where x = ...)
+
+id: haskell-let-in-expression
+language: haskell
+severity: hint
+message: "Found local let binding"
+rule:
+  kind: let_in

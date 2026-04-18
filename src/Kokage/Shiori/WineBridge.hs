@@ -97,8 +97,8 @@ defaultWineBridgeConfig :: WineBridgeConfig
 defaultWineBridgeConfig
   = WineBridgeConfig
   { wbcWineCommand  = "wine"
-  , wbcBridgePath   = "wine-helper" </> "shiori_bridge.exe"
-  , wbcBridgeSoPath = "wine-helper" </> "shiori_bridge.exe.so"
+  , wbcBridgePath   = "wine-helper" </> "shiori_bridge32.exe"
+  , wbcBridgeSoPath = "wine-helper" </> "shiori_bridge32.exe.so"
   , wbcSenderName   = "Kokage"
   , wbcTimeoutMs    = 30000  -- 30 seconds
   }

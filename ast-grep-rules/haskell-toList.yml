@@ -1,0 +1,6 @@
+id: haskell-toList-invocation
+language: haskell
+severity: hint
+message: "Found toList invocation"
+rule:
+  pattern: toList
